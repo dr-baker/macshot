@@ -509,12 +509,14 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(indented(urlSchemeRow))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
+        #if !LOCAL_DEV
         autoUpdateCheckbox = NSButton(checkboxWithTitle: L("Check for updates automatically"), target: self, action: #selector(autoUpdateChanged(_:)))
         stack.addArrangedSubview(indented(autoUpdateCheckbox))
         stack.setCustomSpacing(4, after: stack.arrangedSubviews.last!)
 
         betaUpdateCheckbox = NSButton(checkboxWithTitle: L("Check for beta updates"), target: self, action: #selector(betaUpdateChanged(_:)))
         stack.addArrangedSubview(indented(betaUpdateCheckbox))
+        #endif
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
 
         // ── Appearance ───────────────────────────────────────
@@ -2683,10 +2685,12 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         recordingFilenameTemplateField.stringValue = UserDefaults.standard.string(forKey: FilenameFormatter.recordingUserDefaultsKey) ?? FilenameFormatter.defaultRecordingTemplate
         updateRecordingFilenamePreview()
 
+        #if !LOCAL_DEV
         let autoUpdate = UserDefaults.standard.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? true
         autoUpdateCheckbox.state = autoUpdate ? .on : .off
 
         betaUpdateCheckbox.state = UserDefaults.standard.bool(forKey: "betaUpdatesEnabled") ? .on : .off
+        #endif
 
         accentColorWell.color = ToolbarLayout.accentColor
         iconColorWell.color = ToolbarLayout.iconColor

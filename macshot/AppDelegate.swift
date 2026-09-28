@@ -314,11 +314,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // something references ScreenshotHistory.shared.
         _ = ScreenshotHistory.shared
 
+        #if !LOCAL_DEV
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
         // Disable silent update downloads — updates should only apply
         // via explicit user action ("Check for Updates..." / Install),
         // so an automatic update can't be mistaken for a silent crash.
         updaterController.updater.automaticallyDownloadsUpdates = false
+        #endif
         setupMainMenu()
         setupStatusBar()
         DistributedNotificationCenter.default().addObserver(
@@ -904,10 +906,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         prefsItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
         menu.addItem(prefsItem)
 
+        #if !LOCAL_DEV
         let updateItem = NSMenuItem(title: L("Check for Updates..."), action: #selector(checkForUpdates), keyEquivalent: "")
         updateItem.target = self
         updateItem.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
         menu.addItem(updateItem)
+        #endif
 
         menu.addItem(NSMenuItem.separator())
 
