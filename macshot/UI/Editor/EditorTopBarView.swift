@@ -9,6 +9,7 @@ class EditorTopBarView: NSView {
     private var zoomButton: NSButton!
     private var doneButton: NSButton?
     var onDone: (() -> Void)?
+    var onStitch: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -24,6 +25,8 @@ class EditorTopBarView: NSView {
         let flipHBtn = makeButton("arrow.left.and.right.righttriangle.left.righttriangle.right", tooltip: L("Flip Horizontal"), action: #selector(flipHClicked))
         let flipVBtn = makeButton("arrow.up.and.down.righttriangle.up.righttriangle.down", tooltip: L("Flip Vertical"), action: #selector(flipVClicked))
         let addCaptureBtn = makeButton("rectangle.badge.plus", tooltip: L("Add Capture"), action: #selector(addCaptureClicked))
+
+        let stitchBtn = makeButton("scissors", tooltip: L("Stitch — collapse rows or columns"), action: #selector(stitchClicked))
 
         // Zoom dropdown button
         zoomButton = NSButton()
@@ -43,7 +46,7 @@ class EditorTopBarView: NSView {
         addSubview(border)
 
         // Layout with constraints
-        for v: NSView in [sizeLabel, cropBtn, flipHBtn, flipVBtn, addCaptureBtn, zoomButton] {
+        for v: NSView in [sizeLabel, cropBtn, flipHBtn, flipVBtn, addCaptureBtn, stitchBtn, zoomButton] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -73,6 +76,11 @@ class EditorTopBarView: NSView {
             addCaptureBtn.centerYAnchor.constraint(equalTo: centerYAnchor),
             addCaptureBtn.widthAnchor.constraint(equalToConstant: 24),
             addCaptureBtn.heightAnchor.constraint(equalToConstant: 22),
+
+            stitchBtn.leadingAnchor.constraint(equalTo: addCaptureBtn.trailingAnchor, constant: 8),
+            stitchBtn.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stitchBtn.widthAnchor.constraint(equalToConstant: 24),
+            stitchBtn.heightAnchor.constraint(equalToConstant: 22),
 
             zoomButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             zoomButton.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -218,6 +226,8 @@ class EditorTopBarView: NSView {
         doneButton?.removeFromSuperview()
         doneButton = nil
     }
+
+    @objc private func stitchClicked() { onStitch?() }
 
     @objc private func doneClicked() { onDone?() }
 

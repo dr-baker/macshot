@@ -507,7 +507,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
         // Only open settings if no windows are visible (e.g. pure menu-bar state).
         // If editor/video editor is already open, just bring the app to the front.
-        if !flag {
+        if !flag && !StitchCaptureSession.shared.isPresenting {
             openSettings()
         }
         return false
@@ -686,6 +686,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         mainMenu.addItem(fileMenuItem)
 
         let fileMenu = NSMenu(title: "File")
+        let stitchCaptureItem = NSMenuItem(title: L("Stitch Capture"), action: #selector(stitchCapture), keyEquivalent: "")
+        stitchCaptureItem.target = self
+        HotkeyManager.applyMenuShortcut(for: .stitchCapture, to: stitchCaptureItem)
+        fileMenu.addItem(stitchCaptureItem)
+        fileMenu.addItem(.separator())
         // Standard Close Window (Cmd+W) — routes to NSWindow.performClose(_:) via the
         // responder chain, so it closes whichever window is key (editor, settings, etc.)
         // without any window-specific handling.
@@ -820,6 +825,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             menu.addItem(makeCaptureMenuItem(itemID))
         }
 
+        let stitchItem = NSMenuItem(title: L("Stitch Capture"), action: #selector(stitchCapture), keyEquivalent: "")
+        stitchItem.target = self
+        stitchItem.image = NSImage(systemSymbolName: "rectangle.on.rectangle", accessibilityDescription: nil)
+        HotkeyManager.applyMenuShortcut(for: .stitchCapture, to: stitchItem)
+        menu.addItem(stitchItem)
+
         // Capture Delay submenu
         let delayItem = NSMenuItem(title: L("Capture Delay"), action: nil, keyEquivalent: "")
         delayItem.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
@@ -946,6 +957,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         return item
     }
 
+    @objc private func stitchCapture() {
+        guard overlayControllers.isEmpty, recordingEngine == nil, scrollCaptureController == nil else { return }
+        StitchCaptureSession.shared.trigger()
+    }
+
     // MARK: - Hotkey
 
     private func registerHotkey() {
@@ -1000,6 +1016,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             },
             clearHistory: { [weak self] in
                 DispatchQueue.main.async { self?.clearHistorySilently() }
+            },
+            stitchCapture: { [weak self] in
+                DispatchQueue.main.async { self?.stitchCapture() }
             }
         )
     }
@@ -2480,6 +2499,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             settingsController?.onHotkeyChanged = { [weak self] in
                 self?.registerHotkey()
                 self?.rebuildStatusBarMenu()
+                self?.setupMainMenu()
             }
             settingsController?.onEditorCommandShortcutChanged = { [weak self] in
                 self?.setupMainMenu()

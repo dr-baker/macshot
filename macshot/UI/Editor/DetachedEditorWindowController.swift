@@ -171,6 +171,10 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         // no Done until you draw). Wire the action now; visibility is driven by
         // refreshDoneButtonVisibility() via the view's onContentChanged hook.
         topBar.onDone = { [weak self] in self?.commitToHistory() }
+        topBar.onStitch = { [weak self] in
+            guard let image = self?.overlayView?.captureSelectedRegion() else { return }
+            StitchEditorWindowController.open(image: image)
+        }
         view.onContentChanged = { [weak self] in
             self?.contentRevision &+= 1
             self?.refreshDoneButtonVisibility()
