@@ -50,8 +50,8 @@ if ! xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   ARCHS="$(uname -m)" \
   SWIFT_ACTIVE_COMPILATION_CONDITIONS="LOCAL_DEV" \
-  PRODUCT_BUNDLE_IDENTIFIER="$bundle_id" \
-  PRODUCT_NAME="$app_name" \
+  MACSHOT_BUNDLE_IDENTIFIER="$bundle_id" \
+  MACSHOT_PRODUCT_NAME="$app_name" \
   INFOPLIST_KEY_CFBundleDisplayName="$app_name" \
   INFOPLIST_KEY_CFBundleName="$app_name" \
   CURRENT_PROJECT_VERSION="$(date -u +%s)" \
