@@ -206,7 +206,7 @@ If you'd like to help out, starring the repo, reporting bugs, or contributing is
 
 ## Requirements
 
-macOS 12.3 (Monterey) or later.
+macOS 13.0 (Ventura) or later.
 
 ## License
 

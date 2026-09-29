@@ -456,7 +456,7 @@ class ScreenCaptureManager {
                                 timing?("SCScreenshotManager capture end display=\(index) pixels=\(image.width)x\(image.height)")
                                 return ScreenCapture(screen: screen, image: image)
                             } else {
-                                // macOS 12.3–13.x: use CGWindowListCreateImage which returns
+                                // macOS 13.x: use CGWindowListCreateImage which returns
                                 // a CGImage directly — no pixel buffer format ambiguity.
                                 // Convert the AppKit screen frame (bottom-left origin) to the
                                 // CGDisplay coordinate space (top-left origin) for the capture rect.
@@ -551,7 +551,7 @@ class ScreenCaptureManager {
             else { return captureViaWindowList() }
             return image
         } else {
-            // macOS 12.3–13.x: CGWindowListCreateImage targeting the specific window
+            // macOS 13.x: CGWindowListCreateImage targeting the specific window
             return captureViaWindowList()
         }
     }

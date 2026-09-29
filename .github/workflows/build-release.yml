@@ -446,7 +446,7 @@ jobs:
                   <pubDate>{date}</pubDate>
                   <sparkle:version>{build_number}</sparkle:version>
                   <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
-                  <sparkle:minimumSystemVersion>12.3</sparkle:minimumSystemVersion>
+                  <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
               {channel_line}
                   <description><![CDATA[
                     <style>

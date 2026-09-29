@@ -3158,20 +3158,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
     func overlayDidRequestScrollCapture(_ controller: OverlayWindowController, rect: NSRect, screen: NSScreen) {
         if !AXIsProcessTrusted() {
             dismissOverlays()
-            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-            AXIsProcessTrustedWithOptions(opts)
-            let alert = NSAlert()
-            alert.messageText = L("Accessibility Access Required")
-            alert.informativeText = L("macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again.")
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L("Open Settings"))
-            alert.addButton(withTitle: L("Cancel"))
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
+            AccessibilityPermissionGuide.show()
             return
         }
 
@@ -3243,20 +3230,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
 
     func overlayDidRequestAccessibilityPermission(_ controller: OverlayWindowController) {
         dismissOverlays()
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
-        let alert = NSAlert()
-        alert.messageText = L("Accessibility Access Required")
-        alert.informativeText = L("macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again.")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("Open Settings"))
-        alert.addButton(withTitle: L("Cancel"))
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-        }
+        AccessibilityPermissionGuide.show()
     }
 
     func overlayDidRequestInputMonitoringPermission(_ controller: OverlayWindowController) {
@@ -3291,20 +3265,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
                 scrollCaptureOverlayController = nil
                 dismissOverlays()
 
-                let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-                AXIsProcessTrustedWithOptions(opts)
-                let alert = NSAlert()
-                alert.messageText = L("Accessibility Access Required")
-                alert.informativeText = L("macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again.")
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: L("Open Settings"))
-                alert.addButton(withTitle: L("Cancel"))
-                let response = alert.runModal()
-                if response == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+                AccessibilityPermissionGuide.show()
                 return
             }
         }
