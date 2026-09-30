@@ -31,10 +31,11 @@ enum StitchAxis { case horizontal, vertical }
 
 struct StitchStyle {
     var color = NSColor(calibratedRed: 0.23, green: 0.28, blue: 0.34, alpha: 0.9)
-    var lineWidth: CGFloat = 2
-    var wave: CGFloat = 4
-    var blur: CGFloat = 8
-    var feather: CGFloat = 28
+    var lineWidth: CGFloat = 1.25
+    var wave: CGFloat = 3
+    var blur: CGFloat = 12
+    /// Total width of the blur band, centered on the join, in source pixels.
+    var feather: CGFloat = 64
     var visible = true
 }
 
