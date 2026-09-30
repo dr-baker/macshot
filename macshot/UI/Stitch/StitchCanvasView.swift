@@ -4,15 +4,25 @@ import AppKit
 final class StitchCanvasView: NSView {
     enum Mode: Int { case move, rows, columns }
     var document = StitchDocument()
-    var mode = Mode.move { didSet { window?.invalidateCursorRects(for: self) } }
+    var mode = Mode.move {
+        didSet {
+            if oldValue != mode { cancelGesture() }
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+        }
+    }
     var selectedID: UUID? { didSet { needsDisplay = true } }
     var preview: CGImage?
     var onSelect: ((UUID?) -> Void)?
     var onCut: ((StitchAxis, CGFloat, CGFloat) -> Void)?
     var onMove: ((UUID, CGPoint, Bool) -> Void)?
+    var onCancelMove: (() -> Void)?
     var onDelete: (() -> Void)?
     var onImages: (([NSImage]) -> Void)?
     var onCopy: (() -> Void)?
+    var onMode: ((Mode) -> Void)?
+    var onZoom: ((CGFloat) -> Void)?
+    var onFit: (() -> Void)?
     private let inset: CGFloat = 80
     private var start: CGPoint?
     private var end: CGPoint?
@@ -49,7 +59,7 @@ final class StitchCanvasView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.11, alpha: 1).setFill()
+        NSColor(white: 0.15, alpha: 1).setFill()
         bounds.fill()
         guard document.canRender else { return }
         NSGraphicsContext.saveGraphicsState()
@@ -71,10 +81,21 @@ final class StitchCanvasView: NSView {
         }
         let zoom = enclosingScrollView?.magnification ?? 1
         if let piece = document.pieces.first(where: { $0.id == selectedID }), mode == .move {
-            NSColor.controlAccentColor.setStroke()
+            ToolbarLayout.accentColor.setStroke()
             let path = NSBezierPath(rect: viewRect(piece.frame).insetBy(dx: -1 / zoom, dy: -1 / zoom))
             path.lineWidth = 2 / zoom
             path.stroke()
+            // A move handle explains the selection without implying it can resize.
+            let frame = viewRect(piece.frame)
+            let handle = NSRect(x: frame.minX + 5 / zoom, y: frame.minY + 5 / zoom,
+                                width: 24 / zoom, height: 24 / zoom)
+            ToolbarLayout.bgColor.withAlphaComponent(0.95).setFill()
+            NSBezierPath(roundedRect: handle, xRadius: 5 / zoom, yRadius: 5 / zoom).fill()
+            if let icon = NSImage(systemSymbolName: "arrow.up.and.down.and.arrow.left.and.right", accessibilityDescription: nil) {
+                let tinted = icon.withSymbolConfiguration(.init(paletteColors: [ToolbarLayout.iconColor])) ?? icon
+                tinted.draw(in: handle.insetBy(dx: 5 / zoom, dy: 5 / zoom), from: .zero,
+                            operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            }
         }
         if mode != .move, let start, let end {
             let horizontal = mode == .rows
@@ -82,21 +103,31 @@ final class StitchCanvasView: NSView {
                 ? CGRect(x: contentBounds.minX, y: min(start.y, end.y), width: contentBounds.width, height: abs(end.y - start.y))
                 : CGRect(x: min(start.x, end.x), y: contentBounds.minY, width: abs(end.x - start.x), height: contentBounds.height)
             let rect = viewRect(band).intersection(imageRect)
-            NSColor.controlAccentColor.withAlphaComponent(0.2).setFill()
+            guard !rect.isNull, !rect.isEmpty,
+                  rect.minX.isFinite, rect.minY.isFinite,
+                  rect.width.isFinite, rect.height.isFinite else { return }
+            ToolbarLayout.accentColor.withAlphaComponent(0.2).setFill()
             rect.fill()
-            NSColor.controlAccentColor.setStroke()
+            ToolbarLayout.accentColor.setStroke()
             let border = NSBezierPath(rect: rect)
             border.lineWidth = 1.5 / zoom
             border.stroke()
             let removed = Int(horizontal ? rect.height : rect.width)
             let text = "−\(removed) px" as NSString
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 13 / zoom, weight: .semibold), .foregroundColor: NSColor.white, .backgroundColor: NSColor.controlAccentColor]
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 13 / zoom, weight: .semibold), .foregroundColor: NSColor.white, .backgroundColor: ToolbarLayout.accentColor]
             text.draw(at: CGPoint(x: rect.midX, y: rect.midY), withAttributes: attributes)
         }
     }
 
+    private func cancelGesture() {
+        let wasMoving = moving
+        start = nil; end = nil; dragBounds = nil; originalOrigin = nil; moving = false
+        if wasMoving { onCancelMove?() }
+        needsDisplay = true
+    }
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: mode == .move ? .openHand : .crosshair)
+        addCursorRect(bounds, cursor: .arrow)
+        addCursorRect(imageRect, cursor: mode == .move ? .openHand : .crosshair)
     }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -142,10 +173,29 @@ final class StitchCanvasView: NSView {
             if KeyboardShortcutMatcher.matches(event, character: "z", modifiers: [.command, .shift]) { undoManager?.redo(); return }
             if KeyboardShortcutMatcher.matches(event, character: "z", modifiers: .command) { undoManager?.undo(); return }
             if KeyboardShortcutMatcher.matches(event, character: "c", modifiers: .command) { onCopy?(); return }
+            if KeyboardShortcutMatcher.matches(event, character: "1", modifiers: .command) { onFit?(); return }
+            if KeyboardShortcutMatcher.matches(event, character: "0", modifiers: .command) { onZoom?(1); return }
+            let character = KeyboardShortcutMatcher.semanticCharacter(for: event)
+            if character == "+" || character == "=" { onZoom?((enclosingScrollView?.magnification ?? 1) * 1.25); return }
+            if character == "-" { onZoom?((enclosingScrollView?.magnification ?? 1) / 1.25); return }
             if KeyboardShortcutMatcher.matches(event, character: "v", modifiers: .command) {
                 if let images = NSImage(pasteboard: .general) { onImages?([images]) }
                 return
             }
+        }
+        if KeyboardShortcutMatcher.modifiers(in: event).isEmpty {
+            switch KeyboardShortcutMatcher.semanticCharacter(for: event) {
+            case "v": onMode?(.move); return
+            case "r": onMode?(.rows); return
+            case "c": onMode?(.columns); return
+            default: break
+            }
+        }
+        if event.keyCode == 53 {
+            cancelGesture()
+            selectedID = nil
+            onSelect?(nil)
+            return
         }
         if event.keyCode == 51 || event.keyCode == 117 { onDelete?(); return }
         if let id = selectedID, let piece = document.pieces.first(where: { $0.id == id }), [123,124,125,126].contains(Int(event.keyCode)) {
