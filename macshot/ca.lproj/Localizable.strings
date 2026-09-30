@@ -919,3 +919,21 @@
 "captures" = "captures";
 "macshot · Stitch" = "macshot · Stitch";
 "pieces" = "pieces";
+
+/* Stitch workspace controls. English fallback pending translation. */
+"Adjacent edge colors" = "Colors de les vores adjacents";
+"Canvas background" = "Fons del llenç";
+"Change arrangement" = "Canvia la disposició";
+"Change canvas background" = "Canvia el fons del llenç";
+"Fills space between captured pieces." = "Omple els espais entre les captures.";
+"Free Move" = "Moviment lliure";
+"Free Move keeps your placement. Packed closes gaps and rearranges pieces on drop." = "El moviment lliure conserva la posició. La disposició compacta elimina els espais i reorganitza les peces en deixar-les anar.";
+"Free Move · drag pieces anywhere" = "Moviment lliure · arrossega les peces on vulguis";
+"Opened in editor" = "Obert a l’editor";
+"Packed" = "Compacte";
+"Packed · drag pieces to rearrange" = "Compacte · arrossega les peces per reorganitzar-les";
+"Piece arrangement" = "Disposició de les peces";
+"Preparing image…" = "Preparant la imatge…";
+"Select a band inside the canvas and leave some content on either side." = "Selecciona una franja dins del llenç i deixa contingut a cada costat.";
+"Solid color" = "Color sòlid";
+"Unable to save this image." = "No s’ha pogut desar aquesta imatge.";

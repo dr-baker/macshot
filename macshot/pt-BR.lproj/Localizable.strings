@@ -919,3 +919,21 @@
 "captures" = "captures";
 "macshot · Stitch" = "macshot · Stitch";
 "pieces" = "pieces";
+
+/* Stitch workspace controls. English fallback pending translation. */
+"Adjacent edge colors" = "Cores das bordas adjacentes";
+"Canvas background" = "Fundo da tela";
+"Change arrangement" = "Alterar disposição";
+"Change canvas background" = "Alterar fundo da tela";
+"Fills space between captured pieces." = "Preenche os espaços entre as capturas.";
+"Free Move" = "Movimentação livre";
+"Free Move keeps your placement. Packed closes gaps and rearranges pieces on drop." = "A movimentação livre mantém as posições. A disposição compacta elimina os espaços e reorganiza as peças ao soltá-las.";
+"Free Move · drag pieces anywhere" = "Movimentação livre · arraste as peças para qualquer lugar";
+"Opened in editor" = "Aberto no editor";
+"Packed" = "Compacto";
+"Packed · drag pieces to rearrange" = "Compacto · arraste as peças para reorganizar";
+"Piece arrangement" = "Disposição das peças";
+"Preparing image…" = "Preparando imagem…";
+"Select a band inside the canvas and leave some content on either side." = "Selecione uma faixa dentro da tela e deixe algum conteúdo dos dois lados.";
+"Solid color" = "Cor sólida";
+"Unable to save this image." = "Não foi possível salvar esta imagem.";

@@ -10,6 +10,10 @@ Touching edges get a soft, wavy seam. Open the seam control in the bottom toolba
 
 Add more images with **Add Images**, paste, or drag image files onto the canvas. Open **Pieces** in the top bar to select a thumbnail, change its stacking order, or remove it.
 
+Use the arrangement menu in the top bar to choose **Free Move** or **Packed**. Free Move retains precise overlap and lets you place each piece independently. Packed closes gaps and arranges pieces in tight rows or columns, using the existing layout to choose the direction. While dragging, the grid shows the proposed slot and rearranges neighboring pieces. Release to place the piece, or press Escape to cancel. Switching arrangements, reordering, and background changes support undo.
+
+Open **Canvas background** in the top bar to change the fill for missing image areas. **Adjacent edge colors** is the default and extends the nearest captured edge pixels into gaps. **Solid color** uses your chosen color. **Transparent** leaves missing areas transparent in exports and shows a checkerboard in the editor. Captured pixels remain intact.
+
 ## Capture a page in pieces
 
 1. Press **Command–Shift–J**, or choose **Stitch Capture** from the menu bar or File menu.
@@ -24,6 +28,8 @@ The shortcut can be changed in Settings alongside the other capture shortcuts. S
 ## Keep the result
 
 **Copy** and **Save PNG** export the stitched image at its original pixel resolution. **Annotate** opens the rendered result in the regular editor. The Stitch window retains its movable pieces while it stays open. PNG files and clipboard images are flattened; they do not store editable pieces.
+
+Exports render in the background. If you edit during an export, it keeps the version you requested and leaves the newer edits marked as unsaved. Closing an unsaved stitch offers Save PNG, Discard, and Cancel.
 
 New Stitch labels use English fallback in locales awaiting translation.
 

@@ -918,3 +918,21 @@
 "captures" = "captures";
 "macshot · Stitch" = "macshot · Stitch";
 "pieces" = "pieces";
+
+/* Stitch workspace controls. English fallback pending translation. */
+"Adjacent edge colors" = "Adjacent edge colors";
+"Canvas background" = "Canvas background";
+"Change arrangement" = "Change arrangement";
+"Change canvas background" = "Change canvas background";
+"Fills space between captured pieces." = "Fills space between captured pieces.";
+"Free Move" = "Free Move";
+"Free Move keeps your placement. Packed closes gaps and rearranges pieces on drop." = "Free Move keeps your placement. Packed closes gaps and rearranges pieces on drop.";
+"Free Move · drag pieces anywhere" = "Free Move · drag pieces anywhere";
+"Opened in editor" = "Opened in editor";
+"Packed" = "Packed";
+"Packed · drag pieces to rearrange" = "Packed · drag pieces to rearrange";
+"Piece arrangement" = "Piece arrangement";
+"Preparing image…" = "Preparing image…";
+"Select a band inside the canvas and leave some content on either side." = "Select a band inside the canvas and leave some content on either side.";
+"Solid color" = "Solid color";
+"Unable to save this image." = "Unable to save this image.";
