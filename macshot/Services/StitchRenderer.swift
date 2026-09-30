@@ -114,9 +114,183 @@ enum StitchRenderer {
         return mask
     }
 
+    /// Full-canvas image containing only the uncovered background. Covered rectangles stay
+    /// transparent, allowing the canvas to draw unchanged source pieces over this layer.
+    static func renderBackground(_ document: StitchDocument,
+                                 maximumPreviewDimension: CGFloat? = nil) -> CGImage? {
+        guard document.canRender else { return nil }
+        let bounds = document.bounds.integral
+        let requested = maximumPreviewDimension ?? max(bounds.width, bounds.height)
+        guard requested.isFinite, requested > 0 else { return nil }
+        let scale = min(1, requested / max(bounds.width, bounds.height))
+        let width = max(1, Int(ceil(bounds.width * scale)))
+        let height = max(1, Int(ceil(bounds.height * scale)))
+        guard let background = bitmap(width: width, height: height) else { return nil }
+        guard case .automatic = document.background else {
+            fillBackground(document, source: background, destination: background, bounds: bounds, scale: scale)
+            return background.makeImage()
+        }
+        guard let source = bitmap(width: width, height: height) else { return nil }
+        source.translateBy(x: 0, y: CGFloat(height))
+        source.scaleBy(x: scale, y: -scale)
+        source.translateBy(x: -bounds.minX, y: -bounds.minY)
+        drawPieces(document.pieces, in: source)
+        fillBackground(document, source: source, destination: background, bounds: bounds, scale: scale)
+        return background.makeImage()
+    }
+
+    private static func bitmap(width: Int, height: Int) -> CGContext? {
+        CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+
+    private static func drawPieces(_ pieces: [StitchPiece], in context: CGContext) {
+        for piece in pieces {
+            guard let image = piece.image.cropping(to: piece.source) else { continue }
+            context.saveGState()
+            context.translateBy(x: piece.origin.x, y: piece.origin.y + piece.frame.height)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(image, in: CGRect(origin: .zero, size: piece.frame.size))
+            context.restoreGState()
+        }
+    }
+
+    private struct CoverageSlab {
+        let columns: Range<Int>
+        let rows: [Range<Int>]
+
+        func nearestRow(to y: Int) -> Int? {
+            guard !rows.isEmpty else { return nil }
+            var low = 0, high = rows.count
+            while low < high {
+                let middle = (low + high) / 2
+                if rows[middle].lowerBound <= y { low = middle + 1 } else { high = middle }
+            }
+            if low > 0 {
+                let before = rows[low - 1]
+                if before.contains(y) { return y }
+                let candidate = before.upperBound - 1
+                if low == rows.count || y - candidate <= rows[low].lowerBound - y { return candidate }
+            }
+            return rows[low].lowerBound
+        }
+    }
+
+    /// Rectangles change coverage only at their x edges. Within each slab, the union of
+    /// covered y intervals is constant. This avoids a canvas-sized occupancy/distance map.
+    private static func coverage(_ pieces: [StitchPiece], bounds: CGRect, scale: CGFloat,
+                                 width: Int, height: Int) -> [CoverageSlab] {
+        var rectangles: [(x: Range<Int>, y: Range<Int>)] = []
+        var edges: Set<Int> = [0, width]
+        for piece in pieces {
+            let f = piece.frame
+            let x0 = max(0, min(width, Int(floor((f.minX - bounds.minX) * scale))))
+            let x1 = max(0, min(width, Int(ceil((f.maxX - bounds.minX) * scale))))
+            let y0 = max(0, min(height, Int(floor((f.minY - bounds.minY) * scale))))
+            let y1 = max(0, min(height, Int(ceil((f.maxY - bounds.minY) * scale))))
+            guard x0 < x1, y0 < y1 else { continue }
+            rectangles.append((x0..<x1, y0..<y1))
+            edges.insert(x0); edges.insert(x1)
+        }
+        let xs = edges.sorted()
+        return zip(xs, xs.dropFirst()).map { start, end in
+            let intervals = rectangles.filter { $0.x.lowerBound <= start && $0.x.upperBound >= end }
+                .map(\.y).sorted { $0.lowerBound < $1.lowerBound }
+            var union: [Range<Int>] = []
+            for interval in intervals {
+                if let previous = union.last, interval.lowerBound <= previous.upperBound {
+                    union[union.count - 1] = previous.lowerBound..<max(previous.upperBound, interval.upperBound)
+                } else { union.append(interval) }
+            }
+            return CoverageSlab(columns: start..<end, rows: union)
+        }
+    }
+
+    /// Extend the exact nearest covered pixel into every gap. For each output row, each
+    /// slab supplies its nearest vertical source pixel. The nearest source in another slab
+    /// must be on that slab's left/right edge, so only those endpoint parabolas enter the
+    /// one-dimensional squared-distance envelope. Work is linear in gap pixels plus the
+    /// number of slab endpoints per row; scratch storage depends only on piece count.
+    private static func fillBackground(_ document: StitchDocument, source: CGContext,
+                                       destination: CGContext, bounds: CGRect, scale: CGFloat) {
+        if case .transparent = document.background { return }
+        guard let inputData = source.data, let outputData = destination.data else { return }
+        let width = source.width, height = source.height
+        let input = inputData.assumingMemoryBound(to: UInt32.self)
+        let output = outputData.assumingMemoryBound(to: UInt32.self)
+        let slabs = coverage(document.pieces, bounds: bounds, scale: scale, width: width, height: height)
+        guard !slabs.isEmpty else { return }
+        var solid: UInt32?
+        if case .color(let color) = document.background,
+           let swatch = bitmap(width: 1, height: 1), let bytes = swatch.data {
+            swatch.setFillColor(color.cgColor)
+            swatch.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+            solid = bytes.assumingMemoryBound(to: UInt32.self).pointee
+        }
+        var rowSeeds = [Int](repeating: -1, count: slabs.count)
+        let capacity = slabs.count * 2
+        var vertices = [Int](repeating: 0, count: capacity)
+        var seedRows = [Int](repeating: 0, count: capacity)
+        var costs = [Double](repeating: 0, count: capacity)
+        var transitions = [Double](repeating: 0, count: capacity + 1)
+        for y in 0..<height {
+            var hasGap = false
+            for index in slabs.indices {
+                rowSeeds[index] = slabs[index].nearestRow(to: y) ?? -1
+                if rowSeeds[index] != y { hasGap = true }
+            }
+            guard hasGap else { continue }
+            var last = -1
+            if solid == nil {
+                for index in slabs.indices where rowSeeds[index] >= 0 {
+                    let seedY = rowSeeds[index]
+                    let dy = Double(y - seedY)
+                    let cost = dy * dy
+                    let slab = slabs[index]
+                    for endpoint in 0..<(slab.columns.count == 1 ? 1 : 2) {
+                        let x = endpoint == 0 ? slab.columns.lowerBound : slab.columns.upperBound - 1
+                        var intersection = -Double.infinity
+                        while last >= 0 {
+                            let previous = vertices[last]
+                            intersection = (cost + Double(x) * Double(x) - costs[last]
+                                            - Double(previous) * Double(previous)) / Double(2 * (x - previous))
+                            if intersection > transitions[last] { break }
+                            last -= 1
+                        }
+                        last += 1
+                        vertices[last] = x; seedRows[last] = seedY; costs[last] = cost
+                        transitions[last] = last == 0 ? -.infinity : intersection
+                        transitions[last + 1] = .infinity
+                    }
+                }
+            }
+            var segment = 0
+            for index in slabs.indices where rowSeeds[index] != y {
+                let columns = slabs[index].columns
+                if let solid {
+                    for x in columns { output[y * width + x] = solid }
+                    continue
+                }
+                guard last >= 0 else { continue }
+                let ownY = rowSeeds[index]
+                let ownDistance = ownY >= 0 ? Double(y - ownY) * Double(y - ownY) : .infinity
+                for x in columns {
+                    while segment < last && transitions[segment + 1] < Double(x) { segment += 1 }
+                    let dx = Double(x - vertices[segment])
+                    if ownDistance <= dx * dx + costs[segment] {
+                        output[y * width + x] = input[ownY * width + x]
+                    } else {
+                        output[y * width + x] = input[seedRows[segment] * width + vertices[segment]]
+                    }
+                }
+            }
+        }
+    }
+
     static func render(_ document: StitchDocument, maximumPreviewDimension: CGFloat? = nil) -> CGImage? {
         guard document.canRender else { return nil }
         let bounds = document.bounds.integral
+        if let dimension = maximumPreviewDimension, (!dimension.isFinite || dimension <= 0) { return nil }
         let scale = maximumPreviewDimension.map { min(1, $0 / max(bounds.width, bounds.height)) } ?? 1
         let width = max(1, Int(ceil(bounds.width * scale))), height = max(1, Int(ceil(bounds.height * scale)))
         func makeContext() -> CGContext? {
@@ -130,14 +304,8 @@ enum StitchRenderer {
         }
         guard let base = makeContext() else { return nil }
         applyCoordinates(base)
-        for piece in document.pieces {
-            guard let image = piece.image.cropping(to: piece.source) else { continue }
-            base.saveGState()
-            base.translateBy(x: piece.origin.x, y: piece.origin.y + piece.frame.height)
-            base.scaleBy(x: 1, y: -1)
-            base.draw(image, in: CGRect(origin: .zero, size: piece.frame.size))
-            base.restoreGState()
-        }
+        drawPieces(document.pieces, in: base)
+        fillBackground(document, source: base, destination: base, bounds: bounds, scale: scale)
         guard let original = base.makeImage() else { return nil }
         let style = document.style
         let joins = document.joins

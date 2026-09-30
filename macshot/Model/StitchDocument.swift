@@ -29,6 +29,23 @@ struct StitchPiece {
 
 enum StitchAxis { case horizontal, vertical }
 
+/// Automatic extends the nearest covered edge pixel into gaps, without changing image pixels.
+enum StitchBackground {
+    case automatic
+    case color(NSColor)
+    case transparent
+
+    /// Nil means the renderer supplies edge colors rather than a uniform fill.
+    var fillColor: NSColor? {
+        switch self {
+        case .automatic: return nil
+        case .color(let color): return color
+        case .transparent: return .clear
+        }
+    }
+}
+
+
 struct StitchStyle {
     var color = NSColor(calibratedRed: 0.23, green: 0.28, blue: 0.34, alpha: 0.9)
     var lineWidth: CGFloat = 1.25
@@ -49,6 +66,7 @@ struct StitchJoin {
 struct StitchDocument {
     var pieces: [StitchPiece] = []
     var style = StitchStyle()
+    var background: StitchBackground = .automatic
     static let maximumPieces = 128
     static let maximumPixels: CGFloat = 100_000_000
     static let maximumDimension: CGFloat = 30_000
