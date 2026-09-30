@@ -759,6 +759,7 @@ class OverlayView: NSView {
     var autoTranslateOverlayLang: String?  // target language for autoTranslateOverlayMode (nil = saved default)
     var autoQuickSaveMode: Bool = false  // set by "Quick Capture" menu — quick-saves immediately after selection
     var autoScrollCaptureMode: Bool = false  // set by "Scroll Capture" menu — triggers scroll capture immediately after selection
+    var selectionOnlyMode: Bool = false
     var autoConfirmMode: Bool = false  // set by "Add Capture" — auto-confirms selection (no toolbars, no save)
 
     // Recording session overrides (popover settings — nil means use UserDefaults default)
@@ -6748,7 +6749,7 @@ class OverlayView: NSView {
             // Real drag — use drawn rect as-is
             state = .selected
             applyPreSelectionLockAfterSelection()
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else if snapMode != .off, let snapRect = hoveredSnapRect, !snapRect.isEmpty {
             // Click (no drag) with snap on — select the hovered target.
@@ -6757,7 +6758,7 @@ class OverlayView: NSView {
             snappedWindowID = selectionIsWindowSnap ? hoveredSnapWindowID : nil
             // Only whole-window snaps use the independent capture that preserves
             // transparent corners. Element snaps are ordinary screen crops.
-            if selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
+            if !selectionOnlyMode, selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
                 Task {
                     if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
                         self.snappedWindowImage = NSImage(cgImage: cgImage,
@@ -6768,13 +6769,13 @@ class OverlayView: NSView {
                 }
             }
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else {
             // Click (no drag), snap off — expand to full screen
             selectionRect = bounds
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         }
         hoveredSnapRect = nil
@@ -6935,7 +6936,7 @@ class OverlayView: NSView {
         if selectionRect.width > 5 || selectionRect.height > 5 {
             state = .selected
             applyPreSelectionLockAfterSelection()
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
                 showToolbars = true
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
@@ -6943,7 +6944,7 @@ class OverlayView: NSView {
             selectionRect = snapRect
             selectionIsWindowSnap = snapMode == .window
             snappedWindowID = selectionIsWindowSnap ? hoveredSnapWindowID : nil
-            if selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
+            if !selectionOnlyMode, selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
                 Task {
                     if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
                         self.snappedWindowImage = NSImage(
@@ -6956,14 +6957,14 @@ class OverlayView: NSView {
                 }
             }
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
                 showToolbars = true
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else {
             selectionRect = bounds
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
                 showToolbars = true
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
@@ -8146,6 +8147,7 @@ class OverlayView: NSView {
     }
 
     func handleToolbarAction(_ action: ToolbarButtonAction, mousePoint: NSPoint = .zero) {
+        guard !selectionOnlyMode else { return }
         switch action {
         case .tool(let tool):
             commitTextFieldIfNeeded()
@@ -9084,6 +9086,10 @@ class OverlayView: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if selectionOnlyMode {
+            // Consume app/edit commands while the selector owns keyboard focus.
+            return event.modifierFlags.contains(.command)
+        }
         // Text editing: forward standard commands to the active text view.
         if let tv = textEditView {
             if let action = EditorCommandShortcutManager.action(for: event) {
@@ -9163,6 +9169,33 @@ class OverlayView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if selectionOnlyMode {
+            guard !event.modifierFlags.contains(.command),
+                  !event.modifierFlags.contains(.control),
+                  !event.modifierFlags.contains(.option) else { return }
+            switch event.keyCode {
+            case 53:
+                overlayDelegate?.overlayViewDidCancel()
+                return
+            case 36, 76:
+                if state == .selected { overlayDelegate?.overlayViewDidFinishSelection(selectionRect) }
+                return
+            case 48: // Preserve the normal Tab snapping controls below.
+                break
+            case 49 where state == .selecting: // Space repositions an active drag.
+                break
+            default:
+                if state == .idle,
+                   KeyboardShortcutMatcher.matches(event, character: "f", modifiers: []) {
+                    selectionRect = bounds
+                    state = .selected
+                    hoveredSnapRect = nil
+                    overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
+                    needsDisplay = true
+                }
+                return
+            }
+        }
         // Recording setup allows Move and Escape, without activating screenshot
         // tools or output shortcuts. The actual recording uses a separate HUD.
         if isRecording {
@@ -10245,6 +10278,7 @@ class OverlayView: NSView {
         autoQuickSaveMode = false
         autoScrollCaptureMode = false
         autoConfirmMode = false
+        selectionOnlyMode = false
         needsDisplay = true
     }
 }

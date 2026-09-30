@@ -16,6 +16,46 @@ final class StitchTests: XCTestCase {
         let provider = CGDataProvider(data: Data(data) as CFData)!
         return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
     }
+    func testDifferentSizedRegionsMatchAtTheirScreenPositions() throws {
+        let source = texture(width: 600, height: 500)
+        let first = source.cropping(to: CGRect(x: 20, y: 40, width: 360, height: 300))!
+        let second = source.cropping(to: CGRect(x: 140, y: 120, width: 250, height: 200))!
+        let match = try XCTUnwrap(StitchAlignment.matchRegions(previous: first, current: second,
+                                                              expectedOffset: CGPoint(x: 120, y: 80)))
+        XCTAssertEqual(match.offset, CGPoint(x: 120, y: 80))
+        XCTAssertEqual(match.error, 0)
+        let reverse = try XCTUnwrap(StitchAlignment.matchRegions(previous: second, current: first,
+                                                                expectedOffset: CGPoint(x: -120, y: -80)))
+        XCTAssertEqual(reverse.offset, CGPoint(x: -120, y: -80))
+    }
+
+    func testDifferentSizedRegionsCorrectAnInexactScrollEstimate() throws {
+        let source = texture(width: 800, height: 1100)
+        let first = source.cropping(to: CGRect(x: 20, y: 40, width: 700, height: 650))!
+        let second = source.cropping(to: CGRect(x: 50, y: 203, width: 650, height: 600))!
+        let match = try XCTUnwrap(StitchAlignment.matchRegions(previous: first, current: second,
+                                                              expectedOffset: CGPoint(x: 30, y: 150)))
+        XCTAssertEqual(match.offset.x, 30, accuracy: 1)
+        XCTAssertEqual(match.offset.y, 163, accuracy: 1)
+    }
+
+    func testSmallLowerRegionCorrectsInexactScrollWithoutLosingOverlap() throws {
+        let source = texture(width: 400, height: 800)
+        let first = source.cropping(to: CGRect(x: 0, y: 0, width: 400, height: 700))!
+        let second = source.cropping(to: CGRect(x: 0, y: 400, width: 400, height: 200))!
+        let result = try XCTUnwrap(StitchAlignment.matchRegions(previous: first, current: second,
+                                                               expectedOffset: CGPoint(x: 0, y: 300)))
+        XCTAssertEqual(result.offset, CGPoint(x: 0, y: 400))
+    }
+
+    func testDisjointRegionsDoNotInventAnOverlap() {
+        let source = texture(width: 600, height: 500)
+        let first = source.cropping(to: CGRect(x: 0, y: 0, width: 200, height: 180))!
+        let second = source.cropping(to: CGRect(x: 350, y: 260, width: 220, height: 210))!
+        XCTAssertNil(StitchAlignment.matchRegions(previous: first, current: second,
+                                                  expectedOffset: CGPoint(x: 350, y: 260)))
+    }
+
     func testRemoveRowsKeepsSourcePixelsAndAddsTouchingJoin() throws {
         var doc = StitchDocument(pieces: [StitchPiece(image: image())])
         doc.style.visible = false

@@ -1,208 +1,184 @@
 import AppKit
 import Carbon
 
-/// The shortcut captures the same display region repeatedly without taking focus from the page.
+/// Every capture opens the normal selector; Enter collects the session into one editable document.
 @MainActor
 final class StitchCaptureSession: NSObject {
     static let shared = StitchCaptureSession()
-    private var document = StitchDocument()
-    private var pickerWindow: NSWindow?
-    private var hud: NSPanel?
-    private var hudLabel: NSTextField?
-    private var sourceApp: NSRunningApplication?
-    private var displayID: NSNumber?
-    private var displayFrame: CGRect = .zero
-    private var displayPixels: CGSize = .zero
-    private var pixelRect: CGRect = .zero
-    private var lastImage: CGImage?
-    private var lastOrigin: CGPoint = .zero
-    private var scrollHint: CGPoint = .zero
+    private var coordinator: StitchCaptureCoordinator?
+    private var pickers: [StitchRegionSelection] = []
+    private var hud: StitchCaptureHUD?
+    private var selectionCompletion: ((StitchCaptureFrame?) -> Void)?
+    private var referenceScale: CGFloat?
+    private var scrollOffset: CGPoint = .zero
     private var scrollMonitor: Any?
     private var hotKeys: [EventHotKeyRef] = []
     private var handler: EventHandlerRef?
-    private var busy = false
-    private var finishPending = false
+    private var capturing = false
     private var generation = UUID()
-    private var sourcePixelCount = 0
-    private var isActive = false
-    var isPresenting: Bool { isActive || pickerWindow != nil || busy }
+    var isPresenting: Bool { coordinator != nil || !pickers.isEmpty || capturing }
     private let matchingQueue = DispatchQueue(label: "macshot.stitch-alignment", qos: .userInitiated)
 
     func trigger() {
-        guard !busy else { return }
-        if isActive { captureNext(); return }
-        start()
+        guard pickers.isEmpty, !capturing else { return }
+        if let coordinator { coordinator.requestCapture() }
+        else { start() }
     }
+
     private func start() {
-        guard pickerWindow == nil else { return }
         guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
             let alert = NSAlert(); alert.messageText = L("Screen Recording Access Required")
             alert.informativeText = L("Allow macshot in System Settings, then start Stitch Capture again.")
             alert.addButton(withTitle: L("Open Settings")); alert.addButton(withTitle: L("Cancel"))
             if alert.runModal() == .alertFirstButtonReturn, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") { NSWorkspace.shared.open(url) }
             return
         }
-        busy = true; generation = UUID()
-        let token = generation
-        sourceApp = NSWorkspace.shared.frontmostApplication
-        let mouse = NSEvent.mouseLocation
-        ScreenCaptureManager.captureAllScreens { [weak self] captures in
-            guard let self, self.generation == token else { return }
-            self.busy = false
-            guard let capture = captures.first(where: { $0.screen.frame.contains(mouse) }) ?? captures.first else { self.showError(L("Unable to capture this display.")); return }
-            self.displayID = capture.screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-            self.displayFrame = capture.screen.frame
-            self.displayPixels = CGSize(width: capture.image.width, height: capture.image.height)
-            let window = StitchPickerWindow(contentRect: capture.screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            window.level = .screenSaver; window.isReleasedWhenClosed = false
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            let picker = StitchRegionPicker(image: capture.image, frame: CGRect(origin: .zero, size: capture.screen.frame.size))
-            picker.onCancel = { [weak self] in self?.cancel() }
-            picker.onPick = { [weak self] rect in
-                guard let self, let image = Self.copyRegion(capture.image, rect: rect) else { return }
-                self.pixelRect = rect
-                self.pickerWindow?.orderOut(nil); self.pickerWindow = nil
-                self.document = StitchDocument(pieces: [StitchPiece(image: image, label: L("Capture"))])
-                self.lastImage = image; self.lastOrigin = .zero
-                self.sourcePixelCount = image.width * image.height
-                self.isActive = true
-                self.sourceApp?.activate(options: .activateIgnoringOtherApps)
-                self.showHUD(); self.installSessionKeys(); self.startScrollTracking()
+        referenceScale = nil; scrollOffset = .zero
+        selectCapture { [weak self] frame in
+            guard let self else { return }
+            guard let frame else { self.cleanup(); self.showError(L("Unable to capture this display.")); return }
+            let coordinator = StitchCaptureCoordinator(first: frame, capture: { [weak self] completion in
+                self?.selectCapture(completion: completion)
+            }, analyze: { [weak self] previous, current, expectedOffset, completion in
+                self?.matchingQueue.async {
+                    let identical = StitchAlignment.identical(previous, current)
+                    let match = identical ? nil : StitchAlignment.matchRegions(previous: previous, current: current, expectedOffset: expectedOffset)
+                    DispatchQueue.main.async { completion(identical, match) }
+                }
+            })
+            self.coordinator = coordinator
+            coordinator.onUpdate = { [weak self] message in self?.updateHUD(message) }
+            coordinator.onFinish = { [weak self] document in
+                self?.cleanup()
+                StitchEditorWindowController.open(document: document)
             }
-            window.contentView = picker
-            self.pickerWindow = window
-            window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); window.makeFirstResponder(picker)
+            self.updateHUD(L("Add Capture"))
+            self.installSessionKeys(); self.startScrollTracking()
         }
     }
-    private func captureNext() {
-        guard isActive, !busy else { return }
-        guard document.pieces.count < 24, sourcePixelCount < 120_000_000 else { updateHUD(L("Capture limit reached · press Enter to edit")); return }
-        busy = true
-        hud?.orderOut(nil)
-        let token = generation, hint = scrollHint
-        scrollHint = .zero
+
+    private func selectCapture(completion: @escaping (StitchCaptureFrame?) -> Void) {
+        capturing = true
+        selectionCompletion = completion
+        generation = UUID()
+        let token = generation, offset = scrollOffset
+        let excluded = hud?.windowNumbers ?? []
+        hud?.hide()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            guard let self, self.isActive, self.generation == token else { return }
-            ScreenCaptureManager.captureAllScreens { [weak self] captures in
-                guard let self, self.isActive, self.generation == token else { return }
-                guard let capture = captures.first(where: { ($0.screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) == self.displayID }), capture.screen.frame == self.displayFrame,
-                      CGSize(width: capture.image.width, height: capture.image.height) == self.displayPixels,
-                      let image = Self.copyRegion(capture.image, rect: self.pixelRect), let previous = self.lastImage else {
-                    self.busy = false; self.hud?.orderFrontRegardless(); self.updateHUD(L("Display changed or capture failed · finish and start a new session")); if self.finishPending { self.finishPending = false; self.finish() }; return
+            guard let self, self.generation == token else { return }
+            ScreenCaptureManager.captureAllScreens(excludingWindowNumbers: excluded) { [weak self] captures in
+                guard let self, self.generation == token else { return }
+                self.capturing = false
+                guard !captures.isEmpty else {
+                    let callback = self.selectionCompletion; self.selectionCompletion = nil
+                    callback?(nil); return
                 }
-                self.matchingQueue.async { [weak self] in
-                    let match = StitchAlignment.match(previous: previous, current: image, scrollHint: hint)
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, self.isActive, self.generation == token else { return }
-                        self.accept(image, match: match, hint: hint)
+                self.pickers = captures.map { capture in
+                    let picker = StitchRegionSelection(capture: capture)
+                    picker.onCancel = { [weak self] in self?.cancel() }
+                    picker.onPick = { [weak self] rect in
+                        guard let self, self.generation == token else { return }
+                        let scale = CGFloat(capture.image.width) / capture.screen.frame.width
+                        let baseScale = self.referenceScale ?? scale
+                        self.referenceScale = baseScale
+                        guard let image = Self.copyRegion(capture.image, rect: rect, scale: baseScale / scale) else {
+                            self.endSelection(frame: nil); return
+                        }
+                        // AppKit global coordinates are bottom-up; document coordinates are top-down.
+                        let position = StitchCaptureFrame.estimatedPosition(screenFrame: capture.screen.frame,
+                            pixelRect: rect, pixelScale: scale, referenceScale: baseScale, scrollOffset: offset)
+                        self.hud?.close()
+                        let hud = StitchCaptureHUD(screen: capture.screen, pixelRect: rect,
+                                                   imageSize: CGSize(width: capture.image.width, height: capture.image.height))
+                        hud.onCapture = { [weak self] in self?.trigger() }
+                        hud.onFinish = { [weak self] in self?.finish() }
+                        hud.onCancel = { [weak self] in self?.cancel() }
+                        self.hud = hud
+                        self.endSelection(frame: StitchCaptureFrame(image: image, position: position))
                     }
+                    return picker
                 }
+                for picker in self.pickers { picker.show() }
             }
         }
     }
-    // Cropping alone retains the entire display buffer. Own only the selected pixels.
-    private static func copyRegion(_ image: CGImage, rect: CGRect) -> CGImage? {
-        guard let crop = image.cropping(to: rect),
-              let context = CGContext(data: nil, width: crop.width, height: crop.height,
-                                      bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+
+    private func endSelection(frame: StitchCaptureFrame?) {
+        for picker in pickers { picker.dismiss() }
+        pickers = []; capturing = false
+        let completion = selectionCompletion; selectionCompletion = nil
+        completion?(frame)
+    }
+
+    // Own only selected pixels, normalized to the first display's pixel density.
+    private static func copyRegion(_ image: CGImage, rect: CGRect, scale: CGFloat) -> CGImage? {
+        guard let crop = image.cropping(to: rect) else { return nil }
+        let width = max(1, Int((CGFloat(crop.width) * scale).rounded()))
+        let height = max(1, Int((CGFloat(crop.height) * scale).rounded()))
+        guard let context = CGContext(data: nil, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
                                       space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        context.interpolationQuality = .high
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
         return context.makeImage()
     }
-    private func accept(_ image: CGImage, match: StitchAlignment.Match?, hint: CGPoint) {
-        busy = false
-        defer {
-            hud?.orderFrontRegardless()
-            if finishPending { finishPending = false; finish() }
-        }
-        if let match, abs(match.offset.x) < 2 && abs(match.offset.y) < 2 {
-            updateHUD(L("Same content · scroll before the next capture")); return
-        }
-        var origin: CGPoint
-        let label: String
-        if let match {
-            origin = CGPoint(x: lastOrigin.x + match.offset.x, y: lastOrigin.y + match.offset.y)
-            label = L("Overlap matched")
-        } else {
-            if abs(hint.x) > abs(hint.y) && abs(hint.x) > 1 {
-                origin = CGPoint(x: hint.x < 0 ? document.bounds.minX - CGFloat(image.width) : document.bounds.maxX, y: lastOrigin.y)
-            } else {
-                origin = CGPoint(x: lastOrigin.x, y: hint.y < -1 ? document.bounds.minY - CGFloat(image.height) : document.bounds.maxY)
-            }
-            label = L("Estimated · drag to adjust")
-        }
-        var next = document
-        next.pieces.append(StitchPiece(image: image, origin: origin, label: label))
-        guard next.canRender, sourcePixelCount + image.width * image.height <= 120_000_000 else { updateHUD(L("Canvas limit reached · press Enter to edit")); return }
-        document = next; lastImage = image; lastOrigin = origin; sourcePixelCount += image.width * image.height
-        updateHUD(label)
+
+    private func updateHUD(_ message: String) {
+        guard let coordinator else { return }
+        hud?.update(count: coordinator.document.pieces.count, status: message, busy: coordinator.busy)
+        if pickers.isEmpty && !capturing { hud?.show() }
     }
-    private func showHUD() {
-        let panel = NSPanel(contentRect: CGRect(x: displayFrame.midX - 245, y: displayFrame.minY + 28, width: 490, height: 70), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = L("Stitch Capture")
-        panel.level = .floating; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.appearance = NSAppearance(named: .darkAqua)
-        let stack = NSStackView(); stack.orientation = .horizontal; stack.spacing = 12
-        let label = NSTextField(wrappingLabelWithString: ""); label.font = .systemFont(ofSize: 12, weight: .medium)
-        stack.addArrangedSubview(label)
-        stack.addArrangedSubview(NSButton(title: L("Capture"), target: self, action: #selector(captureClicked)))
-        stack.addArrangedSubview(NSButton(title: L("Finish ↵"), target: self, action: #selector(finish)))
-        stack.addArrangedSubview(NSButton(title: L("Cancel"), target: self, action: #selector(cancel)))
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        panel.contentView?.addSubview(stack)
-        if let view = panel.contentView {
-            NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14), stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14), stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)])
-        }
-        hud = panel; hudLabel = label
-        updateHUD(L("Scroll the page, then capture again")); panel.orderFrontRegardless()
-    }
-    private func updateHUD(_ message: String) { hudLabel?.stringValue = "\(document.pieces.count) \(L("captures")) · \(message)" }
-    @objc private func captureClicked() { captureNext() }
     @objc private func finish() {
-        guard isActive else { return }
-        if busy { finishPending = true; updateHUD(L("Finishing capture…")); return }
-        let result = document
-        cleanup()
-        StitchEditorWindowController.open(document: result)
+        guard let coordinator else { cancel(); return }
+        // Enter while selecting finishes the captures already accepted, without saving an empty selection.
+        if selectionCompletion != nil {
+            generation = UUID()
+            coordinator.finish()
+            endSelection(frame: nil)
+        } else { coordinator.finish() }
     }
-    @objc private func cancel() { cleanup(); sourceApp?.activate(options: .activateIgnoringOtherApps) }
+    @objc private func cancel() { cleanup() }
     private func cleanup() {
-        generation = UUID(); busy = false; isActive = false; finishPending = false
-        pickerWindow?.orderOut(nil); pickerWindow = nil; hud?.orderOut(nil); hud = nil; hudLabel = nil
+        generation = UUID(); capturing = false
+        coordinator?.cancel(); coordinator = nil
+        selectionCompletion = nil
+        for picker in pickers { picker.dismiss() }; pickers = []
+        hud?.close(); hud = nil
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }; scrollMonitor = nil
         for key in hotKeys { UnregisterEventHotKey(key) }; hotKeys = []
         if let handler { RemoveEventHandler(handler) }; handler = nil
-        document = StitchDocument(); lastImage = nil; scrollHint = .zero; sourcePixelCount = 0
+        scrollOffset = .zero; referenceScale = nil
     }
     private func startScrollTracking() {
-        scrollHint = .zero
         scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, self.displayFrame.contains(NSEvent.mouseLocation) else { return }
-                self.scrollHint.x -= event.scrollingDeltaX; self.scrollHint.y -= event.scrollingDeltaY
+                self?.scrollOffset.x -= event.scrollingDeltaX
+                self?.scrollOffset.y -= event.scrollingDeltaY
             }
         }
     }
     private func installSessionKeys() {
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let pointer = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetEventDispatcherTarget(), { _, event, data in
+        let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, data in
             guard let event, let data else { return OSStatus(eventNotHandledErr) }
             var id = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
-            guard id.signature == OSType(0x53544348) else { return OSStatus(eventNotHandledErr) }
+            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+            guard status == noErr, id.signature == OSType(0x53544348), id.id == 1 || id.id == 2 else { return OSStatus(eventNotHandledErr) }
             let session = Unmanaged<StitchCaptureSession>.fromOpaque(data).takeUnretainedValue()
             MainActor.assumeIsolated { if id.id == 1 { session.finish() } else { session.cancel() } }
             return noErr
         }, 1, &type, pointer, &handler)
+        guard status == noErr else {
+            updateHUD(L("Use Finish to open the stitch editor")); return
+        }
+        var failedRegistration = false
         for (code, id) in [(kVK_Return, 1), (kVK_Escape, 2), (kVK_ANSI_KeypadEnter, 1)] {
             var ref: EventHotKeyRef?
-            if RegisterEventHotKey(UInt32(code), 0, EventHotKeyID(signature: OSType(0x53544348), id: UInt32(id)), GetApplicationEventTarget(), 0, &ref) == noErr, let ref { hotKeys.append(ref) }
+            if RegisterEventHotKey(UInt32(code), 0, EventHotKeyID(signature: OSType(0x53544348), id: UInt32(id)), GetApplicationEventTarget(), 0, &ref) == noErr, let ref { hotKeys.append(ref) } else { failedRegistration = true }
         }
-        if hotKeys.isEmpty { updateHUD(L("Use Finish to open the stitch editor")) }
+        if failedRegistration { updateHUD(L("Use Finish to open the stitch editor")) }
     }
     private func showError(_ message: String) { let alert = NSAlert(); alert.messageText = message; alert.runModal() }
 }

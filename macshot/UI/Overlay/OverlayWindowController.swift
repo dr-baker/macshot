@@ -128,6 +128,10 @@ class OverlayWindowController {
         }
     }
 
+    private var selectionOnlyHandler: ((NSRect) -> Void)?
+    private var selectionOnlyCancelHandler: (() -> Void)?
+    private var selectionOnlyGeneration = UUID()
+
     private var overlayView: OverlayView?
     private var rootView: ScreenshotOverlayRootView?
     private var overlayWindow: OverlayWindow?
@@ -370,6 +374,29 @@ class OverlayWindowController {
         overlayView?.autoConfirmMode = true
     }
 
+    /// Use the normal selector to return raw screen-local points without image processing.
+    func setSelectionOnlyMode(onSelect: @escaping (NSRect) -> Void,
+                              onCancel: @escaping () -> Void) {
+        selectionOnlyGeneration = UUID()
+        selectionOnlyHandler = onSelect
+        selectionOnlyCancelHandler = onCancel
+        overlayView?.selectionOnlyMode = true
+    }
+
+    private func finishRawSelection(_ rect: NSRect) {
+        guard selectionOnlyHandler != nil else { return }
+        let clipped = rect.intersection(NSRect(origin: .zero, size: screen.frame.size))
+        guard !clipped.isNull, clipped.width >= 1, clipped.height >= 1 else { return }
+        let generation = selectionOnlyGeneration
+        // Let mouseUp finish before the owner dismisses and resets the view.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.selectionOnlyGeneration == generation,
+                  let handler = self.selectionOnlyHandler else { return }
+            self.selectionOnlyHandler = nil
+            handler(clipped)
+        }
+    }
+
     /// Enter recording mode — shows recording toolbar buttons in the normal toolbar.
     func enterRecordingMode() {
         overlayView?.isRecording = true
@@ -430,6 +457,9 @@ class OverlayWindowController {
     /// what makes the next capture instant, since WindowServer's per-window
     /// composition cache survives `orderOut`).
     func dismiss() {
+        selectionOnlyGeneration = UUID()
+        selectionOnlyHandler = nil
+        selectionOnlyCancelHandler = nil
         saveSelectionIfNeeded()
         overlayView?.reset()
         overlayView?.screenshotImage = nil
@@ -452,6 +482,9 @@ class OverlayWindowController {
     /// (display added/removed), or app shutdown. After this the controller is
     /// dead and a new one must be constructed.
     func tearDown() {
+        selectionOnlyGeneration = UUID()
+        selectionOnlyHandler = nil
+        selectionOnlyCancelHandler = nil
         overlayView?.reset()
         overlayView?.overlayDelegate = nil
         overlayWindow?.contentView = nil
@@ -467,7 +500,11 @@ class OverlayWindowController {
         guard let view = overlayView, view.state == .selected,
             view.selectionRect.width > 1, view.selectionRect.height > 1
         else { return }
-        UserDefaults.standard.set(NSStringFromRect(view.selectionRect), forKey: "lastSelectionRect")
+        let rect = view.selectionOnlyMode
+            ? view.selectionRect.intersection(NSRect(origin: .zero, size: screen.frame.size))
+            : view.selectionRect
+        guard !rect.isNull, rect.width > 1, rect.height > 1 else { return }
+        UserDefaults.standard.set(NSStringFromRect(rect), forKey: "lastSelectionRect")
         UserDefaults.standard.set(
             NSStringFromRect(screen.frame), forKey: "lastSelectionScreenFrame")
     }
@@ -569,7 +606,7 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     func overlayViewDidFinishSelection(_ rect: NSRect) {
-        // No-op: window is already key (.nonactivatingPanel + makeKeyAndOrderFront).
+        finishRawSelection(rect)
     }
 
     func overlayViewSelectionDidChange(_ rect: NSRect) {
@@ -582,11 +619,17 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     func overlayViewDidCancel() {
+        let rawCancel = selectionOnlyCancelHandler
         dismiss()
+        if let rawCancel { rawCancel(); return }
         overlayDelegate?.overlayDidCancel(self)
     }
 
     func overlayViewDidConfirm() {
+        if overlayView?.selectionOnlyMode == true {
+            finishRawSelection(selectionRect)
+            return
+        }
         // Snapshot post-processing config before dismissing (view will be torn down)
         let hasEffects = overlayView?.effectsActive ?? false
         let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
@@ -968,6 +1011,10 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     func overlayViewDidRequestQuickSave() {
+        if overlayView?.selectionOnlyMode == true {
+            finishRawSelection(selectionRect)
+            return
+        }
         let appName = resolvedAppName()
         // Snapshot post-processing config before dismissing
         let hasEffects = overlayView?.effectsActive ?? false

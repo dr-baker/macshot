@@ -958,8 +958,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     }
 
     @objc private func stitchCapture() {
-        guard overlayControllers.isEmpty, recordingEngine == nil, scrollCaptureController == nil else { return }
-        StitchCaptureSession.shared.trigger()
+        let session = StitchCaptureSession.shared
+        if session.isPresenting {
+            session.trigger()
+            return
+        }
+        guard canStartCapture, overlayControllers.isEmpty, scrollCaptureController == nil else { return }
+        session.trigger()
     }
 
     // MARK: - Hotkey
@@ -1263,13 +1268,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// delay-capture countdown `isCapturing` is already true and the pending mode
     /// belongs to that accepted (not-yet-consumed) capture.
     private var canStartCapture: Bool {
-        !isCapturing && recordingEngine == nil
+        !isCapturing && recordingEngine == nil && !StitchCaptureSession.shared.isPresenting
     }
 
     private func startCapture(fromMenu: Bool = false) {
-        guard !isCapturing else { return }
-        // Don't allow captures while recording
-        guard recordingEngine == nil else { return }
+        guard canStartCapture else { return }
         let trace = makeCaptureTimingTrace()
         captureTimingTrace = trace
         trace?.mark("startCapture entered fromMenu=\(fromMenu)")

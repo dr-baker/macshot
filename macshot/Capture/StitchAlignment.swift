@@ -25,6 +25,21 @@ enum StitchAlignment {
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return context.makeImage().flatMap { ScrollFrameAnalyzer.frame(for: $0) }
     }
+    /// Compare every pixel, including margins; registration is not a duplicate detector.
+    static func identical(_ a: CGImage, _ b: CGImage) -> Bool {
+        guard a.width == b.width, a.height == b.height else { return false }
+        func bytes(_ image: CGImage) -> Data? {
+            guard let context = CGContext(data: nil, width: image.width, height: image.height,
+                                          bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let data = context.data else { return nil }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return Data(bytes: data, count: image.width * image.height * 4)
+        }
+        guard let first = bytes(a), let second = bytes(b) else { return false }
+        return first == second
+    }
     private static func registeredMatch(previous: CGImage, current: CGImage) -> Match? {
         guard let a = packedFrame(previous), let b = packedFrame(current) else { return nil }
         let request = VNTranslationalImageRegistrationRequest(targetedCGImage: previous)
@@ -63,6 +78,57 @@ enum StitchAlignment {
         }
         return best
     }
+    /// Region captures may differ in size. Screen/scroll position supplies a candidate,
+    /// and shared pixels verify it before we label the placement as matched.
+    static func matchRegions(previous: CGImage, current: CGImage, expectedOffset: CGPoint) -> Match? {
+        guard let a = packedFrame(previous), let b = packedFrame(current) else { return nil }
+        func validate(_ offset: CGPoint) -> Match? {
+            let dx = Int(offset.x.rounded()), dy = Int(offset.y.rounded())
+            let x0 = max(0, dx), x1 = min(a.width, dx + b.width)
+            let y0 = max(0, dy), y1 = min(a.height, dy + b.height)
+            guard x1 - x0 >= 24, y1 - y0 >= 24,
+                  (x1 - x0) * (y1 - y0) >= min(a.width * a.height, b.width * b.height) / 12 else { return nil }
+            var error = 0.0, sum = 0.0, squared = 0.0, count = 0.0
+            for y in stride(from: y0, to: y1, by: max(1, (y1 - y0) / 64)) {
+                for x in stride(from: x0, to: x1, by: max(1, (x1 - x0) / 64)) {
+                    guard let ai = a.offset(x: x, y: y), let bi = b.offset(x: x - dx, y: y - dy) else { continue }
+                    for (ac, bc) in [(a.redOffset, b.redOffset), (a.greenOffset, b.greenOffset), (a.blueOffset, b.blueOffset)] {
+                        let p = Double(a.bytes[ai + ac]), q = Double(b.bytes[bi + bc])
+                        error += abs(p - q); sum += p; squared += p * p; count += 1
+                    }
+                }
+            }
+            guard count > 0, error / count < 4, squared / count - pow(sum / count, 2) > 100 else { return nil }
+            return Match(offset: CGPoint(x: dx, y: dy), error: error / count)
+        }
+        if expectedOffset.x.isFinite, expectedOffset.y.isFinite,
+           abs(expectedOffset.x) <= CGFloat(a.width + b.width), abs(expectedOffset.y) <= CGFloat(a.height + b.height),
+           let expected = validate(expectedOffset) { return expected }
+        // Start the registration samples near the predicted overlap. Cropping both
+        // images at (0,0) loses shared content when a small selection comes from
+        // the bottom or right of a much larger previous capture.
+        let size = CGSize(width: min(previous.width, current.width), height: min(previous.height, current.height))
+        func sampleOrigin(_ image: CGImage, toward offset: CGPoint) -> CGPoint {
+            CGPoint(x: min(CGFloat(image.width) - size.width, max(0, offset.x)).rounded(),
+                    y: min(CGFloat(image.height) - size.height, max(0, offset.y)).rounded())
+        }
+        let predictedA = sampleOrigin(previous, toward: expectedOffset)
+        let predictedB = sampleOrigin(current, toward: CGPoint(x: -expectedOffset.x, y: -expectedOffset.y))
+        var samples = [(predictedA, predictedB)]
+        if predictedA != .zero || predictedB != .zero { samples.append((.zero, .zero)) }
+        for (aOrigin, bOrigin) in samples {
+            guard let first = previous.cropping(to: CGRect(origin: aOrigin, size: size)),
+                  let second = current.cropping(to: CGRect(origin: bOrigin, size: size)) else { continue }
+            let hint = CGPoint(x: expectedOffset.x - aOrigin.x + bOrigin.x,
+                               y: expectedOffset.y - aOrigin.y + bOrigin.y)
+            guard let registration = match(previous: first, current: second, scrollHint: hint) else { continue }
+            let offset = CGPoint(x: registration.offset.x + aOrigin.x - bOrigin.x,
+                                 y: registration.offset.y + aOrigin.y - bOrigin.y)
+            if let match = validate(offset) { return match }
+        }
+        return nil
+    }
+
     static func match(previous: CGImage, current: CGImage, scrollHint: CGPoint = .zero) -> Match? {
         guard previous.width == current.width, previous.height == current.height else { return nil }
         if max(previous.width, previous.height) > 240, let registration = registeredMatch(previous: previous, current: current) { return registration }
