@@ -949,3 +949,10 @@
 "%d px tall" = "%d px tall";
 "%d px wide" = "%d px wide";
 "Match a width or height · Option to ignore snapping" = "Match a width or height · Option to ignore snapping";
+
+// Native Stitch tool options
+"Seams" = "Seams";
+"Pieces" = "Pieces";
+"Canvas" = "Canvas";
+"Stitch editing canvas" = "Área de edição da montagem";
+"Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor." = "Mova as capturas ou arraste uma faixa para remover linhas ou colunas. Os atalhos das outras ferramentas usam o editor de imagem.";

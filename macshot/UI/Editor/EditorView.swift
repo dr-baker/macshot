@@ -17,6 +17,52 @@ struct StitchAnnotationLayer {
 }
 
 class EditorView: OverlayView, NSMenuItemValidation {
+    var stitchMode: StitchCanvasView.Mode = .rows {
+        didSet {
+            guard stitchMode != oldValue else { return }
+            onStitchModeChanged?(stitchMode)
+            refreshStitchOptions()
+        }
+    }
+    var onStitchModeChanged: ((StitchCanvasView.Mode) -> Void)?
+    var onStitchToolChanged: ((Bool) -> Void)?
+    var onStitchOptions: ((StitchOptionsAction, NSView) -> Void)?
+    var onStitchPlacementChanged: ((StitchPlacement) -> Void)?
+    var onStitchImages: (([NSImage]) -> Void)?
+
+    override var currentTool: AnnotationTool {
+        didSet {
+            guard currentTool != oldValue else { return }
+            if currentTool == .stitch || oldValue == .stitch {
+                clearStitchAnnotationSelection()
+                onStitchToolChanged?(currentTool == .stitch)
+            }
+        }
+    }
+
+    override func handleToolbarAction(_ action: ToolbarButtonAction, mousePoint: NSPoint = .zero) {
+        if currentTool == .stitch {
+            switch action {
+            case .beautify, .beautifyStyle, .effects, .invertColors, .removeBackground, .translate, .autoRedact:
+                currentTool = .select
+            default: break
+            }
+        }
+        super.handleToolbarAction(action, mousePoint: mousePoint)
+    }
+
+    func refreshStitchOptions() {
+        guard currentTool == .stitch else { return }
+        rebuildToolbarLayout()
+    }
+
+    override func pasteImageFromClipboard() -> Bool {
+        guard currentTool == .stitch, let onStitchImages else { return super.pasteImageFromClipboard() }
+        guard let image = NSImage(pasteboard: .general), image.size.width > 0, image.size.height > 0 else { return false }
+        onStitchImages([image])
+        return true
+    }
+
     private(set) var stitchDocument: StitchDocument? {
         didSet { cachedSavedStitchDocument = nil }
     }

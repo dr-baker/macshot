@@ -20,6 +20,7 @@ enum AnnotationTool: Int, CaseIterable {
     case colorSampler    // pick color from screen
     case stamp           // emoji or image stamp
     case highlight       // spotlight: dims everything outside the drawn rect
+    case stitch          // editor: collapse bands or arrange captured pieces
 }
 
 enum LineStyle: Int, CaseIterable {
@@ -362,7 +363,7 @@ class Annotation {
     /// Whether this annotation type can be moved
     var isMovable: Bool {
         switch tool {
-        case .select, .translateOverlay:
+        case .select, .translateOverlay, .stitch:
             return false
         default:
             return true
@@ -644,8 +645,8 @@ class Annotation {
             drawLoupe(in: context)
         case .select:
             break  // not a drawable tool
-        case .crop:
-            break  // handled separately in OverlayView
+        case .crop, .stitch:
+            break  // editor image tools do not create annotations
         case .translateOverlay:
             drawTranslateOverlay()
         case .colorSampler:

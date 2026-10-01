@@ -23,11 +23,9 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
     private var overlayView: EditorView?
-    private var annotationRoot: NSView?
     private var stitchController: StitchEditorController?
-    private let modes = NSSegmentedControl(labels: [L("Annotate"), L("Stitch")], trackingMode: .selectOne, target: nil, action: nil)
     private var initialStitchDocument: StitchDocument?
-    private var inStitchMode = false
+    private var inStitchMode: Bool { overlayView?.currentTool == .stitch }
     private var applyingStitchChange = false
     private var topBar: EditorTopBarView?
     private var addCaptureHandler: AddCaptureOverlayHandler?
@@ -87,7 +85,8 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
                         tool: nil, color: nil, strokeWidth: nil, annotations: [])
         activeControllers.append(controller)
         NSApp.setActivationPolicy(.regular)
-        controller.setEditorMode(stitch: true)
+        controller.overlayView?.stitchMode = .move
+        controller.overlayView?.handleToolbarAction(.tool(.stitch))
     }
 
     private func show(image: NSImage, tool: AnnotationTool?, color: NSColor?, strokeWidth: CGFloat?, annotations: [Annotation]) {
@@ -190,20 +189,38 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         // no Done until you draw). Wire the action now; visibility is driven by
         // refreshDoneButtonVisibility() via the view's onContentChanged hook.
         topBar.onDone = { [weak self] in self?.commitToHistory() }
-        topBar.onStitch = { [weak self] in self?.setEditorMode(stitch: true) }
+        view.onStitchToolChanged = { [weak self] enabled in self?.activateStitchTool(enabled) }
+        view.onStitchModeChanged = { [weak self] mode in self?.stitchController?.setMode(mode) }
+        view.onStitchOptions = { [weak self] action, anchor in self?.stitchController?.showOptions(action, at: anchor) }
+        view.onStitchPlacementChanged = { [weak self] placement in self?.stitchController?.setPlacement(placement) }
+        view.onStitchImages = { [weak self] images in self?.stitchController?.append(images) }
         view.onContentChanged = { [weak self] in
             self?.contentRevision &+= 1
             DispatchQueue.main.async { [weak self] in
                 self?.refreshDoneButtonVisibility()
                 self?.stitchController?.updateUndoState()
+                if self?.inStitchMode == true { self?.updateStitchAnnotations() }
             }
         }
         view.onStitchDocumentChanged = { [weak self] in
             guard let self, !self.applyingStitchChange else { return }
             if let doc = self.overlayView?.stitchDocument {
+                let resume = self.inStitchMode && self.stitchController?.isAttached == false
                 self.stitchController?.restore(doc)
+                if resume, let view = self.overlayView {
+                    self.stitchController?.attach(to: view)
+                    self.stitchController?.focus()
+                }
                 self.updateStitchAnnotations()
-            } else if self.inStitchMode { self.setEditorMode(stitch: false) }
+            } else if self.inStitchMode {
+                self.stitchController?.suspend()
+                // Image transforms may briefly clear their editable document.
+                // Resume against the final image only after that transform completes.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.inStitchMode, self.overlayView?.stitchDocument == nil else { return }
+                    self.activateStitchTool(true)
+                }
+            }
             if let cg = self.overlayView?.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                 self.topBar?.updateSizeLabel(width: cg.width, height: cg.height)
             }
@@ -236,20 +253,7 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         // Snapshot the clean baseline for unsaved-changes detection.
         captureCleanBaseline(view)
 
-        annotationRoot = container
         win.contentView = container
-        modes.target = self
-        modes.action = #selector(editorModeChanged)
-        modes.selectedSegment = 0
-        modes.segmentStyle = .rounded
-        modes.controlSize = .small
-        modes.frame = NSRect(x: 0, y: 2, width: 176, height: 24)
-        let accessory = NSTitlebarAccessoryViewController()
-        let modeContainer = NSView(frame: NSRect(x: 0, y: 0, width: 188, height: 28))
-        modeContainer.addSubview(modes)
-        accessory.view = modeContainer
-        accessory.layoutAttribute = .right
-        win.addTitlebarAccessoryViewController(accessory)
         win.makeKeyAndOrderFront(nil)
         win.makeFirstResponder(view)
         NSApp.activate(ignoringOtherApps: true)
@@ -285,77 +289,55 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         self.window = win
         self.overlayView = view
         if let doc = initialStitchDocument { view.installStitchDocument(doc) }
+        if view.currentTool == .stitch { activateStitchTool(true) }
     }
 
-    @objc private func editorModeChanged() { setEditorMode(stitch: modes.selectedSegment == 1) }
-
-    private func setEditorMode(stitch: Bool) {
-        guard let window, let view = overlayView, let annotationRoot else { return }
-        view.commitTextFieldIfNeeded()
+    private func activateStitchTool(_ enabled: Bool) {
+        guard let window, let view = overlayView else { return }
         PopoverHelper.dismiss()
-        if stitch {
-            if view.stitchDocument == nil {
-                guard let image = view.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-                // Choosing an editing tool does not mark an unchanged image dirty.
-                let wasDirty = isDirty()
-                view.installStitchDocument(StitchDocument(pieces: [StitchPiece(image: image)]))
-                if !wasDirty { captureCleanBaseline(view) }
-            }
-            guard let doc = view.stitchDocument else { return }
-            if stitchController == nil {
-                let editor = StitchEditorController(document: doc, window: window)
-                editor.onCheckpoint = { [weak view] in view?.checkpointStitchDocument() }
-                editor.onDocumentChanged = { [weak self, weak view] doc in
-                    guard let self, let view else { return false }
-                    self.applyingStitchChange = true
-                    defer { self.applyingStitchChange = false }
-                    let applied = view.applyStitchDocument(doc, registerUndo: false)
-                    if applied {
-                        let bounds = doc.bounds
-                        self.topBar?.updateSizeLabel(width: Int(bounds.width), height: Int(bounds.height))
-                        self.updateStitchAnnotations()
-                        self.refreshDoneButtonVisibility()
-                    }
-                    return applied
-                }
-                editor.onContextAction = { [weak self] action, anchor in
-                    self?.overlayView?.showToolbarActionMenu(action, anchorView: anchor)
-                }
-                editor.onUndo = { [weak view] in view?.undo() }
-                editor.onRedo = { [weak view] in view?.redo() }
-                editor.canUndo = { [weak view] in !(view?.undoStack.isEmpty ?? true) }
-                editor.canRedo = { [weak view] in !(view?.redoStack.isEmpty ?? true) }
-                editor.onAddCapture = { [weak self] in self?.overlayViewDidRequestAddCapture() }
-                editor.onAction = { [weak self] action, anchor in
-                    guard let self else { return }
-                    switch action {
-                    case .share: self.overlayViewDidRequestShare(anchorView: anchor)
-                    case .copy, .save, .pin, .ocr, .upload: self.overlayView?.handleToolbarAction(action)
-                    default:
-                        self.setEditorMode(stitch: false)
-                        self.overlayView?.handleToolbarAction(action)
-                    }
-                }
-                _ = editor.makeView()
-                stitchController = editor
-            } else { stitchController?.restore(doc) }
-            guard let root = stitchController?.rootView else { return }
-            root.frame = annotationRoot.frame
-            root.autoresizingMask = [.width, .height]
-            window.contentView = root
-            inStitchMode = true
-            updateStitchAnnotations()
-            root.layoutSubtreeIfNeeded()
-            stitchController?.focus()
-        } else {
+        guard enabled else {
             stitchController?.suspend()
-            annotationRoot.frame = window.contentView?.frame ?? annotationRoot.frame
-            window.contentView = annotationRoot
-            view.rebuildToolbarLayout()
             window.makeFirstResponder(view)
-            inStitchMode = false
+            return
         }
-        modes.selectedSegment = stitch ? 1 : 0
+        view.commitTextFieldIfNeeded()
+        if view.stitchDocument == nil {
+            guard let image = view.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            let wasDirty = isDirty()
+            view.installStitchDocument(StitchDocument(pieces: [StitchPiece(image: image)]))
+            if !wasDirty { captureCleanBaseline(view) }
+        }
+        guard let doc = view.stitchDocument else { return }
+        if stitchController == nil {
+            let editor = StitchEditorController(document: doc, window: window)
+            editor.onCheckpoint = { [weak view] in view?.checkpointStitchDocument() }
+            editor.onDocumentChanged = { [weak self, weak view] doc in
+                guard let self, let view else { return false }
+                self.applyingStitchChange = true
+                defer { self.applyingStitchChange = false }
+                let applied = view.applyStitchDocument(doc, registerUndo: false)
+                if applied {
+                    let bounds = doc.bounds
+                    self.topBar?.updateSizeLabel(width: Int(bounds.width), height: Int(bounds.height))
+                    self.updateStitchAnnotations()
+                    self.refreshDoneButtonVisibility()
+                }
+                return applied
+            }
+            editor.onUndo = { [weak view] in view?.undo() }
+            editor.onRedo = { [weak view] in view?.redo() }
+            editor.canUndo = { [weak view] in !(view?.undoStack.isEmpty ?? true) }
+            editor.canRedo = { [weak view] in !(view?.redoStack.isEmpty ?? true) }
+            editor.onAction = { [weak self] action, anchor in
+                if action == .share { self?.overlayViewDidRequestShare(anchorView: anchor) }
+                else { self?.overlayView?.handleToolbarAction(action) }
+            }
+            stitchController = editor
+        } else { stitchController?.restore(doc) }
+        stitchController?.attach(to: view)
+        updateStitchAnnotations()
+        view.refreshStitchOptions()
+        stitchController?.focus()
     }
 
     private func updateStitchAnnotations() {
@@ -442,7 +424,6 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         NotificationCenter.default.removeObserver(self)
         stitchController?.suspend()
         stitchController = nil
-        annotationRoot = nil
         overlayView?.reset()
         overlayView?.overlayDelegate = nil
         window?.contentView = nil
@@ -734,6 +715,7 @@ extension DetachedEditorWindowController: OverlayViewDelegate {
 
     func overlayViewDidRequestAddCapture() {
         guard let editorWindow = window else { return }
+        overlayView?.handleToolbarAction(.tool(.stitch))
 
         // Hide editor window while capturing
         editorWindow.orderOut(nil)
@@ -782,10 +764,8 @@ extension DetachedEditorWindowController: OverlayViewDelegate {
     private func addCapturedImage(_ image: NSImage) {
         guard let view = overlayView else { return }
 
-        if view.stitchDocument != nil {
-            if !inStitchMode { setEditorMode(stitch: true) }
-            stitchController?.append([image])
-        } else { view.addCaptureImage(image) }
+        if !inStitchMode { view.handleToolbarAction(.tool(.stitch)) }
+        stitchController?.append([image])
 
         // Update top bar size label
         if let cg = view.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil),

@@ -309,7 +309,7 @@ class ToolbarLayout {
     static func bottomButtons(
         selectedTool: AnnotationTool, selectedColor: NSColor, beautifyEnabled: Bool = false,
         beautifyStyleIndex: Int = 0, hasAnnotations: Bool = false, isRecording: Bool = false,
-        effectsActive: Bool = false
+        effectsActive: Bool = false, isEditorMode: Bool = false
     ) -> [ToolbarButton] {
         // Hide the bottom bar entirely while recording
         if isRecording { return [] }
@@ -357,9 +357,11 @@ class ToolbarLayout {
             (.stamp, "face.smiling", L("Stamp / Emoji")),
             (.colorSampler, "eyedropper", L("Color Picker")),
             (.measure, "ruler", L("Measure (px)")),
+            (.stitch, "scissors", L("Stitch")),
         ]
 
         for (tool, symbol, tip) in tools {
+            if tool == .stitch && !isEditorMode { continue }
             // Skip if disabled
             if let enabledRawValues = enabledRawValues, !enabledRawValues.contains(tool.rawValue) {
                 continue

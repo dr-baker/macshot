@@ -4,6 +4,15 @@ import AppKit
 final class StitchCanvasView: NSView, NSMenuItemValidation {
     enum Mode: Int { case move, rows, columns }
     var document = StitchDocument()
+    weak var inlineEditor: EditorView? {
+        didSet {
+            setAccessibilityLabel(L(inlineEditor == nil ? "Stitch canvas" : "Stitch editing canvas"))
+            setAccessibilityHelp(L(inlineEditor == nil
+                ? "Choose Remove Rows or Remove Columns and drag across a gap. Choose Move to reposition pieces."
+                : "Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor."))
+            syncInlineGeometry()
+        }
+    }
     /// Packed placement is committed by the owner on drop; dragging stays a local preview.
     var packed = false {
         didSet { if oldValue != packed { cancelGesture() } }
@@ -41,7 +50,11 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     var onMode: ((Mode) -> Void)?
     var onZoom: ((CGFloat) -> Void)?
     var onFit: (() -> Void)?
-    private let inset: CGFloat = 80
+    private var inset: CGFloat { inlineEditor == nil ? 80 : 0 }
+    private var effectiveZoom: CGFloat {
+        let projection = inlineEditor != nil && bounds.width > 0 ? frame.width / bounds.width : 1
+        return max(0.0001, (enclosingScrollView?.magnification ?? 1) * projection)
+    }
     private var start: CGPoint?
     private var end: CGPoint?
     private var originalOrigin: CGPoint?
@@ -73,10 +86,20 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         if !value.pieces.contains(where: { $0.id == hoveredID }) { hoveredID = nil }
         self.preview = preview
         if dragBounds == nil, value.canRender {
-            setFrameSize(NSSize(width: value.bounds.width + inset * 2, height: value.bounds.height + inset * 2))
+            if inlineEditor != nil { syncInlineGeometry() }
+            else { setFrameSize(NSSize(width: value.bounds.width + inset * 2, height: value.bounds.height + inset * 2)) }
         }
         needsDisplay = true
     }
+    /// The editor owns point geometry; this child retains source-pixel coordinates.
+    func syncInlineGeometry() {
+        guard let inlineEditor, document.canRender else { return }
+        frame = inlineEditor.selectionRect
+        bounds = CGRect(origin: .zero, size: contentBounds.size)
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
     private func canvasPoint(_ event: NSEvent) -> CGPoint {
         let p = convert(event.locationInWindow, from: nil)
         return CGPoint(x: p.x - inset + contentBounds.minX, y: p.y - inset + contentBounds.minY)
@@ -95,7 +118,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         NSColor(white: 0.15, alpha: 1).setFill()
         bounds.fill()
         guard document.canRender else { return }
-        let zoom = enclosingScrollView?.magnification ?? 1
+        let zoom = effectiveZoom
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
@@ -301,13 +324,13 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         let p = canvasPoint(event)
         end = p
         if mode == .move, let id = selectedID, let originalOrigin {
-            let zoom = enclosingScrollView?.magnification ?? 1
+            let zoom = effectiveZoom
             guard moving || hypot(p.x - start.x, p.y - start.y) * zoom >= 3 else { return }
             moving = true
             NSCursor.closedHand.set()
             var origin = CGPoint(x: originalOrigin.x + p.x - start.x, y: originalOrigin.y + p.y - start.y)
             if !packed, !event.modifierFlags.contains(.option) {
-                origin = document.snappedOrigin(for: id, proposed: origin, tolerance: 12 / (enclosingScrollView?.magnification ?? 1))
+                origin = document.snappedOrigin(for: id, proposed: origin, tolerance: 12 / effectiveZoom)
                 alignmentGuides = guides(for: id, origin: origin)
             } else {
                 alignmentGuides = []
@@ -358,7 +381,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
                 else { horizontal[y] = range }
             }
         }
-        let extensionLength = 8 / (enclosingScrollView?.magnification ?? 1)
+        let extensionLength = 8 / effectiveZoom
         return vertical.sorted(by: { $0.key < $1.key }).map { x, range in
             AlignmentGuide(start: CGPoint(x: x, y: range.lowerBound - extensionLength), end: CGPoint(x: x, y: range.upperBound + extensionLength))
         } + horizontal.sorted(by: { $0.key < $1.key }).map { y, range in
@@ -377,6 +400,16 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         return true
     }
     override func keyDown(with event: NSEvent) {
+        if let inlineEditor {
+            let pieceKey = mode == .move && !event.modifierFlags.contains(.command)
+                && [51, 117, 123, 124, 125, 126].contains(Int(event.keyCode))
+            let stitchEscape = event.keyCode == 53 && !PopoverHelper.isVisible
+                && (start != nil || selectedID != nil)
+            if !stitchEscape && !pieceKey {
+                inlineEditor.keyDown(with: event)
+                return
+            }
+        }
         if let command = EditorCommandShortcutManager.action(for: event) {
             if command == .undo { onUndo?() } else { onRedo?() }
             return

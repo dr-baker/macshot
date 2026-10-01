@@ -263,7 +263,7 @@ class OverlayView: NSView {
     /// Last tool the user explicitly picked — persisted across app launches.
     private static var lastUsedTool: AnnotationTool = {
         if let raw = UserDefaults.standard.object(forKey: "lastUsedTool") as? Int,
-           let tool = AnnotationTool(rawValue: raw) {
+           let tool = AnnotationTool(rawValue: raw), tool != .stitch {
             return tool
         }
         return .arrow
@@ -283,7 +283,7 @@ class OverlayView: NSView {
     }() {
         didSet {
             // Persist drawing tool choices; skip transient/mode tools
-            if OverlayView.shouldRememberLastTool && currentTool != .select && currentTool != .loupe {
+            if OverlayView.shouldRememberLastTool && currentTool != .select && currentTool != .loupe && currentTool != .stitch {
                 OverlayView.lastUsedTool = currentTool
                 UserDefaults.standard.set(currentTool.rawValue, forKey: "lastUsedTool")
             }
@@ -3448,7 +3448,7 @@ class OverlayView: NSView {
         }
         switch currentTool {
         case .pencil, .line, .arrow, .rectangle, .ellipse, .marker, .number, .loupe, .measure,
-            .pixelate, .stamp, .highlight:
+            .pixelate, .stamp, .highlight, .stitch:
             return true
         case .text:
             return true
@@ -5189,7 +5189,7 @@ class OverlayView: NSView {
             selectedTool: currentTool, selectedColor: currentColor,
             beautifyEnabled: beautifyEnabled, beautifyStyleIndex: beautifyStyleIndex,
             hasAnnotations: movableAnnotations, isRecording: isRecording,
-            effectsActive: effectsActive
+            effectsActive: effectsActive, isEditorMode: isEditorMode
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -5262,6 +5262,9 @@ class OverlayView: NSView {
             // Don't overwrite annotation-specific options when editing a selected annotation
             if let ann = selectedAnnotation, toolOptionsRowView?.editingAnnotation === ann {
                 // Already showing this annotation's options — skip rebuild
+            } else if currentTool == .stitch, toolOptionsRowView?.currentTool == .stitch,
+                !showBeautifyInOptionsRow {
+                toolOptionsRowView?.refreshStitchState()
             } else {
                 toolOptionsRowView?.rebuild(for: currentTool)
             }
@@ -8221,6 +8224,7 @@ class OverlayView: NSView {
         guard !selectionOnlyMode else { return }
         switch action {
         case .tool(let tool):
+            guard tool != .stitch || isEditorMode else { return }
             commitTextFieldIfNeeded()
             showBeautifyInOptionsRow = false  // switch back to tool options
             currentTool = tool

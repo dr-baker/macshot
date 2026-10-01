@@ -1,5 +1,4 @@
 import AppKit
-import UniformTypeIdentifiers
 
 private final class StitchPiecesStack: NSStackView {
     override var isFlipped: Bool { true }
@@ -12,35 +11,31 @@ private final class StitchSlider: NSSlider {
     override func keyDown(with event: NSEvent) { onBegin?(); super.keyDown(with: event); onEnd?() }
 }
 
+enum StitchOptionsAction { case seams, pieces, canvas }
+
+/// Edits source pieces on the main editor canvas; the host owns all chrome and output actions.
 @MainActor
 final class StitchEditorController: NSObject {
     private weak var window: NSWindow?
+    private weak var editorView: EditorView?
     var onCheckpoint: (() -> Void)?
     var onDocumentChanged: ((StitchDocument) -> Bool)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var canUndo: (() -> Bool)?
     var canRedo: (() -> Bool)?
-    var onContextAction: ((ToolbarButtonAction, NSView) -> Void)?
     var onAction: ((ToolbarButtonAction, NSView?) -> Void)?
-    var onAddCapture: (() -> Void)?
     var annotationLayers: [UUID: StitchAnnotationLayer] = [:] { didSet { canvas.annotationLayers = annotationLayers } }
     var unattachedAnnotationPreview: CGImage? { didSet { canvas.unattachedAnnotationPreview = unattachedAnnotationPreview } }
     var annotationPreview: CGImage? { didSet { canvas.annotationPreview = annotationPreview } }
     private var restoring = false
     private var adjustingStyle = false
-    private(set) var rootView: NSView!
     private let canvas = StitchCanvasView(frame: .zero)
-    private let scroll = NSScrollView()
+    var isAttached: Bool { canvas.superview != nil }
     private var document: StitchDocument
     private var dragSnapshot: StitchDocument?
-    private let status = NSTextField(labelWithString: "")
-    private let topBar = StitchEditorTopBar(frame: .zero)
-    private let toolStrip = ToolbarStripView(orientation: .horizontal)
-    private let actionStrip = ToolbarStripView(orientation: .vertical)
     private var seamOptions: NSView!
     private let pieceScroll = NSScrollView()
-    private var zoomObservation: NSKeyValueObservation?
     private let piecesStack = StitchPiecesStack()
     private let pieceCountLabel = NSTextField(labelWithString: "")
     private var sliders: [StitchSlider] = []
@@ -57,7 +52,7 @@ final class StitchEditorController: NSObject {
     private let backgroundChoice = NSPopUpButton()
     private var pieceActions: [NSButton] = []
     private var feedbackGeneration = UUID()
-    private let tooltip = StitchTooltipView()
+    private let feedback = StitchTooltipView()
 
     init(document: StitchDocument, window: NSWindow) {
         self.document = document
@@ -65,114 +60,21 @@ final class StitchEditorController: NSObject {
         super.init()
     }
 
-    func makeView() -> NSView {
-        let root = NSView()
-        rootView = root
-
-        scroll.contentView = CenteringClipView()
-        scroll.documentView = canvas
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.allowsMagnification = true
-        scroll.minMagnification = 0.025
-        scroll.maxMagnification = 8
-        scroll.horizontalScrollElasticity = .none
-        scroll.verticalScrollElasticity = .none
-        scroll.backgroundColor = NSColor(white: 0.15, alpha: 1)
-        scroll.automaticallyAdjustsContentInsets = false
-        scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 84, right: 50)
-        scroll.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: -84, right: -50)
-
-        topBar.onAdd = { [weak self] in self?.onAddCapture?() }
-        topBar.onPieces = { [weak self] anchor in self?.showPieces(at: anchor) }
-        topBar.onFit = { [weak self] in self?.fitCanvas() }
-        topBar.onZoom = { [weak self] value in self?.setZoom(value) }
-        topBar.onCanvas = { [weak self] anchor in self?.showCanvasOptions(at: anchor) }
-        topBar.onPlacement = { [weak self] placement in
-            guard let self, self.document.placement != placement else { return }
-            var next = self.document
-            guard next.setPlacement(placement), next.canRender else { return }
-            self.checkpoint(L("Change arrangement")); self.document = next
-            self.refresh(); self.fitCanvas()
-            self.showFeedback(placement == .packed ? L("Packed · drag pieces to rearrange") : L("Free Move · drag pieces anywhere"))
+    func attach(to editor: EditorView) {
+        editorView = editor
+        canvas.inlineEditor = editor
+        if canvas.superview !== editor { editor.addSubview(canvas) }
+        canvas.mode = editor.stitchMode
+        if seamOptions == nil {
+            seamOptions = makeSeamOptions()
+            piecesStack.orientation = .vertical
+            piecesStack.alignment = .leading
+            piecesStack.spacing = 4
+            pieceScroll.hasVerticalScroller = true
+            pieceScroll.autohidesScrollers = true
+            pieceScroll.drawsBackground = false
+            pieceScroll.documentView = piecesStack
         }
-        zoomObservation = scroll.observe(\.magnification, options: [.new]) { [weak self] _, change in
-            guard let value = change.newValue else { return }
-            MainActor.assumeIsolated { self?.topBar.updateZoom(value) }
-        }
-        toolStrip.setButtons(toolButtons())
-        toolStrip.onClick = { [weak self] action in self?.handleTool(action) }
-        toolStrip.onRightClick = { [weak self] action, anchor in
-            switch action {
-            case .adjustSelection, .scrollCapture, .effects: self?.showSeams(at: anchor)
-            default: break
-            }
-        }
-        actionStrip.setButtons(ToolbarLayout.rightButtons(isEditorMode: true))
-        actionStrip.onClick = { [weak self] action in
-            guard let self else { return }
-            let anchor = self.actionStrip.buttonViews.first { button in
-                if case .share = action, case .share = button.action { return true }
-                return false
-            }
-            self.onAction?(action, anchor)
-        }
-        actionStrip.onRightClick = { [weak self] action, anchor in self?.onContextAction?(action, anchor) }
-        for strip in [toolStrip, actionStrip] {
-            strip.onHover = { [weak self, weak strip] action, hovered in
-                guard let self, let strip else { return }
-                self.showTooltip(action, strip: strip, hovered: hovered)
-            }
-            for button in strip.buttonViews {
-                button.toolTip = nil
-                button.setAccessibilityLabel(button.tooltipText)
-            }
-        }
-        seamOptions = makeSeamOptions()
-        piecesStack.orientation = .vertical
-        piecesStack.alignment = .leading
-        piecesStack.spacing = 4
-        pieceScroll.hasVerticalScroller = true
-        pieceScroll.autohidesScrollers = true
-        pieceScroll.drawsBackground = false
-        pieceScroll.documentView = piecesStack
-
-        status.font = .systemFont(ofSize: 11)
-        status.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.7)
-        status.lineBreakMode = .byTruncatingTail
-        let statusBar = StitchOptionsView(frame: .zero)
-        status.translatesAutoresizingMaskIntoConstraints = false
-        statusBar.addSubview(status)
-        for view in [scroll, topBar, toolStrip, actionStrip, statusBar] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: root.topAnchor),
-            topBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            topBar.heightAnchor.constraint(equalToConstant: 32),
-            scroll.topAnchor.constraint(equalTo: topBar.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            toolStrip.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            toolStrip.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
-            toolStrip.widthAnchor.constraint(equalToConstant: toolStrip.frame.width),
-            toolStrip.heightAnchor.constraint(equalToConstant: toolStrip.frame.height),
-            actionStrip.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
-            actionStrip.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
-            actionStrip.widthAnchor.constraint(equalToConstant: actionStrip.frame.width),
-            actionStrip.heightAnchor.constraint(equalToConstant: actionStrip.frame.height),
-            statusBar.centerXAnchor.constraint(equalTo: toolStrip.centerXAnchor),
-            statusBar.bottomAnchor.constraint(equalTo: toolStrip.topAnchor, constant: -6),
-            statusBar.heightAnchor.constraint(equalToConstant: 26),
-            statusBar.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -130),
-            status.leadingAnchor.constraint(equalTo: statusBar.leadingAnchor, constant: 8),
-            status.trailingAnchor.constraint(equalTo: statusBar.trailingAnchor, constant: -8),
-            status.centerYAnchor.constraint(equalTo: statusBar.centerYAnchor),
-        ])
         canvas.onSelect = { [weak self] _ in self?.refreshPieces() }
         canvas.onCut = { [weak self] axis, from, to in
             guard let self else { return }
@@ -200,17 +102,27 @@ final class StitchEditorController: NSObject {
         canvas.onRedo = { [weak self] in self?.redoAction() }
         canvas.onSave = { [weak self] in self?.onAction?(.save, nil) }
         canvas.onMode = { [weak self] mode in self?.setMode(mode) }
-        canvas.onZoom = { [weak self] value in self?.setZoom(value) }
-        canvas.onFit = { [weak self] in self?.fitCanvas() }
         canvas.selectedID = nil
         refresh()
-        status.stringValue = toolHint
-        return root
+    }
+
+    func showOptions(_ action: StitchOptionsAction, at anchor: NSView) {
+        switch action {
+        case .seams: showSeams(at: anchor)
+        case .pieces: showPieces(at: anchor)
+        case .canvas: showCanvasOptions(at: anchor)
+        }
+    }
+
+    func setPlacement(_ placement: StitchPlacement) {
+        guard document.placement != placement else { return }
+        var next = document
+        guard next.setPlacement(placement), next.canRender else { return }
+        checkpoint(L("Change arrangement")); document = next; refresh()
     }
 
     func focus() {
         window?.makeFirstResponder(canvas)
-        fitCanvas()
     }
 
     func restore(_ value: StitchDocument) {
@@ -226,11 +138,13 @@ final class StitchEditorController: NSObject {
     func suspend() {
         canvas.cancelEditingGesture()
         PopoverHelper.dismiss()
-        tooltip.removeFromSuperview()
+        feedback.removeFromSuperview()
+        canvas.removeFromSuperview()
+        canvas.inlineEditor = nil
         cancelPreview()
     }
 
-    func updateUndoState() { updateTools() }
+    func updateUndoState() { editorView?.refreshStitchOptions() }
 
     private func button(_ symbol: String, title: String, action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
@@ -284,14 +198,14 @@ final class StitchEditorController: NSObject {
         return view
     }
     private func showSeams(at anchor: NSView) {
-        tooltip.removeFromSuperview()
+        feedback.removeFromSuperview()
         if activeOptions == .seams, PopoverHelper.toggleClosedIfOpen() { return }
         activeOptions = .seams
         PopoverHelper.show(seamOptions, size: seamOptions.frame.size,
                            relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
     }
     private func showPieces(at anchor: NSView) {
-        tooltip.removeFromSuperview()
+        feedback.removeFromSuperview()
         if activeOptions == .pieces, PopoverHelper.toggleClosedIfOpen() { return }
         activeOptions = .pieces
         refreshPieces()
@@ -325,7 +239,7 @@ final class StitchEditorController: NSObject {
         PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
     }
     private func showCanvasOptions(at anchor: NSView) {
-        tooltip.removeFromSuperview()
+        feedback.removeFromSuperview()
         if activeOptions == .canvas, PopoverHelper.toggleClosedIfOpen() { return }
         activeOptions = .canvas
         let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 264, height: 100))
@@ -366,35 +280,17 @@ final class StitchEditorController: NSObject {
     @objc private func changeCanvasColor() {
         checkpoint(L("Change canvas background")); document.background = .color(canvasColor.color); refresh()
     }
-    private var toolHint: String {
-        switch canvas.mode {
-        case .move: return document.placement == .packed ? L("Packed · drag pieces to rearrange") : L("Drag a piece. Edges snap together; Option disables snapping.")
-        case .rows, .columns: return L("Drag across the band to remove. Release to join the remaining edges.")
-        }
-    }
-    private func showTooltip(_ action: ToolbarButtonAction, strip: ToolbarStripView, hovered: Bool) {
-        tooltip.removeFromSuperview()
-        guard hovered, !PopoverHelper.isVisible, let root = window?.contentView,
-              let button = toolbarButton(action, in: strip) else { return }
-        let text = button.tooltipText
-        let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)])
-        let frame = button.convert(button.bounds, to: root)
-        let width = size.width + 12, height = size.height + 6
-        let x = strip === toolStrip ? frame.midX - width / 2 : frame.minX - width - 6
-        let y = strip === toolStrip ? toolStrip.frame.maxY + 4 : frame.midY - height / 2
-        tooltip.frame = NSRect(x: max(2, min(x, root.bounds.maxX - width - 2)),
-                               y: max(2, min(y, root.bounds.maxY - height - 2)), width: width, height: height)
-        tooltip.text = text; root.addSubview(tooltip)
-    }
-    private func toolbarButton(_ action: ToolbarButtonAction, in strip: ToolbarStripView) -> ToolbarButtonView? {
-        strip.buttonViews.first { $0.action == action }
-    }
     private func showFeedback(_ text: String) {
+        guard let editor = editorView, let parent = editor.chromeParentView ?? editor.superview else { return }
         let token = UUID(); feedbackGeneration = token
-        status.stringValue = text
+        let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)])
+        feedback.text = text
+        feedback.frame = CGRect(x: max(8, parent.bounds.midX - (size.width + 12) / 2),
+                                y: 108, width: min(parent.bounds.width - 16, size.width + 12), height: size.height + 6)
+        parent.addSubview(feedback)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let self, self.feedbackGeneration == token else { return }
-            self.status.stringValue = self.toolHint
+            self.feedback.removeFromSuperview()
         }
     }
     private func checkpoint(_ title: String) { onCheckpoint?() }
@@ -407,15 +303,12 @@ final class StitchEditorController: NSObject {
     private func refresh() {
         canvas.refresh(document, preview: nil)
         canvas.packed = document.placement == .packed
-        topBar.updatePlacement(document.placement)
         let s = document.style
         for (index, value) in [s.blur, s.feather, s.lineWidth, s.wave].enumerated() {
             sliders[index].doubleValue = Double(value); values[index].stringValue = String(format: "%.1f px", Double(value))
         }
         color.color = s.color; seamToggle.state = s.visible ? .on : .off
-        let b = document.bounds
-        topBar.update(width: Int(b.width), height: Int(b.height), pieces: document.pieces.count)
-        updateTools()
+        editorView?.refreshStitchOptions()
         refreshPieces(); scheduleRender()
     }
     private func cancelPreview() {
@@ -426,6 +319,7 @@ final class StitchEditorController: NSObject {
     }
     private func scheduleRender() {
         if !adjustingStyle { publish() }
+        canvas.syncInlineGeometry()
         cancelPreview()
         let snapshot = document
         let generation = renderGeneration
@@ -442,7 +336,7 @@ final class StitchEditorController: NSObject {
             guard !cancellation.isCancelled else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.renderGeneration == generation,
-                      !cancellation.isCancelled, self.rootView.window != nil else { return }
+                      !cancellation.isCancelled, self.canvas.window != nil else { return }
                 self.canvas.backgroundPreview = result.1
                 self.canvas.refresh(snapshot, preview: result.0)
                 self.pendingRender = nil
@@ -506,41 +400,19 @@ final class StitchEditorController: NSObject {
         if dragSnapshot == nil { cancelPreview(); dragSnapshot = document }
         let old = document.pieces[index].origin
         document.pieces[index].origin = origin
-        if !document.canRender { document.pieces[index].origin = old; status.stringValue = L("Canvas limit reached. Move pieces closer together.") }
+        if !document.canRender { document.pieces[index].origin = old; showFeedback(L("Canvas limit reached. Move pieces closer together.")) }
         canvas.document = document; canvas.needsDisplay = true
         if final {
             if let snapshot = dragSnapshot, zip(snapshot.pieces, document.pieces).contains(where: { $0.origin != $1.origin }) { checkpoint(L("Move piece")) }
             dragSnapshot = nil; refresh()
         }
     }
-    private func setMode(_ mode: StitchCanvasView.Mode, focusCanvas: Bool = true) {
+    func setMode(_ mode: StitchCanvasView.Mode, focusCanvas: Bool = true) {
         canvas.mode = mode
-        feedbackGeneration = UUID(); status.stringValue = toolHint
-        updateTools()
+        feedback.removeFromSuperview()
+        if editorView?.stitchMode != mode { editorView?.stitchMode = mode }
+        editorView?.refreshStitchOptions()
         if focusCanvas { window?.makeFirstResponder(canvas) }
-    }
-    private func toolButtons() -> [ToolbarButton] {
-        [
-            ToolbarButton(action: .moveSelection, sfSymbol: "arrow.up.and.down.and.arrow.left.and.right", tooltip: L("Move") + " (V)", isSelected: canvas.mode == .move),
-            ToolbarButton(action: .adjustSelection, sfSymbol: "rectangle.split.1x2", tooltip: L("Remove Rows") + " (R)", isSelected: canvas.mode == .rows, hasContextMenu: true),
-            ToolbarButton(action: .scrollCapture, sfSymbol: "rectangle.split.2x1", tooltip: L("Remove Columns") + " (C)", isSelected: canvas.mode == .columns, hasContextMenu: true),
-            ToolbarButton(action: .effects, sfSymbol: "slider.horizontal.3", tooltip: L("Change seam")),
-            ToolbarButton(action: .undo, sfSymbol: "arrow.uturn.backward", tooltip: L("Undo"), tintColor: ToolbarLayout.iconColor.withAlphaComponent((canUndo?() ?? false) ? 1 : 0.3)),
-            ToolbarButton(action: .redo, sfSymbol: "arrow.uturn.forward", tooltip: L("Redo"), tintColor: ToolbarLayout.iconColor.withAlphaComponent((canRedo?() ?? false) ? 1 : 0.3)),
-        ]
-    }
-    private func updateTools() { toolStrip.updateState(from: toolButtons()) }
-    private func handleTool(_ action: ToolbarButtonAction) {
-        switch action {
-        case .moveSelection: setMode(.move)
-        case .adjustSelection: setMode(.rows)
-        case .scrollCapture: setMode(.columns)
-        case .effects:
-            if let anchor = toolStrip.buttonViews.dropFirst(3).first { showSeams(at: anchor) }
-        case .undo: undoAction()
-        case .redo: redoAction()
-        default: break
-        }
     }
     @objc private func changeStyle(_ sender: NSSlider) {
         switch sender.tag { case 0: document.style.blur = sender.doubleValue; case 1: document.style.feather = sender.doubleValue; case 2: document.style.lineWidth = sender.doubleValue; default: document.style.wave = sender.doubleValue }
@@ -553,7 +425,7 @@ final class StitchEditorController: NSObject {
         let piece = document.pieces[sender.tag]
         setMode(.move, focusCanvas: false); canvas.selectedID = piece.id
         refreshPieces()
-        let rect = piece.frame.offsetBy(dx: 80 - document.bounds.minX, dy: 80 - document.bounds.minY)
+        let rect = piece.frame.offsetBy(dx: -document.bounds.minX, dy: -document.bounds.minY)
         canvas.scrollToVisible(rect.insetBy(dx: -12, dy: -12))
         if !PopoverHelper.isVisible { window?.makeFirstResponder(canvas) }
     }
@@ -582,32 +454,23 @@ final class StitchEditorController: NSObject {
         guard let index = document.pieces.firstIndex(where: { $0.id == canvas.selectedID }) else { return }
         reorderPiece(to: index - 1)
     }
-    @objc private func undoAction() { onUndo?(); updateTools() }
-    @objc private func redoAction() { onRedo?(); updateTools() }
-    @objc private func fitCanvas() {
-        let area = scroll.contentSize
-        let size = canvas.bounds.size
-        guard size.width > 0, size.height > 0 else { return }
-        setZoom(min(1, min((area.width - 50) / size.width, (area.height - 84) / size.height)), fit: true)
-    }
-    private func setZoom(_ value: CGFloat, fit: Bool = false) {
-        let zoom = min(scroll.maxMagnification, max(scroll.minMagnification, value))
-        let visible = scroll.documentVisibleRect
-        let center = fit ? NSPoint(x: canvas.bounds.midX, y: canvas.bounds.midY) : NSPoint(x: visible.midX, y: visible.midY)
-        scroll.setMagnification(zoom, centeredAt: center)
-        topBar.updateZoom(zoom)
-    }
+    @objc private func undoAction() { onUndo?() }
+    @objc private func redoAction() { onRedo?() }
     func append(_ images: [NSImage]) {
+        canvas.cancelEditingGesture()
         var next = document
         for image in images {
             guard next.pieces.count < 48, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
             let b = next.bounds
             next.pieces.append(StitchPiece(image: cg, origin: CGPoint(x: b.minX, y: b.maxY), label: L("Added image")))
-            if !next.canRender { next.pieces.removeLast(); status.stringValue = L("Image exceeds the canvas limit."); break }
+            if !next.canRender { next.pieces.removeLast(); showFeedback(L("Image exceeds the canvas limit.")); break }
         }
         guard next.pieces.count != document.pieces.count else { return }
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Image exceeds the canvas limit.")); return }
-        checkpoint(L("Add images")); document = next; refresh(); fitCanvas()
+        checkpoint(L("Add images")); document = next
+        setMode(.move)
+        canvas.selectedID = next.pieces.last?.id
+        refresh()
     }
     deinit { pendingRender?.cancel(); renderCancellation?.cancel() }
 }
