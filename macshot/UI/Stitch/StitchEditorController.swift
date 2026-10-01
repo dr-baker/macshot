@@ -7,17 +7,31 @@ private final class StitchPiecesStack: NSStackView {
 
 private final class StitchSlider: NSSlider {
     var onBegin: (() -> Void)?
-    override func mouseDown(with event: NSEvent) { onBegin?(); super.mouseDown(with: event) }
-    override func keyDown(with event: NSEvent) { onBegin?(); super.keyDown(with: event) }
+    var onEnd: (() -> Void)?
+    override func mouseDown(with event: NSEvent) { onBegin?(); super.mouseDown(with: event); onEnd?() }
+    override func keyDown(with event: NSEvent) { onBegin?(); super.keyDown(with: event); onEnd?() }
 }
 
 @MainActor
-final class StitchEditorWindowController: NSObject, NSWindowDelegate {
-    private static var controllers: [StitchEditorWindowController] = []
-    private let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+final class StitchEditorController: NSObject {
+    private weak var window: NSWindow?
+    var onCheckpoint: (() -> Void)?
+    var onDocumentChanged: ((StitchDocument) -> Bool)?
+    var onUndo: (() -> Void)?
+    var onRedo: (() -> Void)?
+    var canUndo: (() -> Bool)?
+    var canRedo: (() -> Bool)?
+    var onContextAction: ((ToolbarButtonAction, NSView) -> Void)?
+    var onAction: ((ToolbarButtonAction, NSView?) -> Void)?
+    var onAddCapture: (() -> Void)?
+    var annotationLayers: [UUID: StitchAnnotationLayer] = [:] { didSet { canvas.annotationLayers = annotationLayers } }
+    var unattachedAnnotationPreview: CGImage? { didSet { canvas.unattachedAnnotationPreview = unattachedAnnotationPreview } }
+    var annotationPreview: CGImage? { didSet { canvas.annotationPreview = annotationPreview } }
+    private var restoring = false
+    private var adjustingStyle = false
+    private(set) var rootView: NSView!
     private let canvas = StitchCanvasView(frame: .zero)
     private let scroll = NSScrollView()
-    private let history = UndoManager()
     private var document: StitchDocument
     private var dragSnapshot: StitchDocument?
     private let status = NSTextField(labelWithString: "")
@@ -37,54 +51,23 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
     private var renderGeneration = UUID()
     private var renderCancellation: StitchPreviewCancellation?
     private var pendingRender: DispatchWorkItem?
-    private var lastOutput: StitchDocument?
-    private var hasOutput: Bool {
-        guard let saved = lastOutput else { return false }
-        guard saved.pieces.count == document.pieces.count,
-              zip(saved.pieces, document.pieces).allSatisfy({
-                  $0.image === $1.image && $0.source == $1.source && $0.origin == $1.origin
-              }) else { return false }
-        let a = saved.style, b = document.style
-        guard a.visible == b.visible, a.blur == b.blur, a.feather == b.feather,
-              a.lineWidth == b.lineWidth, a.wave == b.wave, a.color.isEqual(b.color) else { return false }
-        switch (saved.background, document.background) {
-        case (.automatic, .automatic), (.transparent, .transparent): return true
-        case (.color(let a), .color(let b)): return a.isEqual(b)
-        default: return false
-        }
-    }
     private enum Options { case seams, pieces, canvas }
     private var activeOptions: Options?
     private let canvasColor = NSColorWell()
     private let backgroundChoice = NSPopUpButton()
     private var pieceActions: [NSButton] = []
     private var feedbackGeneration = UUID()
-    private var exporting = false
-    private var outputFeedbackGeneration = UUID()
     private let tooltip = StitchTooltipView()
-    private let outputQueue = DispatchQueue(label: "macshot.stitch-output", qos: .userInitiated)
 
-    static func open(image: NSImage) {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        open(document: StitchDocument(pieces: [StitchPiece(image: cg)]))
+    init(document: StitchDocument, window: NSWindow) {
+        self.document = document
+        self.window = window
+        super.init()
     }
-    static func open(document: StitchDocument) {
-        guard document.canRender else { return }
-        let controller = StitchEditorWindowController(document: document)
-        controllers.append(controller)
-        controller.show()
-    }
-    private init(document: StitchDocument) { self.document = document; super.init() }
 
-    private func show() {
-        window.title = L("macshot · Stitch")
-        window.minSize = NSSize(width: 760, height: 500)
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        window.collectionBehavior = [.fullScreenAuxiliary]
-        window.center()
+    func makeView() -> NSView {
         let root = NSView()
-        window.contentView = root
+        rootView = root
 
         scroll.contentView = CenteringClipView()
         scroll.documentView = canvas
@@ -101,7 +84,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 84, right: 50)
         scroll.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: -84, right: -50)
 
-        topBar.onAdd = { [weak self] in self?.addImages() }
+        topBar.onAdd = { [weak self] in self?.onAddCapture?() }
         topBar.onPieces = { [weak self] anchor in self?.showPieces(at: anchor) }
         topBar.onFit = { [weak self] in self?.fitCanvas() }
         topBar.onZoom = { [weak self] value in self?.setZoom(value) }
@@ -126,19 +109,16 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
             default: break
             }
         }
-        actionStrip.setButtons([
-            ToolbarButton(action: .copy, sfSymbol: "doc.on.doc", tooltip: L("Copy")),
-            ToolbarButton(action: .save, sfSymbol: "square.and.arrow.down", tooltip: L("Save PNG")),
-            ToolbarButton(action: .detach, sfSymbol: "pencil.tip", tooltip: L("Annotate")),
-        ])
+        actionStrip.setButtons(ToolbarLayout.rightButtons(isEditorMode: true))
         actionStrip.onClick = { [weak self] action in
-            switch action {
-            case .copy: self?.copyImage()
-            case .save: self?.saveImage()
-            case .detach: self?.annotate()
-            default: break
+            guard let self else { return }
+            let anchor = self.actionStrip.buttonViews.first { button in
+                if case .share = action, case .share = button.action { return true }
+                return false
             }
+            self.onAction?(action, anchor)
         }
+        actionStrip.onRightClick = { [weak self] action, anchor in self?.onContextAction?(action, anchor) }
         for strip in [toolStrip, actionStrip] {
             strip.onHover = { [weak self, weak strip] action, hovered in
                 guard let self, let strip else { return }
@@ -213,18 +193,45 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         }
         canvas.onDelete = { [weak self] in self?.deletePiece() }
         canvas.onImages = { [weak self] images in self?.append(images) }
-        canvas.onCopy = { [weak self] in self?.copyImage() }
+        canvas.onCopy = { [weak self] in self?.onAction?(.copy, nil) }
+        canvas.canUndo = { [weak self] in self?.canUndo?() ?? false }
+        canvas.canRedo = { [weak self] in self?.canRedo?() ?? false }
+        canvas.onUndo = { [weak self] in self?.undoAction() }
+        canvas.onRedo = { [weak self] in self?.redoAction() }
+        canvas.onSave = { [weak self] in self?.onAction?(.save, nil) }
         canvas.onMode = { [weak self] mode in self?.setMode(mode) }
         canvas.onZoom = { [weak self] value in self?.setZoom(value) }
         canvas.onFit = { [weak self] in self?.fitCanvas() }
         canvas.selectedID = nil
         refresh()
         status.stringValue = toolHint
-        NSApp.setActivationPolicy(.regular)
-        window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-        window.makeFirstResponder(canvas)
-        DispatchQueue.main.async { [weak self] in self?.fitCanvas() }
+        return root
     }
+
+    func focus() {
+        window?.makeFirstResponder(canvas)
+        fitCanvas()
+    }
+
+    func restore(_ value: StitchDocument) {
+        restoring = true
+        canvas.cancelEditingGesture()
+        dragSnapshot = nil
+        document = value
+        canvas.selectedID = nil
+        refresh()
+        restoring = false
+    }
+
+    func suspend() {
+        canvas.cancelEditingGesture()
+        PopoverHelper.dismiss()
+        tooltip.removeFromSuperview()
+        cancelPreview()
+    }
+
+    func updateUndoState() { updateTools() }
+
     private func button(_ symbol: String, title: String, action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
@@ -267,7 +274,10 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
             slider.controlSize = .small
             slider.trackFillColor = ToolbarLayout.accentColor
             slider.setAccessibilityLabel(L(spec.0))
-            slider.onBegin = { [weak self] in self?.checkpoint(L("Change seam")) }
+            slider.onBegin = { [weak self] in
+                self?.checkpoint(L("Change seam")); self?.adjustingStyle = true
+            }
+            slider.onEnd = { [weak self] in self?.adjustingStyle = false; self?.publish() }
             view.addSubview(label); view.addSubview(value); view.addSubview(slider)
             sliders.append(slider); values.append(value)
         }
@@ -364,7 +374,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
     }
     private func showTooltip(_ action: ToolbarButtonAction, strip: ToolbarStripView, hovered: Bool) {
         tooltip.removeFromSuperview()
-        guard hovered, !PopoverHelper.isVisible, let root = window.contentView,
+        guard hovered, !PopoverHelper.isVisible, let root = window?.contentView,
               let button = toolbarButton(action, in: strip) else { return }
         let text = button.tooltipText
         let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)])
@@ -377,40 +387,24 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         tooltip.text = text; root.addSubview(tooltip)
     }
     private func toolbarButton(_ action: ToolbarButtonAction, in strip: ToolbarStripView) -> ToolbarButtonView? {
-        let index: Int
-        switch action {
-        case .moveSelection, .copy: index = 0
-        case .adjustSelection, .save: index = 1
-        case .scrollCapture, .detach: index = 2
-        case .effects: index = 3
-        case .undo: index = 4
-        case .redo: index = 5
-        default: return nil
-        }
-        return strip.buttonViews.indices.contains(index) ? strip.buttonViews[index] : nil
+        strip.buttonViews.first { $0.action == action }
     }
     private func showFeedback(_ text: String) {
         let token = UUID(); feedbackGeneration = token
         status.stringValue = text
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            guard let self, self.feedbackGeneration == token, !self.exporting else { return }
+            guard let self, self.feedbackGeneration == token else { return }
             self.status.stringValue = self.toolHint
         }
     }
-    private func checkpoint(_ title: String) { registerUndo(document, title: title) }
-    private func registerUndo(_ snapshot: StitchDocument, title: String) {
-        history.registerUndo(withTarget: self) { target in
-            MainActor.assumeIsolated {
-                target.registerUndo(target.document, title: title)
-                target.document = snapshot; target.canvas.selectedID = nil; target.refresh()
-            }
+    private func checkpoint(_ title: String) { onCheckpoint?() }
+    private func publish() {
+        guard !restoring else { return }
+        if onDocumentChanged?(document) == false {
+            showFeedback(L("Unable to render this canvas. Reduce its size and try again."))
         }
-        history.setActionName(title)
-        DispatchQueue.main.async { [weak self] in self?.updateTools() }
     }
-    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { history }
     private func refresh() {
-        window.isDocumentEdited = !hasOutput
         canvas.refresh(document, preview: nil)
         canvas.packed = document.placement == .packed
         topBar.updatePlacement(document.placement)
@@ -431,7 +425,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         pendingRender = nil
     }
     private func scheduleRender() {
-        window.isDocumentEdited = !hasOutput
+        if !adjustingStyle { publish() }
         cancelPreview()
         let snapshot = document
         let generation = renderGeneration
@@ -448,7 +442,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
             guard !cancellation.isCancelled else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.renderGeneration == generation,
-                      !cancellation.isCancelled, self.window.isVisible else { return }
+                      !cancellation.isCancelled, self.rootView.window != nil else { return }
                 self.canvas.backgroundPreview = result.1
                 self.canvas.refresh(snapshot, preview: result.0)
                 self.pendingRender = nil
@@ -515,7 +509,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         if !document.canRender { document.pieces[index].origin = old; status.stringValue = L("Canvas limit reached. Move pieces closer together.") }
         canvas.document = document; canvas.needsDisplay = true
         if final {
-            if let snapshot = dragSnapshot { registerUndo(snapshot, title: L("Move piece")) }
+            if let snapshot = dragSnapshot, zip(snapshot.pieces, document.pieces).contains(where: { $0.origin != $1.origin }) { checkpoint(L("Move piece")) }
             dragSnapshot = nil; refresh()
         }
     }
@@ -523,7 +517,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         canvas.mode = mode
         feedbackGeneration = UUID(); status.stringValue = toolHint
         updateTools()
-        if focusCanvas { window.makeFirstResponder(canvas) }
+        if focusCanvas { window?.makeFirstResponder(canvas) }
     }
     private func toolButtons() -> [ToolbarButton] {
         [
@@ -531,8 +525,8 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
             ToolbarButton(action: .adjustSelection, sfSymbol: "rectangle.split.1x2", tooltip: L("Remove Rows") + " (R)", isSelected: canvas.mode == .rows, hasContextMenu: true),
             ToolbarButton(action: .scrollCapture, sfSymbol: "rectangle.split.2x1", tooltip: L("Remove Columns") + " (C)", isSelected: canvas.mode == .columns, hasContextMenu: true),
             ToolbarButton(action: .effects, sfSymbol: "slider.horizontal.3", tooltip: L("Change seam")),
-            ToolbarButton(action: .undo, sfSymbol: "arrow.uturn.backward", tooltip: L("Undo"), tintColor: ToolbarLayout.iconColor.withAlphaComponent(history.canUndo ? 1 : 0.3)),
-            ToolbarButton(action: .redo, sfSymbol: "arrow.uturn.forward", tooltip: L("Redo"), tintColor: ToolbarLayout.iconColor.withAlphaComponent(history.canRedo ? 1 : 0.3)),
+            ToolbarButton(action: .undo, sfSymbol: "arrow.uturn.backward", tooltip: L("Undo"), tintColor: ToolbarLayout.iconColor.withAlphaComponent((canUndo?() ?? false) ? 1 : 0.3)),
+            ToolbarButton(action: .redo, sfSymbol: "arrow.uturn.forward", tooltip: L("Redo"), tintColor: ToolbarLayout.iconColor.withAlphaComponent((canRedo?() ?? false) ? 1 : 0.3)),
         ]
     }
     private func updateTools() { toolStrip.updateState(from: toolButtons()) }
@@ -551,7 +545,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
     @objc private func changeStyle(_ sender: NSSlider) {
         switch sender.tag { case 0: document.style.blur = sender.doubleValue; case 1: document.style.feather = sender.doubleValue; case 2: document.style.lineWidth = sender.doubleValue; default: document.style.wave = sender.doubleValue }
         values[sender.tag].stringValue = String(format: "%.1f px", sender.doubleValue)
-        window.isDocumentEdited = !hasOutput; scheduleRender()
+        scheduleRender()
     }
     @objc private func changeColor() { checkpoint(L("Change seam color")); document.style.color = color.color; scheduleRender() }
     @objc private func toggleSeams() { checkpoint(L("Toggle seams")); document.style.visible = seamToggle.state == .on; scheduleRender() }
@@ -561,7 +555,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         refreshPieces()
         let rect = piece.frame.offsetBy(dx: 80 - document.bounds.minX, dy: 80 - document.bounds.minY)
         canvas.scrollToVisible(rect.insetBy(dx: -12, dy: -12))
-        if !PopoverHelper.isVisible { window.makeFirstResponder(canvas) }
+        if !PopoverHelper.isVisible { window?.makeFirstResponder(canvas) }
     }
     @objc private func deletePiece() {
         guard let id = canvas.selectedID, document.pieces.count > 1 else { return }
@@ -588,8 +582,8 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         guard let index = document.pieces.firstIndex(where: { $0.id == canvas.selectedID }) else { return }
         reorderPiece(to: index - 1)
     }
-    @objc private func undoAction() { history.undo(); updateTools() }
-    @objc private func redoAction() { history.redo(); updateTools() }
+    @objc private func undoAction() { onUndo?(); updateTools() }
+    @objc private func redoAction() { onRedo?(); updateTools() }
     @objc private func fitCanvas() {
         let area = scroll.contentSize
         let size = canvas.bounds.size
@@ -603,14 +597,7 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         scroll.setMagnification(zoom, centeredAt: center)
         topBar.updateZoom(zoom)
     }
-    @objc private func addImages() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
-        panel.beginSheetModal(for: window) { [weak self] result in
-            guard result == .OK else { return }
-            self?.append(panel.urls.compactMap { NSImage(contentsOf: $0) })
-        }
-    }
-    private func append(_ images: [NSImage]) {
+    func append(_ images: [NSImage]) {
         var next = document
         for image in images {
             guard next.pieces.count < 48, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
@@ -622,108 +609,5 @@ final class StitchEditorWindowController: NSObject, NSWindowDelegate {
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Image exceeds the canvas limit.")); return }
         checkpoint(L("Add images")); document = next; refresh(); fitCanvas()
     }
-    /// Rendering and PNG encoding own an immutable snapshot while the editor remains responsive.
-    private func output(action: ToolbarButtonAction, writeTo url: URL? = nil, completion: @escaping (NSImage, Bool) -> Void) {
-        guard !exporting else { return }
-        exporting = true
-        outputFeedbackGeneration = UUID()
-        let snapshot = document
-        showFeedback(L("Preparing image…"))
-        setOutputFeedback(action: action, symbol: "hourglass")
-        outputQueue.async { [weak self] in
-            let result: Result<CGImage, Error> = autoreleasepool {
-                guard let pixels = StitchRenderer.render(snapshot) else {
-                    return .failure(NSError(domain: "Stitch", code: 1, userInfo: [NSLocalizedDescriptionKey: L("Unable to render this canvas. Reduce its size and try again.")]))
-                }
-                if let url {
-                    guard let data = NSBitmapImageRep(cgImage: pixels).representation(using: .png, properties: [:]) else {
-                        return .failure(NSError(domain: "Stitch", code: 2, userInfo: [NSLocalizedDescriptionKey: L("Unable to save this image.")]))
-                    }
-                    do { try data.write(to: url, options: .atomic) }
-                    catch { return .failure(error) }
-                }
-                return .success(pixels)
-            }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.exporting = false
-                self.resetOutputFeedback()
-                switch result {
-                case .failure(let error): self.showFeedback(error.localizedDescription)
-                case .success(let pixels):
-                    self.lastOutput = snapshot
-                    let unchanged = self.hasOutput
-                    self.window.isDocumentEdited = !unchanged
-                    completion(NSImage(cgImage: pixels, size: NSSize(width: pixels.width, height: pixels.height)), unchanged)
-                }
-            }
-        }
-    }
-    private func resetOutputFeedback() {
-        actionStrip.updateState(from: [
-            ToolbarButton(action: .copy, sfSymbol: "doc.on.doc", tooltip: L("Copy")),
-            ToolbarButton(action: .save, sfSymbol: "square.and.arrow.down", tooltip: L("Save PNG")),
-            ToolbarButton(action: .detach, sfSymbol: "pencil.tip", tooltip: L("Annotate")),
-        ])
-    }
-    private func setOutputFeedback(action: ToolbarButtonAction, symbol: String) {
-        guard let button = toolbarButton(action, in: actionStrip) else { return }
-        button.configure(with: ToolbarButton(action: action, sfSymbol: symbol, tooltip: button.tooltipText, tintColor: ToolbarLayout.accentColor))
-    }
-    private func outputFinished(action: ToolbarButtonAction, message: String) {
-        showFeedback(message)
-        if UserDefaults.standard.object(forKey: "playCopySound") as? Bool ?? true {
-            AppDelegate.captureSound?.stop(); AppDelegate.captureSound?.play()
-        }
-        setOutputFeedback(action: action, symbol: "checkmark")
-        let token = UUID(); outputFeedbackGeneration = token
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, self.outputFeedbackGeneration == token, !self.exporting else { return }
-            self.resetOutputFeedback()
-        }
-    }
-    @objc private func copyImage() {
-        output(action: .copy) { [weak self] image, _ in
-            ImageEncoder.copyToClipboard(image)
-            self?.outputFinished(action: .copy, message: L("Copied stitched image."))
-        }
-    }
-    @objc private func saveImage() { saveImage(closeAfterSave: false) }
-    private func saveImage(closeAfterSave: Bool) {
-        guard !exporting else { return }
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "Stitch.png"
-        panel.beginSheetModal(for: window) { [weak self] result in
-            guard let self, result == .OK, let url = panel.url else { return }
-            self.output(action: .save, writeTo: url) { [weak self] _, unchanged in
-                guard let self else { return }
-                self.outputFinished(action: .save, message: L("Saved stitched image."))
-                if closeAfterSave, unchanged { self.window.close() }
-            }
-        }
-    }
-    @objc private func annotate() {
-        output(action: .detach) { [weak self] image, _ in
-            DetachedEditorWindowController.open(image: image, fromCapture: true, disableBeautify: true)
-            self?.outputFinished(action: .detach, message: L("Opened in editor"))
-        }
-    }
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if exporting { showFeedback(L("Preparing image…")); return false }
-        guard !hasOutput else { return true }
-        let alert = NSAlert(); alert.messageText = L("Close this stitch?")
-        alert.informativeText = L("Its editable pieces will be discarded. Copy or save the image first to keep the result.")
-        alert.addButton(withTitle: L("Save PNG")); alert.addButton(withTitle: L("Discard")); alert.addButton(withTitle: L("Cancel"))
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self else { return }
-            if response == .alertFirstButtonReturn { self.saveImage(closeAfterSave: true) }
-            else if response == .alertSecondButtonReturn { self.window.close() }
-        }
-        return false
-    }
-    func windowWillClose(_ notification: Notification) {
-        PopoverHelper.dismiss()
-        zoomObservation = nil
-        cancelPreview(); Self.controllers.removeAll { $0 === self }
-        (NSApp.delegate as? AppDelegate)?.returnFocusIfNeeded()
-    }
+    deinit { pendingRender?.cancel(); renderCancellation?.cancel() }
 }

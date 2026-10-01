@@ -49,7 +49,11 @@ enum UndoEntry {
     /// changed the separately-captured window image beautify's window-snap
     /// mode draws from.
     case imageTransform(previousImage: NSImage, previousSnappedWindowImage: NSImage?,
-                        annotationOffsets: [(Annotation, CGFloat, CGFloat)])
+                        annotationOffsets: [(Annotation, CGFloat, CGFloat)],
+                        previousStitchDocument: StitchDocument? = nil,
+                        previousAnnotations: [(object: Annotation, properties: Annotation)]? = nil)
+    /// A full Stitch change shares this stack with ordinary annotation edits.
+    case stitchDocument(StitchEditorSnapshot)
     /// Property change: stores the annotation and a snapshot taken before the edit.
     case propertyChange(annotation: Annotation, snapshot: Annotation)
 
@@ -57,7 +61,7 @@ enum UndoEntry {
         switch self {
         case .added(let a), .deleted(let a, _): return a
         case .propertyChange(let a, _): return a
-        case .imageTransform:
+        case .imageTransform, .stitchDocument:
             return Annotation(
                 tool: .measure, startPoint: .zero, endPoint: .zero, color: .clear, strokeWidth: 0)  // dummy
         }
@@ -3602,9 +3606,13 @@ class OverlayView: NSView {
             let cgImage = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
 
+        let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: true)
+
         // Save state for undo
         let prevImage = original.copy() as! NSImage
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: []))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         let w = cgImage.width
@@ -3635,6 +3643,15 @@ class OverlayView: NSView {
                 ann.controlPoint = NSPoint(
                     x: selectionRect.minX + (selectionRect.maxX - cp.x), y: cp.y)
             }
+            if let anchors = ann.anchorPoints {
+                ann.anchorPoints = anchors.map { NSPoint(x: selectionRect.minX + selectionRect.maxX - $0.x, y: $0.y) }
+            }
+            if !ann.textDrawRect.isEmpty { ann.textDrawRect.origin.x = selectionRect.minX + selectionRect.maxX - ann.textDrawRect.maxX }
+            if var source = ann.loupeSourceRect {
+                source.origin.x = selectionRect.minX + selectionRect.maxX - source.maxX
+                ann.loupeSourceRect = source
+            }
+            ann.rotation = -ann.rotation
             // Mirror freeform points
             if let pts = ann.points {
                 ann.points = pts.map {
@@ -3643,6 +3660,7 @@ class OverlayView: NSView {
             }
         }
 
+        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
         cachedCompositedImage = nil
         needsDisplay = true
     }
@@ -3652,8 +3670,12 @@ class OverlayView: NSView {
             let cgImage = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
 
+        let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: false)
+
         let prevImage = original.copy() as! NSImage
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: []))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         let w = cgImage.width
@@ -3682,6 +3704,15 @@ class OverlayView: NSView {
                 ann.controlPoint = NSPoint(
                     x: cp.x, y: selectionRect.minY + (selectionRect.maxY - cp.y))
             }
+            if let anchors = ann.anchorPoints {
+                ann.anchorPoints = anchors.map { NSPoint(x: $0.x, y: selectionRect.minY + selectionRect.maxY - $0.y) }
+            }
+            if !ann.textDrawRect.isEmpty { ann.textDrawRect.origin.y = selectionRect.minY + selectionRect.maxY - ann.textDrawRect.maxY }
+            if var source = ann.loupeSourceRect {
+                source.origin.y = selectionRect.minY + selectionRect.maxY - source.maxY
+                ann.loupeSourceRect = source
+            }
+            ann.rotation = -ann.rotation
             if let pts = ann.points {
                 ann.points = pts.map {
                     NSPoint(x: $0.x, y: selectionRect.minY + (selectionRect.maxY - $0.y))
@@ -3689,6 +3720,7 @@ class OverlayView: NSView {
             }
         }
 
+        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
         cachedCompositedImage = nil
         needsDisplay = true
     }
@@ -3802,7 +3834,10 @@ class OverlayView: NSView {
         let shiftDx = -targetRect.origin.x
         let shiftDy = -targetRect.origin.y
         let offsets = annotations.map { ($0, shiftDx, shiftDy) }
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: offsets))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: offsets,
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
+        redoStack.removeAll()
 
         screenshotImage = NSImage(cgImage: newCG, size: NSSize(width: newPtW, height: newPtH))
         cachedOpaqueRect = nil  // invalidate — image content changed
@@ -3900,7 +3935,9 @@ class OverlayView: NSView {
         undoStack.append(.imageTransform(
             previousImage: original.copy() as? NSImage ?? original,
             previousSnappedWindowImage: previousSnapped,
-            annotationOffsets: []))
+            annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         screenshotImage = invertedScreenshot
@@ -4412,20 +4449,30 @@ class OverlayView: NSView {
 
         let cgW = CGFloat(cgOriginal.width)
         let cgH = CGFloat(cgOriginal.height)
+        // Resolve the selection once into exact source pixels. Floating-point
+        // normalization can otherwise turn a whole-pixel crop into fractional
+        // source slices and prevent restoring its editable piece geometry.
+        let pixelX = max(0, (normX * cgW).rounded())
+        let pixelY = max(0, ((1.0 - normY - normH) * cgH).rounded())
         let cgPixelRect = CGRect(
-            x: max(0, normX * cgW),
-            y: max(0, (1.0 - normY - normH) * cgH),  // flip Y for CGImage top-left origin
-            width: min(normW * cgW, cgW - max(0, normX * cgW)),
-            height: min(normH * cgH, cgH - max(0, (1.0 - normY - normH) * cgH))
+            x: pixelX, y: pixelY,
+            width: min((normW * cgW).rounded(), cgW - pixelX),
+            height: min((normH * cgH).rounded(), cgH - pixelY)
         )
 
         guard cgPixelRect.width > 0, cgPixelRect.height > 0,
             let croppedCG = cgOriginal.cropping(to: cgPixelRect)
         else { return }
 
+        let transformedStitch = (self as? EditorView)?.stitchDocument.flatMap { document in
+            document.cropped(to: cgPixelRect.offsetBy(dx: document.bounds.minX, dy: document.bounds.minY))
+        }
+
         // Save state for undo before modifying
         let prevImage = originalImage.copy() as! NSImage
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: []))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         let dx = selectionRect.minX - canvasRect.minX
@@ -4441,6 +4488,7 @@ class OverlayView: NSView {
         // Update selectionRect to match new image size
         selectionRect = NSRect(origin: .zero, size: croppedPointSize)
 
+        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
         cachedCompositedImage = nil
 
         // Resize view frame to match new image size (scroll view re-centers automatically)
@@ -7816,6 +7864,10 @@ class OverlayView: NSView {
         tip.needsDisplay = true
     }
 
+    func showToolbarActionMenu(_ action: ToolbarButtonAction, anchorView: NSView) {
+        handleToolbarButtonRightClick(action, anchorView: anchorView)
+    }
+
     private func handleToolbarButtonRightClick(_ action: ToolbarButtonAction, anchorView: NSView) {
         switch action {
         case .autoRedact:
@@ -9619,14 +9671,26 @@ class OverlayView: NSView {
             ann.copyProperties(from: snapshot)
             redoStack.append(.propertyChange(annotation: ann, snapshot: currentSnapshot))
             cachedCompositedImage = nil
-        case .imageTransform(let previousImage, let previousSnapped, _):
+        case .stitchDocument(let snapshot):
+            if let editor = self as? EditorView {
+                redoStack.append(.stitchDocument(editor.stitchSnapshot()))
+                editor.restoreStitchSnapshot(snapshot)
+            }
+        case .imageTransform(let previousImage, let previousSnapped, _, let previousStitch, let previousAnnotations):
             // Undo crop/flip — swap the current image with the saved one
             let currentImage = screenshotImage?.copy() as? NSImage ?? previousImage
             let currentSnapped = previousSnapped != nil ? snappedWindowImage : nil
             redoStack.append(.imageTransform(previousImage: currentImage,
                                              previousSnappedWindowImage: currentSnapped,
-                                             annotationOffsets: []))
+                                             annotationOffsets: [],
+                                             previousStitchDocument: (self as? EditorView)?.stitchDocument,
+                                             previousAnnotations: annotations.map { ($0, $0.clone()) }))
             screenshotImage = previousImage
+            if let previousAnnotations {
+                for saved in previousAnnotations { saved.object.copyProperties(from: saved.properties) }
+                annotations = previousAnnotations.map(\.object)
+            }
+            if let previousStitch { (self as? EditorView)?.installStitchDocument(previousStitch) }
             if previousSnapped != nil { snappedWindowImage = previousSnapped }
             // Update selectionRect to match restored image size
             if isEditorMode {
@@ -9637,6 +9701,15 @@ class OverlayView: NSView {
             resetZoom()
         }
         needsDisplay = true
+        (self as? EditorView)?.onStitchDocumentChanged?()
+        onContentChanged?()
+    }
+
+    func clearStitchAnnotationSelection() {
+        selectedAnnotations.removeAll()
+        hoveredAnnotationClearTimer?.invalidate()
+        hoveredAnnotationClearTimer = nil
+        hoveredAnnotation = nil
     }
 
     private func clearHoverIfNeeded(_ removed: [Annotation]) {
@@ -9686,14 +9759,26 @@ class OverlayView: NSView {
             ann.copyProperties(from: snapshot)
             undoStack.append(.propertyChange(annotation: ann, snapshot: currentSnapshot))
             cachedCompositedImage = nil
-        case .imageTransform(let redoImage, let redoSnapped, _):
+        case .stitchDocument(let snapshot):
+            if let editor = self as? EditorView {
+                undoStack.append(.stitchDocument(editor.stitchSnapshot()))
+                editor.restoreStitchSnapshot(snapshot)
+            }
+        case .imageTransform(let redoImage, let redoSnapped, _, let redoStitch, let redoAnnotations):
             // Redo crop/flip — swap back
             let currentImage = screenshotImage?.copy() as? NSImage ?? redoImage
             let currentSnapped = redoSnapped != nil ? snappedWindowImage : nil
             undoStack.append(.imageTransform(previousImage: currentImage,
                                              previousSnappedWindowImage: currentSnapped,
-                                             annotationOffsets: []))
+                                             annotationOffsets: [],
+                                             previousStitchDocument: (self as? EditorView)?.stitchDocument,
+                                             previousAnnotations: annotations.map { ($0, $0.clone()) }))
             screenshotImage = redoImage
+            if let redoAnnotations {
+                for saved in redoAnnotations { saved.object.copyProperties(from: saved.properties) }
+                annotations = redoAnnotations.map(\.object)
+            }
+            if let redoStitch { (self as? EditorView)?.installStitchDocument(redoStitch) }
             if redoSnapped != nil { snappedWindowImage = redoSnapped }
             if isEditorMode {
                 selectionRect = NSRect(origin: .zero, size: redoImage.size)
@@ -9703,6 +9788,8 @@ class OverlayView: NSView {
             if !isInsideScrollView { resetZoom() }
         }
         needsDisplay = true
+        (self as? EditorView)?.onStitchDocumentChanged?()
+        onContentChanged?()
     }
 
     // MARK: - Annotation layer cache

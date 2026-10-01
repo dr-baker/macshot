@@ -20,7 +20,7 @@ final class StitchEditorTopBar: NSView {
         layer?.backgroundColor = ToolbarLayout.bgColor.cgColor
         dimensions.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         dimensions.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.45)
-        let add = symbol("rectangle.badge.plus", title: L("Add Images"), action: #selector(addClicked))
+        let add = symbol("rectangle.badge.plus", title: L("Add Capture"), action: #selector(addClicked))
         let pieces = symbol("square.3.layers.3d", title: L("PIECES"), action: #selector(piecesClicked(_:)))
         let fit = symbol("arrow.up.left.and.arrow.down.right", title: L("Fit Canvas"), action: #selector(fitClicked))
         let background = symbol("paintpalette", title: L("Canvas background"), action: #selector(canvasClicked(_:)))

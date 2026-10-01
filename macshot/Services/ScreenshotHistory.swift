@@ -284,6 +284,7 @@ final class ScreenshotHistory {
         if hasEditState {
             guard let restored = loadEditState(for: entry) else { return nil }
             if restored.customBeautifyBackgroundPNG != nil && restored.customBeautifyBackground == nil { return nil }
+            if restored.stitchDocument != nil && restored.stitchDocument?.restore() == nil { return nil }
             editState = restored
         } else { editState = nil }
         return EditableCapture(rawImage: rawImage, annotations: annotations, editState: editState)

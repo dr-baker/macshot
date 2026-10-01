@@ -3,6 +3,7 @@ import AppKit
 /// Pixel coordinates with a top-left origin. Source images stay intact through cuts and undo.
 struct StitchPiece {
     var id = UUID()
+    var lineageID: UUID
     let image: CGImage
     var source: CGRect
     var origin: CGPoint
@@ -10,6 +11,7 @@ struct StitchPiece {
     var frame: CGRect { CGRect(origin: origin, size: source.size) }
 
     init(image: CGImage, origin: CGPoint = .zero, label: String = "Capture") {
+        self.lineageID = id
         self.image = image
         self.source = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         self.origin = origin
@@ -29,7 +31,7 @@ struct StitchPiece {
 
 enum StitchAxis { case horizontal, vertical }
 
-/// Automatic extends the nearest covered edge pixel into gaps, without changing image pixels.
+/// Automatic blends sampled background colors into gaps without changing captured pixels.
 enum StitchBackground {
     case automatic
     case color(NSColor)
@@ -78,6 +80,16 @@ struct StitchDocument {
         self.style = style
         self.background = background
     }
+    var savedPackingState: (horizontal: Bool, length: CGFloat) {
+        (packingAxis == .horizontal, packingLength)
+    }
+
+    mutating func restorePackingState(packed: Bool, horizontal: Bool, length: CGFloat) {
+        placement = packed ? .packed : .free
+        packingAxis = horizontal ? .horizontal : .vertical
+        packingLength = packed ? length : 0
+    }
+
     static let maximumPieces = 128
     static let maximumPixels: CGFloat = 100_000_000
     static let maximumDimension: CGFloat = 30_000

@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class StitchCanvasView: NSView {
+final class StitchCanvasView: NSView, NSMenuItemValidation {
     enum Mode: Int { case move, rows, columns }
     var document = StitchDocument()
     /// Packed placement is committed by the owner on drop; dragging stays a local preview.
@@ -29,6 +29,14 @@ final class StitchCanvasView: NSView {
     var onCancelMove: (() -> Void)?
     var onDelete: (() -> Void)?
     var onImages: (([NSImage]) -> Void)?
+    var annotationLayers: [UUID: StitchAnnotationLayer] = [:] { didSet { needsDisplay = true } }
+    var annotationPreview: CGImage? { didSet { needsDisplay = true } }
+    var unattachedAnnotationPreview: CGImage? { didSet { needsDisplay = true } }
+    var canUndo: (() -> Bool)?
+    var canRedo: (() -> Bool)?
+    var onUndo: (() -> Void)?
+    var onRedo: (() -> Void)?
+    var onSave: (() -> Void)?
     var onCopy: (() -> Void)?
     var onMode: ((Mode) -> Void)?
     var onZoom: ((CGFloat) -> Void)?
@@ -149,6 +157,25 @@ final class StitchCanvasView: NSView {
                 NSGraphicsContext.restoreGraphicsState()
             }
         }
+        if moving {
+            if let unattachedAnnotationPreview {
+                NSImage(cgImage: unattachedAnnotationPreview, size: contentBounds.size).draw(in: imageRect,
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            }
+            let placed = packedPreview?.pieces ?? document.pieces
+            for piece in placed {
+                guard let layer = annotationLayers[piece.id],
+                      let original = document.pieces.first(where: { $0.id == piece.id }) else { continue }
+                let delta = displayedFrame(piece).origin
+                let rect = layer.frame.offsetBy(dx: delta.x - original.origin.x, dy: delta.y - original.origin.y)
+                NSImage(cgImage: layer.image, size: layer.frame.size).draw(in: viewRect(rect),
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            }
+        }
+        if !moving, let annotationPreview {
+            NSImage(cgImage: annotationPreview, size: contentBounds.size).draw(in: imageRect, from: .zero,
+                operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
         if mode == .move, !moving, let hoveredID, hoveredID != selectedID,
            let piece = document.pieces.first(where: { $0.id == hoveredID }) {
             ToolbarLayout.accentColor.withAlphaComponent(0.55).setStroke()
@@ -222,6 +249,8 @@ final class StitchCanvasView: NSView {
             }
         }
     }
+
+    func cancelEditingGesture() { cancelGesture() }
 
     private func cancelGesture() {
         let wasMoving = moving
@@ -336,10 +365,24 @@ final class StitchCanvasView: NSView {
             AlignmentGuide(start: CGPoint(x: range.lowerBound - extensionLength, y: y), end: CGPoint(x: range.upperBound + extensionLength, y: y))
         }
     }
+    @objc func undo(_ sender: Any?) { onUndo?() }
+    @objc func redo(_ sender: Any?) { onRedo?() }
+    @objc func copy(_ sender: Any?) { onCopy?() }
+    @objc func paste(_ sender: Any?) {
+        if let image = NSImage(pasteboard: .general) { onImages?([image]) }
+    }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(undo(_:)) { return canUndo?() ?? false }
+        if item.action == #selector(redo(_:)) { return canRedo?() ?? false }
+        return true
+    }
     override func keyDown(with event: NSEvent) {
+        if let command = EditorCommandShortcutManager.action(for: event) {
+            if command == .undo { onUndo?() } else { onRedo?() }
+            return
+        }
         if event.modifierFlags.contains(.command) {
-            if KeyboardShortcutMatcher.matches(event, character: "z", modifiers: [.command, .shift]) { undoManager?.redo(); return }
-            if KeyboardShortcutMatcher.matches(event, character: "z", modifiers: .command) { undoManager?.undo(); return }
+            if KeyboardShortcutMatcher.matches(event, character: "s", modifiers: .command) { onSave?(); return }
             if KeyboardShortcutMatcher.matches(event, character: "c", modifiers: .command) { onCopy?(); return }
             if KeyboardShortcutMatcher.matches(event, character: "1", modifiers: .command) { onFit?(); return }
             if KeyboardShortcutMatcher.matches(event, character: "0", modifiers: .command) { onZoom?(1); return }
