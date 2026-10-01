@@ -126,16 +126,7 @@ enum StitchRenderer {
         let width = max(1, Int(ceil(bounds.width * scale)))
         let height = max(1, Int(ceil(bounds.height * scale)))
         guard let background = bitmap(width: width, height: height) else { return nil }
-        guard case .automatic = document.background else {
-            fillBackground(document, source: background, destination: background, bounds: bounds, scale: scale)
-            return background.makeImage()
-        }
-        guard let source = bitmap(width: width, height: height) else { return nil }
-        source.translateBy(x: 0, y: CGFloat(height))
-        source.scaleBy(x: scale, y: -scale)
-        source.translateBy(x: -bounds.minX, y: -bounds.minY)
-        drawPieces(document.pieces, in: source)
-        fillBackground(document, source: source, destination: background, bounds: bounds, scale: scale)
+        fillBackground(document, destination: background, bounds: bounds, scale: scale)
         return background.makeImage()
     }
 
@@ -206,20 +197,74 @@ enum StitchRenderer {
         }
     }
 
-    /// Extend the exact nearest covered pixel into every gap. For each output row, each
-    /// slab supplies its nearest vertical source pixel. The nearest source in another slab
-    /// must be on that slab's left/right edge, so only those endpoint parabolas enter the
-    /// one-dimensional squared-distance envelope. Work is linear in gap pixels plus the
-    /// number of slab endpoints per row; scratch storage depends only on piece count.
-    private static func fillBackground(_ document: StitchDocument, source: CGContext,
-                                       destination: CGContext, bounds: CGRect, scale: CGFloat) {
+    private struct BackgroundSample {
+        let point: CGPoint
+        let color: SIMD4<Double>
+    }
+
+    /// Broad source-space neighborhoods reject sparse text, borders, and icons. Sampling
+    /// original crops keeps the color estimate independent of preview resolution.
+    private static func backgroundSamples(_ pieces: [StitchPiece]) -> [BackgroundSample] {
+        var samples: [BackgroundSample] = []
+        for piece in pieces {
+            let size = piece.source.size
+            let nx = max(1, min(16, Int(ceil(size.width / 128))))
+            let ny = max(1, min(16, Int(ceil(size.height / 128))))
+            var points: [CGPoint] = []
+            for x in 0...nx {
+                let px = size.width * CGFloat(x) / CGFloat(nx)
+                points.append(CGPoint(x: px, y: 0))
+                points.append(CGPoint(x: px, y: size.height))
+            }
+            for y in 1..<ny {
+                let py = size.height * CGFloat(y) / CGFloat(ny)
+                points.append(CGPoint(x: 0, y: py))
+                points.append(CGPoint(x: size.width, y: py))
+            }
+            for point in points {
+                let w = min(128, size.width), h = min(128, size.height)
+                let patch = CGRect(x: piece.source.minX + max(0, min(size.width - w, point.x - w / 2)),
+                                   y: piece.source.minY + max(0, min(size.height - h, point.y - h / 2)),
+                                   width: w, height: h).integral.intersection(piece.source)
+                guard let crop = piece.image.cropping(to: patch),
+                      let swatch = bitmap(width: crop.width, height: crop.height),
+                      let data = swatch.data else { continue }
+                swatch.interpolationQuality = .none
+                swatch.draw(crop, in: CGRect(x: 0, y: 0, width: swatch.width, height: swatch.height))
+                let pixels = data.assumingMemoryBound(to: UInt8.self)
+                // Quantize premultiplied RGBA, retaining source transparency in the fill.
+                var bins: [Int: (count: Int, sum: SIMD4<Double>)] = [:]
+                for i in 0..<(swatch.width * swatch.height) {
+                    let c = SIMD4<Double>(Double(pixels[i * 4]), Double(pixels[i * 4 + 1]),
+                                          Double(pixels[i * 4 + 2]), Double(pixels[i * 4 + 3]))
+                    let key = (Int(c.x) >> 5) | ((Int(c.y) >> 5) << 3)
+                        | ((Int(c.z) >> 5) << 6) | ((Int(c.w) >> 5) << 9)
+                    let old = bins[key] ?? (0, .zero)
+                    bins[key] = (old.count + 1, old.sum + c)
+                }
+                // Stable tie breaking also makes noisy/photographic sources deterministic.
+                guard let winner = bins.keys.max(by: {
+                    let a = bins[$0]!.count, b = bins[$1]!.count
+                    return a == b ? $0 > $1 : a < b
+                }), let bin = bins[winner] else { continue }
+                samples.append(BackgroundSample(point: CGPoint(x: piece.origin.x + point.x,
+                                                               y: piece.origin.y + point.y),
+                                                color: bin.sum / Double(bin.count)))
+            }
+        }
+        return samples
+    }
+
+    /// Interpolate a bounded, low-frequency field of dominant neighboring colors. A coarse
+    /// field deliberately cannot reproduce a text baseline or a one-pixel border as a stripe.
+    /// Only uncovered pixels are written; captured pixels (including alpha) stay untouched.
+    private static func fillBackground(_ document: StitchDocument, destination: CGContext, bounds: CGRect, scale: CGFloat) {
         if case .transparent = document.background { return }
-        guard let inputData = source.data, let outputData = destination.data else { return }
-        let width = source.width, height = source.height
-        let input = inputData.assumingMemoryBound(to: UInt32.self)
+        guard let outputData = destination.data else { return }
+        let width = destination.width, height = destination.height
         let output = outputData.assumingMemoryBound(to: UInt32.self)
         let slabs = coverage(document.pieces, bounds: bounds, scale: scale, width: width, height: height)
-        guard !slabs.isEmpty else { return }
+        guard slabs.contains(where: { $0.rows != [0..<height] }) else { return }
         var solid: UInt32?
         if case .color(let color) = document.background,
            let swatch = bitmap(width: 1, height: 1), let bytes = swatch.data {
@@ -227,61 +272,43 @@ enum StitchRenderer {
             swatch.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
             solid = bytes.assumingMemoryBound(to: UInt32.self).pointee
         }
-        var rowSeeds = [Int](repeating: -1, count: slabs.count)
-        let capacity = slabs.count * 2
-        var vertices = [Int](repeating: 0, count: capacity)
-        var seedRows = [Int](repeating: 0, count: capacity)
-        var costs = [Double](repeating: 0, count: capacity)
-        var transitions = [Double](repeating: 0, count: capacity + 1)
+        let columns = max(2, min(65, Int(ceil(bounds.width / 64)) + 1))
+        let rows = max(2, min(65, Int(ceil(bounds.height / 64)) + 1))
+        var field = [SIMD4<Double>](repeating: .zero, count: columns * rows)
+        if solid == nil {
+            let samples = backgroundSamples(document.pieces)
+            guard !samples.isEmpty else { return }
+            for y in 0..<rows {
+                for x in 0..<columns {
+                    let px = Double(bounds.minX + bounds.width * CGFloat(x) / CGFloat(columns - 1))
+                    let py = Double(bounds.minY + bounds.height * CGFloat(y) / CGFloat(rows - 1))
+                    var sum = SIMD4<Double>.zero, weight = 0.0
+                    for sample in samples {
+                        let dx = px - Double(sample.point.x), dy = py - Double(sample.point.y)
+                        let distance = dx * dx + dy * dy + 4096
+                        let w = 1 / (distance * distance)
+                        sum += sample.color * w; weight += w
+                    }
+                    field[y * columns + x] = sum / weight
+                }
+            }
+        }
         for y in 0..<height {
-            var hasGap = false
-            for index in slabs.indices {
-                rowSeeds[index] = slabs[index].nearestRow(to: y) ?? -1
-                if rowSeeds[index] != y { hasGap = true }
-            }
-            guard hasGap else { continue }
-            var last = -1
-            if solid == nil {
-                for index in slabs.indices where rowSeeds[index] >= 0 {
-                    let seedY = rowSeeds[index]
-                    let dy = Double(y - seedY)
-                    let cost = dy * dy
-                    let slab = slabs[index]
-                    for endpoint in 0..<(slab.columns.count == 1 ? 1 : 2) {
-                        let x = endpoint == 0 ? slab.columns.lowerBound : slab.columns.upperBound - 1
-                        var intersection = -Double.infinity
-                        while last >= 0 {
-                            let previous = vertices[last]
-                            intersection = (cost + Double(x) * Double(x) - costs[last]
-                                            - Double(previous) * Double(previous)) / Double(2 * (x - previous))
-                            if intersection > transitions[last] { break }
-                            last -= 1
-                        }
-                        last += 1
-                        vertices[last] = x; seedRows[last] = seedY; costs[last] = cost
-                        transitions[last] = last == 0 ? -.infinity : intersection
-                        transitions[last + 1] = .infinity
-                    }
-                }
-            }
-            var segment = 0
-            for index in slabs.indices where rowSeeds[index] != y {
-                let columns = slabs[index].columns
-                if let solid {
-                    for x in columns { output[y * width + x] = solid }
-                    continue
-                }
-                guard last >= 0 else { continue }
-                let ownY = rowSeeds[index]
-                let ownDistance = ownY >= 0 ? Double(y - ownY) * Double(y - ownY) : .infinity
-                for x in columns {
-                    while segment < last && transitions[segment + 1] < Double(x) { segment += 1 }
-                    let dx = Double(x - vertices[segment])
-                    if ownDistance <= dx * dx + costs[segment] {
-                        output[y * width + x] = input[ownY * width + x]
-                    } else {
-                        output[y * width + x] = input[seedRows[segment] * width + vertices[segment]]
-                    }
+            let fy = min(Double(rows - 1), (Double(y) + 0.5) / Double(scale * bounds.height) * Double(rows - 1))
+            let iy = min(rows - 2, Int(fy)), ty = fy - Double(iy)
+            for slab in slabs where slab.nearestRow(to: y) != y {
+                for x in slab.columns {
+                    if let solid { output[y * width + x] = solid; continue }
+                    let fx = min(Double(columns - 1), (Double(x) + 0.5) / Double(scale * bounds.width) * Double(columns - 1))
+                    let ix = min(columns - 2, Int(fx)), tx = fx - Double(ix)
+                    let top = field[iy * columns + ix] * (1 - tx) + field[iy * columns + ix + 1] * tx
+                    let bottom = field[(iy + 1) * columns + ix] * (1 - tx) + field[(iy + 1) * columns + ix + 1] * tx
+                    let color = top * (1 - ty) + bottom * ty
+                    let r = UInt32(max(0, min(255, color.x.rounded())))
+                    let g = UInt32(max(0, min(255, color.y.rounded())))
+                    let b = UInt32(max(0, min(255, color.z.rounded())))
+                    let a = UInt32(max(0, min(255, color.w.rounded())))
+                    output[y * width + x] = r | (g << 8) | (b << 16) | (a << 24)
                 }
             }
         }
@@ -305,7 +332,7 @@ enum StitchRenderer {
         guard let base = makeContext() else { return nil }
         applyCoordinates(base)
         drawPieces(document.pieces, in: base)
-        fillBackground(document, source: base, destination: base, bounds: bounds, scale: scale)
+        fillBackground(document, destination: base, bounds: bounds, scale: scale)
         guard let original = base.makeImage() else { return nil }
         let style = document.style
         let joins = document.joins

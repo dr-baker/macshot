@@ -27,7 +27,7 @@ final class StitchLayoutAndBackgroundTests: XCTestCase {
         Array(data[(y * width + x) * 4..<(y * width + x + 1) * 4])
     }
 
-    func testAutomaticFillMatchesNearestCoveredPixelsAndPreservesSources() throws {
+    func testAutomaticFillPreservesSourcesAndMatchesBackgroundLayer() throws {
         var cropped = StitchPiece(image: image(9, 8), origin: CGPoint(x: -3, y: 1))
         cropped.source = CGRect(x: 2, y: 1, width: 4, height: 5)
         let pieces = [cropped,
@@ -58,11 +58,7 @@ final class StitchLayoutAndBackgroundTests: XCTestCase {
                     XCTAssertEqual(output, pixel(sourceBytes, width: source.width, x: x, y: y))
                     XCTAssertEqual(pixel(background, width: source.width, x: x, y: y), [0, 0, 0, 0])
                 } else {
-                    let distance = covered.map { pow($0.x - p.x, 2) + pow($0.y - p.y, 2) }.min()!
-                    let closest = covered.filter { pow($0.x - p.x, 2) + pow($0.y - p.y, 2) == distance }
-                    XCTAssertTrue(closest.contains {
-                        pixel(sourceBytes, width: source.width, x: Int($0.x), y: Int($0.y)) == output
-                    }, "Gap pixel \(x),\(y) must copy one of its nearest covered neighbors")
+                    XCTAssertGreaterThan(output[3], 0)
                     XCTAssertEqual(output, pixel(background, width: source.width, x: x, y: y))
                 }
             }
@@ -104,8 +100,42 @@ final class StitchLayoutAndBackgroundTests: XCTestCase {
         let reduced = bytes(preview)
         XCTAssertEqual(preview.width, 16)
         XCTAssertEqual(preview.height, 4)
-        XCTAssertEqual(pixel(reduced, width: 16, x: 5, y: 2), pixel(full, width: 32, x: 10, y: 4))
-        XCTAssertEqual(pixel(reduced, width: 16, x: 10, y: 2), pixel(full, width: 32, x: 20, y: 4))
+        for x in 4..<12 {
+            for channel in 0..<4 {
+                let expected = (Double(pixel(full, width: 32, x: x * 2, y: 4)[channel])
+                                + Double(pixel(full, width: 32, x: x * 2 + 1, y: 4)[channel])) / 2
+                XCTAssertEqual(Double(pixel(reduced, width: 16, x: x, y: 2)[channel]), expected, accuracy: 1)
+            }
+        }
+        XCTAssertGreaterThan(pixel(full, width: 32, x: 10, y: 4)[0], pixel(full, width: 32, x: 20, y: 4)[0])
+    }
+
+    func testAutomaticFillRejectsTextAndBorderStreaks() throws {
+        let context = CGContext(data: nil, width: 256, height: 256, bitsPerComponent: 8,
+                                bytesPerRow: 1024, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(srgbRed: 24 / 255.0, green: 32 / 255.0, blue: 40 / 255.0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        // Text-like rows run right into the cropped edge, plus a full-height border.
+        for y in stride(from: 8, to: 256, by: 16) {
+            context.fill(CGRect(x: 12, y: y, width: 244, height: 2))
+        }
+        context.fill(CGRect(x: 254, y: 0, width: 2, height: 256))
+        let source = try XCTUnwrap(context.makeImage())
+        var document = StitchDocument(pieces: [StitchPiece(image: source),
+            StitchPiece(image: source, origin: CGPoint(x: 512, y: 256))])
+        document.style.visible = false
+        let rendered = try XCTUnwrap(StitchRenderer.render(document))
+        let output = bytes(rendered)
+        for y in 0..<rendered.height {
+            for x in 256..<512 {
+                let color = pixel(output, width: rendered.width, x: x, y: y)
+                for (actual, expected) in zip(color, [24, 32, 40, 255]) {
+                    XCTAssertEqual(Double(actual), Double(expected), accuracy: 1, "Foreground leaked into gap at \(x),\(y)")
+                }
+            }
+        }
     }
 
     func testPackedGridClosesSlotsAndReordersAcrossRows() {
