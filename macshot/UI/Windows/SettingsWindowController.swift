@@ -3018,6 +3018,9 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         if sender.state == .on { if !enabled.contains(sender.tag) { enabled.append(sender.tag) } }
         else { enabled.removeAll { $0 == sender.tag } }
         UserDefaults.standard.set(enabled, forKey: key)
+        if key == "enabledTools" || key == ToolbarActionPreferences.enabledDefaultsKey {
+            NotificationCenter.default.post(name: .toolbarVisibilityDidChange, object: nil)
+        }
     }
     @objc private func accentColorChanged(_ sender: NSColorWell) {
         ToolbarLayout.saveAccentColor(sender.color)

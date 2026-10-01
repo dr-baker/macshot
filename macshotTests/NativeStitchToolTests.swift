@@ -11,21 +11,25 @@ final class NativeStitchToolTests: XCTestCase {
         return view
     }
 
-    func testNativeToolAppearsOnlyInEditorAndRespectsVisibilityPreference() {
+    func testNativeToolAppearsInCaptureAndEditorAndRespectsVisibilityPreference() {
         withDefaults(["enabledTools": [AnnotationTool.arrow.rawValue, AnnotationTool.stitch.rawValue],
             "knownToolRawValues": AnnotationTool.allCases.map(\.rawValue)]) {
             let overlay = ToolbarLayout.bottomButtons(selectedTool: .arrow, selectedColor: .red)
-            XCTAssertFalse(overlay.contains { $0.action == .tool(.stitch) })
-            let editor = ToolbarLayout.bottomButtons(selectedTool: .stitch, selectedColor: .red, isEditorMode: true)
+            XCTAssertTrue(overlay.contains { $0.action == .tool(.stitch) })
+            let editor = ToolbarLayout.bottomButtons(selectedTool: .stitch, selectedColor: .red)
             XCTAssertEqual(editor.filter { $0.action == .tool(.stitch) }.count, 1)
             XCTAssertTrue(editor.first { $0.action == .tool(.stitch) }!.isSelected)
             UserDefaults.standard.set([AnnotationTool.arrow.rawValue], forKey: "enabledTools")
-            let hidden = ToolbarLayout.bottomButtons(selectedTool: .arrow, selectedColor: .red, isEditorMode: true)
+            let hidden = ToolbarLayout.bottomButtons(selectedTool: .arrow, selectedColor: .red)
             XCTAssertFalse(hidden.contains { $0.action == .tool(.stitch) })
+            let hiddenCapture = ToolbarLayout.bottomButtons(selectedTool: .arrow, selectedColor: .red)
+            XCTAssertFalse(hiddenCapture.contains { $0.action == .tool(.stitch) })
+            XCTAssertTrue(ToolbarLayout.bottomButtons(selectedTool: .arrow, selectedColor: .red,
+                isRecording: true).isEmpty)
         }
     }
 
-    func testStitchDoesNotOverwriteRememberedDrawingToolOrEnterCaptureOverlay() {
+    func testStitchDoesNotOverwriteRememberedDrawingToolOrEnterCaptureWithoutHandoff() {
         withDefaults(["rememberLastTool": true, "lastUsedTool": AnnotationTool.arrow.rawValue]) {
             let view = editor()
             view.currentTool = .rectangle
@@ -37,6 +41,83 @@ final class NativeStitchToolTests: XCTestCase {
             overlay.handleToolbarAction(.tool(.stitch))
             XCTAssertEqual(overlay.currentTool, .rectangle)
             view.currentTool = .arrow
+        }
+    }
+
+    func testSelectedCaptureHandsRawImageAndAnnotationsToExistingEditorRouteInStitch() throws {
+        try withDefaults(["rememberLastTool": true]) {
+            let view = OverlayView(frame: CGRect(x: 0, y: 0, width: 160, height: 120))
+            let screenshot = ImageProbe.quadrantImage(width: 160, height: 120)
+            view.screenshotImage = screenshot
+            view.applySelection(CGRect(x: 20, y: 10, width: 100, height: 80))
+            view.currentTool = .rectangle
+            let annotation = Annotation(tool: .arrow, startPoint: CGPoint(x: 30, y: 20),
+                endPoint: CGPoint(x: 80, y: 60), color: .red, strokeWidth: 3)
+            view.annotations = [annotation]
+            view.undoStack = [.added(annotation)]
+            view.effectsBrightness = 0.15
+            let delegate = StitchHandoffDelegate()
+            view.overlayDelegate = delegate
+            var handoff: OverlayEditorState?
+            delegate.onDetach = { handoff = view.snapshotEditorState() }
+            view.handleToolbarAction(.tool(.stitch))
+            let snapshot = try XCTUnwrap(handoff)
+            XCTAssertEqual(delegate.detachRequests, 1)
+            XCTAssertEqual(snapshot.currentTool, .stitch)
+            XCTAssertTrue(snapshot.screenshotImage === screenshot)
+            XCTAssertEqual(snapshot.selectionRect, CGRect(x: 20, y: 10, width: 100, height: 80))
+            XCTAssertTrue(snapshot.annotations[0] === annotation)
+            XCTAssertEqual(snapshot.undoStack.count, 1)
+            XCTAssertEqual(snapshot.effectsBrightness, 0.15)
+            XCTAssertEqual(UserDefaults.standard.integer(forKey: "lastUsedTool"), AnnotationTool.rectangle.rawValue)
+            view.currentTool = .arrow
+        }
+    }
+
+    func testStitchHandoffIsBlockedForIdleRecordingSelectionOnlyAndPendingPixels() {
+        for captureMode in 0..<4 {
+            let view = OverlayView(frame: CGRect(x: 0, y: 0, width: 100, height: 80))
+            view.screenshotImage = ImageProbe.quadrantImage(width: 100, height: 80)
+            view.currentTool = .arrow
+            if captureMode != 0 { view.applySelection(view.bounds) }
+            if captureMode == 1 { view.isRecording = true }
+            if captureMode == 2 { view.selectionOnlyMode = true }
+            if captureMode == 3 { view.screenshotImage = nil }
+            let delegate = StitchHandoffDelegate()
+            view.overlayDelegate = delegate
+            view.handleToolbarAction(.tool(.stitch))
+            XCTAssertEqual(delegate.detachRequests, 0)
+            XCTAssertEqual(view.currentTool, .arrow)
+        }
+    }
+
+    func testVisibilityPreferenceNotificationUpdatesExistingCaptureAndEditorToolbars() {
+        withDefaults(["enabledTools": [AnnotationTool.arrow.rawValue],
+            "knownToolRawValues": AnnotationTool.allCases.map(\.rawValue)]) {
+            let capture = OverlayView(frame: CGRect(x: 0, y: 0, width: 120, height: 100))
+            capture.applySelection(capture.bounds)
+            let editor = self.editor()
+            let captureWindow = NSWindow(contentRect: capture.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            let editorWindow = NSWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            captureWindow.contentView = capture
+            editorWindow.contentView = editor
+            defer { captureWindow.orderOut(nil); editorWindow.orderOut(nil) }
+            for view in [capture, editor] {
+                XCTAssertFalse(view.bottomButtons.contains { $0.action == .tool(.stitch) })
+            }
+            UserDefaults.standard.set([AnnotationTool.arrow.rawValue, AnnotationTool.stitch.rawValue], forKey: "enabledTools")
+            NotificationCenter.default.post(name: .toolbarVisibilityDidChange, object: nil)
+            for view in [capture, editor] {
+                XCTAssertTrue(view.bottomButtons.contains { $0.action == .tool(.stitch) })
+                XCTAssertTrue(view.subviews.compactMap { $0 as? ToolbarStripView }.contains {
+                    $0.buttonViews.contains { $0.action == .tool(.stitch) }
+                })
+            }
+            UserDefaults.standard.set([AnnotationTool.arrow.rawValue], forKey: "enabledTools")
+            NotificationCenter.default.post(name: .toolbarVisibilityDidChange, object: nil)
+            for view in [capture, editor] {
+                XCTAssertFalse(view.bottomButtons.contains { $0.action == .tool(.stitch) })
+            }
         }
     }
 
@@ -197,4 +278,38 @@ final class NativeStitchToolTests: XCTestCase {
         XCTAssertEqual(ToolShortcutManager.lookupAction(for: "v"), .tool(.stitch))
         XCTAssertEqual(ToolShortcutManager.tooltipShortcut(for: .tool(.stitch)), "v")
     }
+}
+
+@MainActor
+private final class StitchHandoffDelegate: OverlayViewDelegate {
+    var detachRequests = 0
+    var onDetach: (() -> Void)?
+    func overlayViewDidRequestDetach() { detachRequests += 1; onDetach?() }
+    func overlayViewDidFinishSelection(_ rect: NSRect) {}
+    func overlayViewSelectionDidChange(_ rect: NSRect) {}
+    func overlayViewDidCancel() {}
+    func overlayViewDidConfirm() {}
+    func overlayViewDidRequestSave() {}
+    func overlayViewDidRequestSaveAs() {}
+    func overlayViewDidRequestPin() {}
+    func overlayViewDidRequestOCR() {}
+    func overlayViewDidRequestQuickSave() {}
+    func overlayViewDidRequestFileSave() {}
+    func overlayViewDidRequestUpload() {}
+    func overlayViewDidRequestShare(anchorView: NSView?) {}
+    func overlayViewDidRequestRemoveBackground() {}
+    func overlayViewDidRequestEnterRecordingMode() {}
+    func overlayViewDidRequestStartRecording(rect: NSRect) {}
+    func overlayViewDidRequestStopRecording() {}
+    func overlayViewDidRequestScrollCapture(rect: NSRect) {}
+    func overlayViewDidRequestStopScrollCapture() {}
+    func overlayViewDidRequestCancelScrollCapture() {}
+    func overlayViewDidRequestToggleAutoScroll() {}
+    func overlayViewDidRequestAccessibilityPermission() {}
+    func overlayViewDidRequestInputMonitoringPermission() {}
+    func overlayViewDidBeginSelection() {}
+    func overlayViewRemoteSelectionDidChange(_ rect: NSRect) {}
+    func overlayViewDidChangeSnapMode() {}
+    func overlayViewRemoteSelectionDidFinish(_ rect: NSRect) {}
+    func overlayViewDidRequestAddCapture() {}
 }

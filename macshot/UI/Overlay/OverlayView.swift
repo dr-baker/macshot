@@ -1142,6 +1142,15 @@ class OverlayView: NSView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleToolbarColorsChanged),
             name: .toolbarColorsDidChange, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .toolbarVisibilityDidChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleToolbarVisibilityChanged),
+            name: .toolbarVisibilityDidChange, object: nil)
+    }
+
+    @objc private func handleToolbarVisibilityChanged() {
+        rebuildToolbarLayout()
+        needsDisplay = true
     }
 
     @objc private func handleToolbarColorsChanged() {
@@ -5189,7 +5198,7 @@ class OverlayView: NSView {
             selectedTool: currentTool, selectedColor: currentColor,
             beautifyEnabled: beautifyEnabled, beautifyStyleIndex: beautifyStyleIndex,
             hasAnnotations: movableAnnotations, isRecording: isRecording,
-            effectsActive: effectsActive, isEditorMode: isEditorMode
+            effectsActive: effectsActive
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -8224,7 +8233,17 @@ class OverlayView: NSView {
         guard !selectionOnlyMode else { return }
         switch action {
         case .tool(let tool):
-            guard tool != .stitch || isEditorMode else { return }
+            if tool == .stitch, !isEditorMode {
+                guard state == .selected, !selectionRect.isEmpty, !isRecording,
+                    screenshotImage != nil, let delegate = overlayDelegate else { return }
+                commitTextFieldIfNeeded()
+                // The established editor handoff preserves the raw crop,
+                // editable annotations and processing settings. Stitch stays
+                // transient so the next capture keeps its drawing tool.
+                currentTool = .stitch
+                delegate.overlayViewDidRequestDetach()
+                return
+            }
             commitTextFieldIfNeeded()
             showBeautifyInOptionsRow = false  // switch back to tool options
             currentTool = tool

@@ -2,6 +2,7 @@ import Cocoa
 
 extension Notification.Name {
     static let toolbarColorsDidChange = Notification.Name("toolbarColorsDidChange")
+    static let toolbarVisibilityDidChange = Notification.Name("toolbarVisibilityDidChange")
 }
 
 // Toolbar buttons drawn directly in the OverlayView (not a separate window).
@@ -309,7 +310,7 @@ class ToolbarLayout {
     static func bottomButtons(
         selectedTool: AnnotationTool, selectedColor: NSColor, beautifyEnabled: Bool = false,
         beautifyStyleIndex: Int = 0, hasAnnotations: Bool = false, isRecording: Bool = false,
-        effectsActive: Bool = false, isEditorMode: Bool = false
+        effectsActive: Bool = false
     ) -> [ToolbarButton] {
         // Hide the bottom bar entirely while recording
         if isRecording { return [] }
@@ -361,7 +362,6 @@ class ToolbarLayout {
         ]
 
         for (tool, symbol, tip) in tools {
-            if tool == .stitch && !isEditorMode { continue }
             // Skip if disabled
             if let enabledRawValues = enabledRawValues, !enabledRawValues.contains(tool.rawValue) {
                 continue
