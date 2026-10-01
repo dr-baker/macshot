@@ -764,6 +764,10 @@ class OverlayView: NSView {
     var autoQuickSaveMode: Bool = false  // set by "Quick Capture" menu — quick-saves immediately after selection
     var autoScrollCaptureMode: Bool = false  // set by "Scroll Capture" menu — triggers scroll capture immediately after selection
     var selectionOnlyMode: Bool = false
+    /// Stitch-specific targets in overlay points. Ordinary captures leave this nil.
+    var stitchSizeRecommendations: ((CGRect, CGSize) -> StitchSelectionRecommendations.Result)?
+    var stitchReferencePixelsPerPoint: CGFloat = 1
+    var stitchDimensionGuides: [StitchDimensionGuide] = []
     var autoConfirmMode: Bool = false  // set by "Add Capture" — auto-confirms selection (no toolbars, no save)
 
     // Recording session overrides (popover settings — nil means use UserDefaults default)
@@ -2142,6 +2146,7 @@ class OverlayView: NSView {
             // selection with an active snap.
             if isResizingSelection || state == .selecting {
                 drawBoundarySnapGuides()
+                drawStitchDimensionGuides()
             }
 
             // Hide the text view when color picker is open for bg/outline (so picker isn't behind it)
@@ -2398,9 +2403,14 @@ class OverlayView: NSView {
     private func drawSelectingHelperText() {
         guard selectionRect.width >= 1, selectionRect.height >= 1 else { return }
 
-        let text = autoQuickSaveMode
-            ? L("Hold Space to move. Release to finish")
-            : L("Hold Space to move. Release to annotate and edit")
+        let text: String
+        if stitchSizeRecommendations != nil {
+            text = L("Match a width or height · Option to ignore snapping")
+        } else if selectionOnlyMode || autoConfirmMode || autoQuickSaveMode {
+            text = L("Hold Space to move. Release to finish")
+        } else {
+            text = L("Hold Space to move. Release to annotate and edit")
+        }
         let attrs = Self.helperTextAttrs
         let size = (text as NSString).size(withAttributes: attrs)
         let padding: CGFloat = 10
@@ -6898,12 +6908,14 @@ class OverlayView: NSView {
         }
 
         if case .resolution(let pxW, let pxH) = activePreSelectionPreset {
+            stitchDimensionGuides = []
             selectionRect = fixedPreSelectionRect(centeredAt: point, pxW: pxW, pxH: pxH)
             overlayDelegate?.overlayViewSelectionDidChange(selectionRect)
             needsDisplay = true
             return
         }
 
+        let unsnappedPoint = point
         // Boundary snap the MOVING corner (the cursor) to nearby image edges.
         // Skipped for freeform-constrained drags (aspect/shift) so the constraint
         // stays exact, and bypassed with Option. The anchor edge stays put.
@@ -6916,6 +6928,13 @@ class OverlayView: NSView {
             boundarySnapGuideX = nil
             boundarySnapGuideY = nil
         }
+
+        point = stitchSnappedSelectionPoint(raw: unsnappedPoint, boundaryAdjusted: point,
+            anchor: selectionStart, enabled: !spaceRepositioning && activePreSelectionRatio == nil
+                && !shiftHeld && !modifiers.contains(.option))
+        // A matching stitch dimension takes priority over an image boundary on that axis.
+        if stitchDimensionGuides.contains(where: { $0.isWidth && $0.matched }) { boundarySnapGuideX = nil }
+        if stitchDimensionGuides.contains(where: { !$0.isWidth && $0.matched }) { boundarySnapGuideY = nil }
 
         let rawW = abs(point.x - selectionStart.x)
         let rawH = abs(point.y - selectionStart.y)
@@ -10366,6 +10385,9 @@ class OverlayView: NSView {
         autoScrollCaptureMode = false
         autoConfirmMode = false
         selectionOnlyMode = false
+        stitchSizeRecommendations = nil
+        stitchReferencePixelsPerPoint = 1
+        stitchDimensionGuides = []
         needsDisplay = true
     }
 }

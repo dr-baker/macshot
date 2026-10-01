@@ -43,6 +43,18 @@ final class StitchCaptureCoordinator {
         self.analyze = analyze
     }
 
+    /// Registration may have corrected earlier screen estimates. Anchor the next
+    /// estimate to the last accepted document piece, including after Undo.
+    func selectionRecommendations(at position: CGPoint, maximumSize: CGSize? = nil) -> StitchSelectionRecommendations.Result {
+        guard let previous = document.pieces.last else {
+            return StitchSelectionRecommendations.recommendations(frames: [])
+        }
+        let origin = CGPoint(x: previous.origin.x + position.x - previousFrame.position.x,
+                             y: previous.origin.y + position.y - previousFrame.position.y)
+        return StitchSelectionRecommendations.recommendations(frames: document.pieces.map(\.frame),
+                                                              proposedOrigin: origin, maximumSize: maximumSize)
+    }
+
     func requestCapture() {
         guard active, !finishing else { return }
         if busy {

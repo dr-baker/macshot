@@ -925,3 +925,8 @@
 "Navigate the page · release Space to select" = "Navigate the page · release Space to select";
 "Capture failed · try another region" = "Capture failed · try another region";
 "Capture removed" = "Capture removed";
+
+// Stitch capture dimension guides
+"%d px tall" = "%d px tall";
+"%d px wide" = "%d px wide";
+"Match a width or height · Option to ignore snapping" = "Match a width or height · Option to ignore snapping";

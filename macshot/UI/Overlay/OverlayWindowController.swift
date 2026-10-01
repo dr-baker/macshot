@@ -385,6 +385,12 @@ class OverlayWindowController {
         overlayView?.selectionOnlyMode = true
     }
 
+    func setStitchSizeRecommendations(referencePixelsPerPoint: CGFloat,
+        provider: @escaping (CGRect, CGSize) -> StitchSelectionRecommendations.Result) {
+        overlayView?.stitchReferencePixelsPerPoint = referencePixelsPerPoint
+        overlayView?.stitchSizeRecommendations = provider
+    }
+
     private func finishRawSelection(_ rect: NSRect) {
         guard selectionOnlyHandler != nil, pendingRawSelection == nil else { return }
         let clipped = rect.intersection(NSRect(origin: .zero, size: screen.frame.size))

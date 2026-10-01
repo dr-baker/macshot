@@ -89,13 +89,28 @@ final class StitchCaptureSession: NSObject {
                 }
                 self.pickers = captures.map { capture in
                     let picker = StitchRegionSelection(capture: capture)
+                    if let coordinator = self.coordinator, let referenceScale = self.referenceScale {
+                        let pixelScale = CGFloat(capture.image.width) / capture.screen.frame.width
+                        picker.setSizeRecommendations(referenceScale: referenceScale) { [weak coordinator] rect, available in
+                            let pixelRect = CGRect(x: rect.minX * pixelScale,
+                                y: (capture.screen.frame.height - rect.maxY) * pixelScale,
+                                width: rect.width * pixelScale, height: rect.height * pixelScale)
+                            let position = StitchCaptureFrame.estimatedPosition(screenFrame: capture.screen.frame,
+                                pixelRect: pixelRect, pixelScale: pixelScale,
+                                referenceScale: referenceScale, scrollOffset: offset)
+                            return (coordinator?.selectionRecommendations(at: position, maximumSize:
+                                CGSize(width: available.width * referenceScale, height: available.height * referenceScale))
+                                ?? StitchSelectionRecommendations.recommendations(frames: []))
+                                .scaled(by: 1 / referenceScale)
+                        }
+                    }
                     picker.onCancel = { [weak self] in self?.cancel() }
                     picker.onPick = { [weak self] rect in
                         guard let self, self.generation == token else { return }
                         let scale = CGFloat(capture.image.width) / capture.screen.frame.width
                         let baseScale = self.referenceScale ?? scale
                         self.referenceScale = baseScale
-                        guard let image = Self.copyRegion(capture.image, rect: rect, scale: baseScale / scale) else {
+                        guard let image = StitchCaptureImageCrop.copy(image: capture.image, rect: rect, scale: baseScale / scale) else {
                             self.endSelection(frame: nil); return
                         }
                         // AppKit global coordinates are bottom-up; document coordinates are top-down.
@@ -118,20 +133,6 @@ final class StitchCaptureSession: NSObject {
         pickers = []; capturing = false
         let completion = selectionCompletion; selectionCompletion = nil
         completion?(frame)
-    }
-
-    // Own only selected pixels, normalized to the first display's pixel density.
-    private static func copyRegion(_ image: CGImage, rect: CGRect, scale: CGFloat) -> CGImage? {
-        guard let crop = image.cropping(to: rect) else { return nil }
-        let width = max(1, Int((CGFloat(crop.width) * scale).rounded()))
-        let height = max(1, Int((CGFloat(crop.height) * scale).rounded()))
-        guard let context = CGContext(data: nil, width: width, height: height,
-                                      bitsPerComponent: 8, bytesPerRow: width * 4,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.interpolationQuality = .high
-        context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
     }
 
     private func makeHUD(screen: NSScreen, rect: CGRect, imageSize: CGSize) {

@@ -763,6 +763,16 @@ extension DetachedEditorWindowController: OverlayViewDelegate {
                 let controller = OverlayWindowController(capture: capture)
                 controller.overlayDelegate = handler
                 controller.setAutoConfirmMode()  // no toolbars, auto-confirm on selection
+                if let document = self.overlayView?.stitchDocument {
+                    // Add Capture owns fresh display pixels; choose the equivalent
+                    // source-pixel size on each display before appending the image.
+                    let scale = CGFloat(capture.image.width) / capture.screen.frame.width
+                    controller.setStitchSizeRecommendations(referencePixelsPerPoint: scale) { _, available in
+                        StitchSelectionRecommendations.recommendations(frames: document.pieces.map(\.frame),
+                            maximumSize: CGSize(width: available.width * scale, height: available.height * scale))
+                            .scaled(by: 1 / scale)
+                    }
+                }
                 controller.showOverlay()
                 handler.overlayControllers.append(controller)
             }

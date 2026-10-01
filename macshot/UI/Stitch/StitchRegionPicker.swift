@@ -8,6 +8,12 @@ final class StitchRegionSelection {
     var onPick: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
 
+    func setSizeRecommendations(referenceScale: CGFloat,
+        provider: @escaping (CGRect, CGSize) -> StitchSelectionRecommendations.Result) {
+        controller.setStitchSizeRecommendations(referencePixelsPerPoint: referenceScale,
+                                                provider: provider)
+    }
+
     init(capture: ScreenCapture) {
         self.capture = capture
         controller = OverlayWindowController(capture: capture)
@@ -25,7 +31,7 @@ final class StitchRegionSelection {
             let pixels = CGRect(x: rect.minX * sx,
                                 y: (size.height - rect.maxY) * sy,
                                 width: rect.width * sx, height: rect.height * sy)
-                .integral.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
             self.dismiss()
             self.onPick?(pixels)
         }, onCancel: { [weak self] in self?.onCancel?() })

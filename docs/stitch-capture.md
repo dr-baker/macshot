@@ -8,7 +8,7 @@ Open an image in the editor and choose **Stitch** in the title bar. The scissors
 
 Touching edges get a soft, wavy seam. Open the seam control in the bottom toolbar to adjust color, line width, wave height, blur, and fade width. The blur is strongest at the center line and fades to untouched pixels across the selected width. Toggle **Show stitch seams** to hide the effect. These controls apply to all joins in the current stitch. Undo and redo cover cuts, movement, and seam changes.
 
-Use **Add Capture** to capture another region into the current Stitch document. You can also paste or drag image files onto the canvas. Open **Pieces** in the top bar to select a thumbnail, change its stacking order, or remove it.
+Use **Add Capture** to capture another region into the current Stitch document. While drawing a region, dashed guides suggest matching widths and heights from nearby pieces and continuous rows or columns. A guide turns purple when the selection snaps to that size. Nearby alternatives appear as you approach them; hold **Option** for an arbitrary size. The same guides are available after the first shot in Stitch Capture. You can also paste or drag image files onto the canvas. Open **Pieces** in the top bar to select a thumbnail, change its stacking order, or remove it.
 
 Use the arrangement menu in the top bar to choose **Free Move** or **Packed**. Free Move retains precise overlap and lets you place each piece independently. Packed closes gaps and arranges pieces in tight rows or columns, using the existing layout to choose the direction. While dragging, the grid shows the proposed slot and rearranges neighboring pieces. Release to place the piece, or press Escape to cancel. Switching arrangements, reordering, and background changes support undo.
 
@@ -37,6 +37,6 @@ New Stitch labels use English fallback in locales awaiting translation.
 
 ## Validation
 
-Automated checks cover varied region sizes, spatial placement, overlap matching, repeat/queued captures, failure/retry, Finish, cancellation, keyboard routing, raw selection isolation, and the fading blur. Renderer fixtures verify both seam orientations and untouched pixels outside the blur band.
+Automated checks cover dimension recommendations, continuous spans without bridging gaps, alternate sizes, reverse drags, Option and Shift overrides, display scale conversion, registered layout coordinates, varied region sizes, spatial placement, overlap matching, repeat/queued captures, failure/retry, Finish, cancellation, keyboard routing, raw selection isolation, and the fading blur. Renderer fixtures verify both seam orientations and untouched pixels outside the blur band.
 
 Runtime checks use this Mac's current OS. macOS 13 remains the deployment target; a separate Ventura installation has not been tested.
