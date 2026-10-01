@@ -171,6 +171,10 @@ final class StitchCaptureSession: NSObject {
     }
 
     @objc private func finish() {
+        // Flushing may accept the first image, start analysis, or replace the pickers.
+        // Iterate the original selectors before deciding which unfinished work to drop.
+        let completedPickers = pickers
+        for picker in completedPickers { picker.flushPendingSelection() }
         guard let coordinator else { cancel(); return }
         // Enter while selecting finishes the captures already accepted, without saving an empty selection.
         if selectionCompletion != nil {

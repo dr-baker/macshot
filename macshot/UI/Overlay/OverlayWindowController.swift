@@ -131,6 +131,7 @@ class OverlayWindowController {
     private var selectionOnlyHandler: ((NSRect) -> Void)?
     private var selectionOnlyCancelHandler: (() -> Void)?
     private var selectionOnlyGeneration = UUID()
+    private var pendingRawSelection: NSRect?
 
     private var overlayView: OverlayView?
     private var rootView: ScreenshotOverlayRootView?
@@ -378,23 +379,34 @@ class OverlayWindowController {
     func setSelectionOnlyMode(onSelect: @escaping (NSRect) -> Void,
                               onCancel: @escaping () -> Void) {
         selectionOnlyGeneration = UUID()
+        pendingRawSelection = nil
         selectionOnlyHandler = onSelect
         selectionOnlyCancelHandler = onCancel
         overlayView?.selectionOnlyMode = true
     }
 
     private func finishRawSelection(_ rect: NSRect) {
-        guard selectionOnlyHandler != nil else { return }
+        guard selectionOnlyHandler != nil, pendingRawSelection == nil else { return }
         let clipped = rect.intersection(NSRect(origin: .zero, size: screen.frame.size))
         guard !clipped.isNull, clipped.width >= 1, clipped.height >= 1 else { return }
+        pendingRawSelection = clipped
         let generation = selectionOnlyGeneration
         // Let mouseUp finish before the owner dismisses and resets the view.
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.selectionOnlyGeneration == generation,
-                  let handler = self.selectionOnlyHandler else { return }
-            self.selectionOnlyHandler = nil
-            handler(clipped)
+            guard let self, self.selectionOnlyGeneration == generation else { return }
+            self.flushPendingRawSelection()
         }
+    }
+
+    /// Finish can arrive before the deferred mouse-up callback. Deliver that completed
+    /// selection first; clear state before invoking its owner, which may tear us down.
+    @discardableResult
+    func flushPendingRawSelection() -> Bool {
+        guard let rect = pendingRawSelection, let handler = selectionOnlyHandler else { return false }
+        pendingRawSelection = nil
+        selectionOnlyHandler = nil
+        handler(rect)
+        return true
     }
 
     /// Enter recording mode — shows recording toolbar buttons in the normal toolbar.
@@ -458,6 +470,7 @@ class OverlayWindowController {
     /// composition cache survives `orderOut`).
     func dismiss() {
         selectionOnlyGeneration = UUID()
+        pendingRawSelection = nil
         selectionOnlyHandler = nil
         selectionOnlyCancelHandler = nil
         saveSelectionIfNeeded()
@@ -483,6 +496,7 @@ class OverlayWindowController {
     /// dead and a new one must be constructed.
     func tearDown() {
         selectionOnlyGeneration = UUID()
+        pendingRawSelection = nil
         selectionOnlyHandler = nil
         selectionOnlyCancelHandler = nil
         overlayView?.reset()

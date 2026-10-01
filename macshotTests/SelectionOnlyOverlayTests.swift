@@ -78,6 +78,39 @@ final class SelectionOnlyOverlayTests: XCTestCase {
         controller.dismiss()
     }
 
+    func testFinishFlushDeliversCompletedSelectionExactlyOnceBeforeQueuedCallback() async throws {
+        let screen = try XCTUnwrap(NSScreen.main ?? NSScreen.screens.first)
+        let controller = OverlayWindowController(screen: screen)
+        defer { controller.tearDown() }
+        let rect = NSRect(x: 10, y: 20, width: 100, height: 50)
+        var selections: [NSRect] = []
+        controller.setSelectionOnlyMode(onSelect: { selections.append($0) }, onCancel: {})
+        controller.overlayViewDidFinishSelection(rect)
+        XCTAssertTrue(selections.isEmpty)
+        XCTAssertTrue(controller.flushPendingRawSelection())
+        XCTAssertEqual(selections, [rect])
+        XCTAssertFalse(controller.flushPendingRawSelection())
+        let drained = expectation(description: "queued selection drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        await fulfillment(of: [drained], timeout: 1)
+        XCTAssertEqual(selections, [rect])
+    }
+
+    func testDismissAndTearDownSuppressPendingSelectionEvenWhenFlushed() async throws {
+        let screen = try XCTUnwrap(NSScreen.main ?? NSScreen.screens.first)
+        for tearDown in [false, true] {
+            let controller = OverlayWindowController(screen: screen)
+            defer { controller.tearDown() }
+            controller.setSelectionOnlyMode(onSelect: { _ in XCTFail("dismissed selection delivered") }, onCancel: {})
+            controller.overlayViewDidFinishSelection(NSRect(x: 10, y: 20, width: 100, height: 50))
+            if tearDown { controller.tearDown() } else { controller.dismiss() }
+            XCTAssertFalse(controller.flushPendingRawSelection())
+        }
+        let drained = expectation(description: "invalidated selections drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        await fulfillment(of: [drained], timeout: 1)
+    }
+
     func testCancelInvalidatesQueuedSelection() async throws {
         let screen = try XCTUnwrap(NSScreen.main ?? NSScreen.screens.first)
         let controller = OverlayWindowController(screen: screen)
@@ -87,6 +120,7 @@ final class SelectionOnlyOverlayTests: XCTestCase {
                                         onCancel: { cancelled = true })
         controller.overlayViewDidFinishSelection(NSRect(x: 10, y: 20, width: 100, height: 50))
         controller.overlayViewDidCancel()
+        XCTAssertFalse(controller.flushPendingRawSelection())
         let drained = expectation(description: "main queue drained")
         DispatchQueue.main.async { drained.fulfill() }
         await fulfillment(of: [drained], timeout: 1)
