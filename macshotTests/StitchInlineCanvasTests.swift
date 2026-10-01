@@ -95,6 +95,84 @@ final class StitchInlineCanvasTests: XCTestCase {
         XCTAssertEqual(deleted, 1)
     }
 
+    func testBandGuidesSnapBothEndsInDocumentPixelsAndReverseDrags() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        var cuts: [(StitchAxis, CGFloat, CGFloat)] = []
+        canvas.onCut = { cuts.append(($0, $1, $2)) }
+        canvas.mode = .rows
+        canvas.bandGuideRows = [-20, 30]
+        drag(canvas, from: CGPoint(x: 40, y: 27), to: CGPoint(x: 150, y: 76))
+        XCTAssertEqual(cuts[0].1, -20)
+        XCTAssertEqual(cuts[0].2, 30)
+        drag(canvas, from: CGPoint(x: 40, y: 76), to: CGPoint(x: 150, y: 27))
+        XCTAssertEqual(cuts[1].1, 30)
+        XCTAssertEqual(cuts[1].2, -20)
+        canvas.mode = .columns
+        canvas.bandGuideColumns = [-60, 50]
+        drag(canvas, from: CGPoint(x: 38, y: 30), to: CGPoint(x: 147, y: 80))
+        XCTAssertEqual(cuts[2].1, -60)
+        XCTAssertEqual(cuts[2].2, 50)
+    }
+
+    func testOptionImmediatelyReleasesBandSnappingAndFinalCutUsesRawEndpoints() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.mode = .rows
+        canvas.bandGuideRows = [-18, 30]
+        var cut: (CGFloat, CGFloat)?
+        canvas.onCut = { _, a, b in cut = (a, b) }
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 150, y: 79)))
+        XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
+        XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 150, y: 79), modifiers: .option))
+        XCTAssertEqual(cut?.0, -20)
+        XCTAssertEqual(cut?.1, 29)
+        XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
+    }
+
+    func testNewAnalysisDoesNotMoveAnActiveBand() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.mode = .rows
+        canvas.bandGuideRows = [-18, 30]
+        var cuts: [(CGFloat, CGFloat)] = []
+        canvas.onCut = { _, a, b in cuts.append((a, b)) }
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 150, y: 79)))
+        canvas.bandGuideRows = [-20, 29]
+        XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 150, y: 79)))
+        XCTAssertEqual(cuts[0].0, -18)
+        XCTAssertEqual(cuts[0].1, 30)
+        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 150, y: 79))
+        XCTAssertEqual(cuts[1].0, -20)
+        XCTAssertEqual(cuts[1].1, 29)
+    }
+
+    func testBandHoverHighlightsCandidateAndOptionDisablesIt() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.mode = .columns
+        canvas.bandGuideColumns = [-60, 50]
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
+        XCTAssertEqual(canvas.bandHoverMatch, -60)
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
+        XCTAssertNil(canvas.bandHoverMatch)
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertEqual(canvas.bandHoverMatch, -60)
+        canvas.mouseExited(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
+        XCTAssertNil(canvas.bandHoverMatch)
+    }
+
     private func fixture(twoPieces: Bool = false) -> (KeyEditor, StitchCanvasView) {
         let editor = KeyEditor(frame: CGRect(x: 0, y: 0, width: 300, height: 200))
         editor.applySelection(CGRect(x: 10, y: 20, width: 200, height: 100))
@@ -118,8 +196,9 @@ final class StitchInlineCanvasTests: XCTestCase {
         window.contentView = editor
         return window
     }
-    private func mouse(_ type: NSEvent.EventType, _ canvas: NSView, _ point: CGPoint) -> NSEvent {
-        NSEvent.mouseEvent(with: type, location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+    private func mouse(_ type: NSEvent.EventType, _ canvas: NSView, _ point: CGPoint,
+                       modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: canvas.convert(point, to: nil), modifierFlags: modifiers, timestamp: 0,
             windowNumber: canvas.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
     }
     private func drag(_ canvas: StitchCanvasView, from: CGPoint, to: CGPoint) {

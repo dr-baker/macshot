@@ -1,8 +1,10 @@
 # Stitch screenshots
 
-Open a screenshot in the main editor and select **Stitch**, the scissors tool in the bottom toolbar. Choose **Remove Rows** or **Remove Columns** in its options row, then drag over the space you want to remove. The highlighted band shows the amount being removed. Release to reconnect the remaining content with a fading blur and a center line. This also works on a single large screenshot.
+Select **Stitch**, the scissors tool in the bottom toolbar of a selected capture or the main editor. Selecting it during capture opens that image in the main editor. Settings → Tools changes its visibility immediately, including in open editors. Choose **Remove Rows** or **Remove Columns** in its options row, then drag over the space you want to remove. The highlighted band shows the amount being removed. Release to reconnect the remaining content with a fading blur and a center line. This also works on a single large screenshot.
 
 Choose another drawing tool to annotate the result. The editor keeps the same canvas, zoom, top bar, copy and save controls, and undo history. Original image pixels and annotations remain editable.
+
+Faint guides mark capture edges, existing joins, and large clear gaps. Both ends of a removal band snap near a guide; the matched guide turns purple. Gap suggestions leave room for the seam blur and require clear space across all intersecting captures. Hold **Option** to bypass snapping, even after starting the drag. Guides stay fixed during a drag as background analysis finishes.
 
 - **Remove Rows:** drag over a horizontal band to remove it and reconnect the content above and below.
 - **Remove Columns:** drag over a vertical band to reconnect its left and right edges.

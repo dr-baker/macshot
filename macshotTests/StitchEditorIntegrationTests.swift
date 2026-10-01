@@ -332,6 +332,14 @@ final class StitchEditorIntegrationTests: XCTestCase {
         let canvas = try XCTUnwrap(descendants(editor).compactMap { $0 as? StitchCanvasView }.first)
         editor.stitchMode = .rows
         root.layoutSubtreeIfNeeded()
+        let guidesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in canvas.bandGuideRows.count > 2 }, object: canvas)
+        await fulfillment(of: [guidesReady], timeout: 5)
+        let internalGuides = canvas.bandGuideRows.filter { $0 > 0 && $0 < 900 }
+        let gap = try XCTUnwrap(zip(internalGuides, internalGuides.dropFirst()).max {
+            $0.1 - $0.0 < $1.1 - $1.0
+        }, "The real editor should suggest boundaries for the large empty section")
+        let removed = gap.1.rounded() - gap.0.rounded()
+        XCTAssertGreaterThan(removed, 200)
         func mouse(_ type: NSEvent.EventType, y: CGFloat) throws -> NSEvent {
             try XCTUnwrap(NSEvent.mouseEvent(with: type, location: canvas.convert(NSPoint(x: 550, y: y), to: nil),
                 modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
@@ -347,13 +355,14 @@ final class StitchEditorIntegrationTests: XCTestCase {
             let png = try XCTUnwrap(rendered.representation(using: .png, properties: [:]))
             try png.write(to: url)
         }
-        canvas.mouseDown(with: try mouse(.leftMouseDown, y: 360))
-        canvas.mouseDragged(with: try mouse(.leftMouseDragged, y: 600))
+        canvas.mouseDown(with: try mouse(.leftMouseDown, y: gap.0 + 3))
+        canvas.mouseDragged(with: try mouse(.leftMouseDragged, y: gap.1 - 3))
+        XCTAssertEqual(canvas.bandGuideMatches, [gap.0, gap.1])
         let output = URL(fileURLWithPath: path)
         try export(output.deletingLastPathComponent().appendingPathComponent(output.deletingPathExtension().lastPathComponent + "-band.png"))
-        canvas.mouseUp(with: try mouse(.leftMouseUp, y: 600))
-        XCTAssertEqual(editor.stitchDocument?.bounds.size, NSSize(width: 1100, height: 660))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in canvas.preview?.height == 660 }, object: canvas)
+        canvas.mouseUp(with: try mouse(.leftMouseUp, y: gap.1 - 3))
+        XCTAssertEqual(editor.stitchDocument?.bounds.size, NSSize(width: 1100, height: 900 - removed))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in canvas.preview?.height == Int(900 - removed) }, object: canvas)
         await fulfillment(of: [ready], timeout: 5)
         try export(output)
     }

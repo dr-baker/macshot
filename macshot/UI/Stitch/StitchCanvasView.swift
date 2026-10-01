@@ -50,6 +50,15 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     var onMode: ((Mode) -> Void)?
     var onZoom: ((CGFloat) -> Void)?
     var onFit: (() -> Void)?
+    var bandGuideRows: [CGFloat] = [] { didSet { refreshBandSnapping(); needsDisplay = true } }
+    var bandGuideColumns: [CGFloat] = [] { didSet { refreshBandSnapping(); needsDisplay = true } }
+    private(set) var bandGuideMatches: [CGFloat] = []
+    private(set) var bandHoverMatch: CGFloat?
+    private var gestureBandCandidates: [CGFloat]?
+    private var rawBandStart: CGPoint?
+    private var rawBandEnd: CGPoint?
+    private var rawBandHover: CGPoint?
+    private var bandSnapBypassed = false
     private var inset: CGFloat { inlineEditor == nil ? 80 : 0 }
     private var effectiveZoom: CGFloat {
         let projection = inlineEditor != nil && bounds.width > 0 ? frame.width / bounds.width : 1
@@ -199,6 +208,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             NSImage(cgImage: annotationPreview, size: contentBounds.size).draw(in: imageRect, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
+        drawBandGuides(zoom: zoom)
         if mode == .move, !moving, let hoveredID, hoveredID != selectedID,
            let piece = document.pieces.first(where: { $0.id == hoveredID }) {
             ToolbarLayout.accentColor.withAlphaComponent(0.55).setStroke()
@@ -275,9 +285,71 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
 
     func cancelEditingGesture() { cancelGesture() }
 
+    private var bandCandidates: [CGFloat] {
+        let range = mode == .rows ? contentBounds.minY...contentBounds.maxY : contentBounds.minX...contentBounds.maxX
+        return (gestureBandCandidates ?? (mode == .rows ? bandGuideRows : bandGuideColumns)).filter { $0.isFinite && range.contains($0) }
+    }
+    private func bandMatch(_ point: CGPoint) -> CGFloat? {
+        guard !bandSnapBypassed else { return nil }
+        let coordinate = mode == .rows ? point.y : point.x
+        guard let closest = bandCandidates.min(by: { abs($0 - coordinate) < abs($1 - coordinate) }),
+              abs(closest - coordinate) <= 6 / effectiveZoom else { return nil }
+        return closest
+    }
+    private func refreshBandSnapping() {
+        guard mode != .move else { return }
+        bandGuideMatches = []
+        func snapped(_ raw: CGPoint) -> CGPoint {
+            var point = raw
+            if let match = bandMatch(raw) {
+                if mode == .rows { point.y = match } else { point.x = match }
+                if !bandGuideMatches.contains(match) { bandGuideMatches.append(match) }
+            }
+            return point
+        }
+        if let rawBandStart { start = snapped(rawBandStart) }
+        if let rawBandEnd { end = snapped(rawBandEnd) }
+        bandHoverMatch = rawBandHover.flatMap { bandMatch($0) }
+    }
+    private func drawBandGuides(zoom: CGFloat) {
+        guard mode != .move else { return }
+        let region = imageRect.intersection(visibleRect)
+        guard !region.isNull else { return }
+        for position in bandCandidates {
+            let coordinate = position - (mode == .rows ? contentBounds.minY : contentBounds.minX) + inset
+            let line = NSBezierPath()
+            if mode == .rows {
+                guard coordinate >= region.minY, coordinate <= region.maxY else { continue }
+                line.move(to: CGPoint(x: region.minX, y: coordinate))
+                line.line(to: CGPoint(x: region.maxX, y: coordinate))
+            } else {
+                guard coordinate >= region.minX, coordinate <= region.maxX else { continue }
+                line.move(to: CGPoint(x: coordinate, y: region.minY))
+                line.line(to: CGPoint(x: coordinate, y: region.maxY))
+            }
+            let matched = bandGuideMatches.contains(position) || bandHoverMatch == position
+            if matched {
+                ToolbarLayout.accentColor.withAlphaComponent(0.85).setStroke()
+                line.lineWidth = 1.5 / zoom
+                line.stroke()
+            } else {
+                line.setLineDash([4 / zoom, 5 / zoom], count: 2, phase: 0)
+                NSColor.white.withAlphaComponent(0.25).setStroke()
+                line.lineWidth = 1.5 / zoom
+                line.stroke()
+                NSColor.black.withAlphaComponent(0.18).setStroke()
+                line.lineWidth = 0.75 / zoom
+                line.stroke()
+            }
+        }
+    }
+
     private func cancelGesture() {
         let wasMoving = moving
         start = nil; end = nil; dragBounds = nil; originalOrigin = nil; moving = false
+        gestureBandCandidates = nil
+        rawBandStart = nil; rawBandEnd = nil; rawBandHover = nil
+        bandGuideMatches = []; bandHoverMatch = nil
         hoveredID = nil; alignmentGuides = []; dragPreviewOrigin = nil; packedPreview = nil
         if wasMoving { onCancelMove?() }
         needsDisplay = true
@@ -296,6 +368,15 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         hoverTracking = area
     }
     override func mouseMoved(with event: NSEvent) {
+        if mode != .move, start == nil {
+            bandSnapBypassed = event.modifierFlags.contains(.option)
+            let point = canvasPoint(event)
+            rawBandHover = document.bounds.contains(point) ? point : nil
+            let previous = bandHoverMatch
+            refreshBandSnapping()
+            if previous != bandHoverMatch { needsDisplay = true }
+            return
+        }
         guard mode == .move, !moving, start == nil else { return }
         let point = canvasPoint(event)
         let id = document.pieces.reversed().first(where: { $0.frame.contains(point) })?.id
@@ -304,6 +385,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseExited(with event: NSEvent) {
         hoveredID = nil
+        rawBandHover = nil; bandHoverMatch = nil
         needsDisplay = true
     }
     override func mouseDown(with event: NSEvent) {
@@ -312,6 +394,12 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         let p = canvasPoint(event)
         guard document.bounds.contains(p) else { selectedID = nil; onSelect?(nil); return }
         start = p; end = p; dragBounds = document.bounds
+        if mode != .move {
+            gestureBandCandidates = bandCandidates
+            rawBandStart = p; rawBandEnd = p; rawBandHover = nil
+            bandSnapBypassed = event.modifierFlags.contains(.option)
+            refreshBandSnapping()
+        }
         if mode == .move {
             let piece = document.pieces.reversed().first { $0.frame.contains(p) }
             selectedID = piece?.id; originalOrigin = piece?.origin
@@ -323,6 +411,11 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         guard let start else { return }
         let p = canvasPoint(event)
         end = p
+        if mode != .move {
+            rawBandEnd = p
+            bandSnapBypassed = event.modifierFlags.contains(.option)
+            refreshBandSnapping()
+        }
         if mode == .move, let id = selectedID, let originalOrigin {
             let zoom = effectiveZoom
             guard moving || hypot(p.x - start.x, p.y - start.y) * zoom >= 3 else { return }
@@ -341,8 +434,15 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        if mode != .move, start != nil {
+            rawBandEnd = canvasPoint(event)
+            bandSnapBypassed = event.modifierFlags.contains(.option)
+            refreshBandSnapping()
+        }
         let a = start, b = end
         start = nil; end = nil; dragBounds = nil
+        gestureBandCandidates = nil
+        rawBandStart = nil; rawBandEnd = nil; bandGuideMatches = []
         if moving, let id = selectedID, let piece = document.pieces.first(where: { $0.id == id }) {
             onMove?(id, dragPreviewOrigin ?? piece.origin, true)
         } else if mode != .move, let a, let b {
@@ -352,6 +452,13 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         alignmentGuides = []; hoveredID = nil; dragPreviewOrigin = nil; packedPreview = nil
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        guard mode != .move else { super.flagsChanged(with: event); return }
+        bandSnapBypassed = event.modifierFlags.contains(.option)
+        refreshBandSnapping()
+        needsDisplay = true
     }
 
     /// Center on the visible cut, with enough viewport inset to keep the pill's stroke inside.

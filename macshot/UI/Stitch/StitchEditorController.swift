@@ -46,6 +46,12 @@ final class StitchEditorController: NSObject {
     private var renderGeneration = UUID()
     private var renderCancellation: StitchPreviewCancellation?
     private var pendingRender: DispatchWorkItem?
+    private let guideQueue = DispatchQueue(label: "macshot.stitch-band-guides", qos: .userInitiated)
+    private var guideGeneration = UUID()
+    private var guideCancellation: StitchPreviewCancellation?
+    private var cachedGuideLayout: StitchDocument?
+    private var cachedBandGuides: StitchBandGuides.Result?
+    private var pendingGuideLayout: StitchDocument?
     private enum Options { case seams, pieces, canvas }
     private var activeOptions: Options?
     private let canvasColor = NSColorWell()
@@ -142,6 +148,9 @@ final class StitchEditorController: NSObject {
         canvas.removeFromSuperview()
         canvas.inlineEditor = nil
         cancelPreview()
+        guideGeneration = UUID()
+        guideCancellation?.cancel()
+        pendingGuideLayout = nil
     }
 
     func updateUndoState() { editorView?.refreshStitchOptions() }
@@ -191,7 +200,7 @@ final class StitchEditorController: NSObject {
             slider.onBegin = { [weak self] in
                 self?.checkpoint(L("Change seam")); self?.adjustingStyle = true
             }
-            slider.onEnd = { [weak self] in self?.adjustingStyle = false; self?.publish() }
+            slider.onEnd = { [weak self] in self?.adjustingStyle = false; self?.updateBandGuides(); self?.publish() }
             view.addSubview(label); view.addSubview(value); view.addSubview(slider)
             sliders.append(slider); values.append(value)
         }
@@ -302,6 +311,7 @@ final class StitchEditorController: NSObject {
     }
     private func refresh() {
         canvas.refresh(document, preview: nil)
+        updateBandGuides()
         canvas.packed = document.placement == .packed
         let s = document.style
         for (index, value) in [s.blur, s.feather, s.lineWidth, s.wave].enumerated() {
@@ -310,6 +320,49 @@ final class StitchEditorController: NSObject {
         color.color = s.color; seamToggle.state = s.visible ? .on : .off
         editorView?.refreshStitchOptions()
         refreshPieces(); scheduleRender()
+    }
+    private func sameGuideLayout(_ first: StitchDocument, _ second: StitchDocument) -> Bool {
+        StitchBandGuides.contentPadding(document: first) == StitchBandGuides.contentPadding(document: second)
+            && first.joins.count == second.joins.count
+            && zip(first.joins, second.joins).allSatisfy { $0.axis == $1.axis && $0.position == $1.position }
+            && first.pieces.count == second.pieces.count && zip(first.pieces, second.pieces).allSatisfy {
+            $0.image === $1.image && $0.source == $1.source && $0.origin == $1.origin
+        }
+    }
+    private func installBandGuides(_ guides: StitchBandGuides.Result) {
+        canvas.bandGuideRows = guides.rows
+        canvas.bandGuideColumns = guides.columns
+    }
+    private func updateBandGuides() {
+        if let cachedGuideLayout, let cachedBandGuides, sameGuideLayout(document, cachedGuideLayout) {
+            guideGeneration = UUID()
+            guideCancellation?.cancel()
+            pendingGuideLayout = nil
+            installBandGuides(cachedBandGuides)
+            return
+        }
+        if let pendingGuideLayout, sameGuideLayout(document, pendingGuideLayout) { return }
+        guideCancellation?.cancel()
+        let snapshot = document
+        pendingGuideLayout = snapshot
+        installBandGuides(StitchBandGuides.geometry(document: snapshot))
+        let token = UUID(); guideGeneration = token
+        let cancellation = StitchPreviewCancellation(); guideCancellation = cancellation
+        guideQueue.async { [weak self] in
+            guard !cancellation.isCancelled else { return }
+            let result = StitchBandGuides.analyze(document: snapshot)
+            guard !cancellation.isCancelled else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.guideGeneration == token,
+                      !cancellation.isCancelled else { return }
+                self.pendingGuideLayout = nil
+                guard self.sameGuideLayout(self.document, snapshot) else { return }
+                self.cachedGuideLayout = snapshot
+                self.cachedBandGuides = result
+                self.pendingGuideLayout = nil
+                self.installBandGuides(result)
+            }
+        }
     }
     private func cancelPreview() {
         renderGeneration = UUID()
@@ -420,7 +473,7 @@ final class StitchEditorController: NSObject {
         scheduleRender()
     }
     @objc private func changeColor() { checkpoint(L("Change seam color")); document.style.color = color.color; scheduleRender() }
-    @objc private func toggleSeams() { checkpoint(L("Toggle seams")); document.style.visible = seamToggle.state == .on; scheduleRender() }
+    @objc private func toggleSeams() { checkpoint(L("Toggle seams")); document.style.visible = seamToggle.state == .on; updateBandGuides(); scheduleRender() }
     @objc private func selectPiece(_ sender: NSButton) {
         let piece = document.pieces[sender.tag]
         setMode(.move, focusCanvas: false); canvas.selectedID = piece.id
@@ -472,5 +525,5 @@ final class StitchEditorController: NSObject {
         canvas.selectedID = next.pieces.last?.id
         refresh()
     }
-    deinit { pendingRender?.cancel(); renderCancellation?.cancel() }
+    deinit { pendingRender?.cancel(); renderCancellation?.cancel(); guideCancellation?.cancel() }
 }
