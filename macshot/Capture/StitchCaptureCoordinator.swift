@@ -22,6 +22,9 @@ final class StitchCaptureCoordinator {
     private var generation = UUID()
     private var pending = false
     private var previousFrame: StitchCaptureFrame
+    private var acceptedFrames: [StitchCaptureFrame]
+    private let automaticallyContinues: Bool
+    var canUndo: Bool { active && !finishing && document.pieces.count > 1 }
     private var finishing = false
     private var sourcePixels: Int
     private(set) var active = true
@@ -30,10 +33,12 @@ final class StitchCaptureCoordinator {
     var onUpdate: ((String) -> Void)?
     var onFinish: ((StitchDocument) -> Void)?
 
-    init(first: StitchCaptureFrame, capture: @escaping Capture, analyze: @escaping Analyze) {
+    init(first: StitchCaptureFrame, automaticallyContinues: Bool = false, capture: @escaping Capture, analyze: @escaping Analyze) {
         document = StitchDocument(pieces: [StitchPiece(image: first.image, label: L("Capture"))])
         sourcePixels = first.image.width * first.image.height
         previousFrame = first
+        acceptedFrames = [first]
+        self.automaticallyContinues = automaticallyContinues
         self.capture = capture
         self.analyze = analyze
     }
@@ -49,6 +54,8 @@ final class StitchCaptureCoordinator {
     }
 
     private func begin() {
+        guard active, !finishing else { completeIfNeeded(); return }
+        generation = UUID()
         guard document.pieces.count < 24, sourcePixels < 120_000_000 else {
             onUpdate?(L("Capture limit reached · press Enter to edit")); completeIfNeeded(); return
         }
@@ -58,7 +65,7 @@ final class StitchCaptureCoordinator {
         capture { [weak self] frame in
             guard let self, self.active, self.generation == token else { return }
             guard let frame else {
-                self.completed(message: L("Display changed or capture failed · finish and start a new session")); return
+                self.completed(message: L("Capture failed · try another region")); return
             }
             let hint = CGPoint(x: frame.position.x - self.previousFrame.position.x,
                                y: frame.position.y - self.previousFrame.position.y)
@@ -95,6 +102,7 @@ final class StitchCaptureCoordinator {
         }
         document = next
         previousFrame = frame
+        acceptedFrames.append(frame)
         sourcePixels += image.width * image.height
         completed(message: label)
     }
@@ -130,10 +138,22 @@ final class StitchCaptureCoordinator {
     private func completed(message: String) {
         busy = false
         onUpdate?(message)
-        if pending {
+        if !finishing && (pending || automaticallyContinues) {
             pending = false
             begin()
         } else { completeIfNeeded() }
+    }
+
+    /// Invalidates capture/matching work before restoring the last accepted registration reference.
+    func undo() {
+        guard canUndo else { return }
+        generation = UUID()
+        pending = false; busy = false
+        let removed = acceptedFrames.removeLast()
+        document.pieces.removeLast()
+        previousFrame = acceptedFrames.last!
+        sourcePixels -= removed.image.width * removed.image.height
+        completed(message: L("Capture removed"))
     }
 
     func finish() {

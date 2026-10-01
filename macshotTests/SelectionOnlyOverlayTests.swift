@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class SelectionOnlyOverlayTests: XCTestCase {
+    func testStitchSelectorsReleaseTheirWindowBetweenCaptures() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let image = ImageProbe.quadrantImage(width: 100, height: 80)
+        let pixels = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let selector = StitchRegionSelection(capture: ScreenCapture(screen: screen, image: pixels))
+        let number = selector.windowNumber
+        let window = try XCTUnwrap(NSApp.windows.first { $0.windowNumber == Int(number) })
+        XCTAssertNotNil(window.contentView)
+        selector.dismiss()
+        XCTAssertNil(window.contentView)
+        XCTAssertEqual(selector.windowNumber, CGWindowID.max)
+        selector.dismiss() // Selection completion and session cleanup can both dismiss.
+        let next = StitchRegionSelection(capture: ScreenCapture(screen: screen, image: pixels))
+        defer { next.dismiss() }
+        XCTAssertNotEqual(next.windowNumber, number)
+    }
+
     func testSelectionKeyboardCannotRunCaptureOrEditorActions() {
         let view = OverlayView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         let delegate = SelectionOnlyDelegate()

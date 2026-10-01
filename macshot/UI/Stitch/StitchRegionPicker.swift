@@ -32,5 +32,7 @@ final class StitchRegionSelection {
         controller.showOverlay()
     }
 
-    func dismiss() { controller.dismiss() }
+    // These selectors are created for each fresh screen image, unlike the base
+    // app's pooled overlays. Close their windows rather than leaving idle panels.
+    func dismiss() { controller.tearDown() }
 }

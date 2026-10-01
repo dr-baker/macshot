@@ -937,3 +937,10 @@
 "Select a band inside the canvas and leave some content on either side." = "Select a band inside the canvas and leave some content on either side.";
 "Solid color" = "Solid color";
 "Unable to save this image." = "Unable to save this image.";
+
+/* Integrated Stitch editor. English fallback pending translation. */
+"Stitch" = "Unir capturas";
+"Drag to capture · hold Space to navigate" = "Arrastra para capturar · mantén Espacio para navegar";
+"Navigate the page · release Space to select" = "Navega por la página · suelta Espacio para seleccionar";
+"Capture failed · try another region" = "La captura falló · prueba otra región";
+"Capture removed" = "Captura eliminada";

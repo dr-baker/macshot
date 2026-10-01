@@ -937,3 +937,10 @@
 "Select a band inside the canvas and leave some content on either side." = "Selecciona una franja dins del llenç i deixa contingut a cada costat.";
 "Solid color" = "Color sòlid";
 "Unable to save this image." = "No s’ha pogut desar aquesta imatge.";
+
+/* Integrated Stitch editor. English fallback pending translation. */
+"Stitch" = "Stitch";
+"Drag to capture · hold Space to navigate" = "Drag to capture · hold Space to navigate";
+"Navigate the page · release Space to select" = "Navigate the page · release Space to select";
+"Capture failed · try another region" = "Capture failed · try another region";
+"Capture removed" = "Capture removed";

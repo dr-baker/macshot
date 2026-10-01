@@ -3,6 +3,77 @@ import XCTest
 
 @MainActor
 final class StitchCaptureCoordinatorTests: XCTestCase {
+    func testAutomaticCollectionContinuesAfterAcceptDuplicateAndFailureAndStopsOnFinish() {
+        let fixture = Fixture(first: image(), automatic: true)
+        fixture.coordinator.requestCapture()
+        fixture.captures[0](image())
+        fixture.analyses[0].complete(false, match(x: 0, y: 12))
+        XCTAssertEqual(fixture.captures.count, 2)
+        fixture.captures[1](image())
+        fixture.analyses[1].complete(true, nil)
+        XCTAssertEqual(fixture.captures.count, 3)
+        fixture.captures[2](nil)
+        XCTAssertEqual(fixture.captures.count, 4)
+        XCTAssertEqual(fixture.coordinator.document.pieces.count, 2)
+        fixture.coordinator.finish()
+        fixture.captures[3](nil)
+        XCTAssertEqual(fixture.finishes.map { $0.pieces.count }, [2])
+        XCTAssertEqual(fixture.captures.count, 4)
+    }
+
+    func testUndoDuringSelectionRestoresRegistrationReferenceAndRejectsStaleCapture() {
+        let first = image(), second = image()
+        let fixture = Fixture(first: first, automatic: true)
+        XCTAssertFalse(fixture.coordinator.canUndo)
+        fixture.coordinator.requestCapture()
+        fixture.captures[0](second, position: CGPoint(x: 0, y: 100))
+        fixture.analyses[0].complete(false, match(x: 0, y: 12))
+        XCTAssertTrue(fixture.coordinator.canUndo)
+        fixture.coordinator.undo()
+        XCTAssertEqual(fixture.coordinator.document.pieces.count, 1)
+        XCTAssertFalse(fixture.coordinator.canUndo)
+        XCTAssertEqual(fixture.captures.count, 3)
+        fixture.captures[1](image())
+        XCTAssertEqual(fixture.analyses.count, 1)
+        fixture.captures[2](image(), position: CGPoint(x: 0, y: 140))
+        XCTAssertTrue(fixture.analyses[1].previous === first)
+        XCTAssertEqual(fixture.analyses[1].hint, CGPoint(x: 0, y: 140))
+        fixture.analyses[1].complete(false, match(x: 0, y: 20))
+        XCTAssertEqual(fixture.coordinator.document.pieces.last?.origin, CGPoint(x: 0, y: 20))
+    }
+
+    func testUndoDuringAnalysisDiscardsStaleMatchAndFinishUsesRestoredDocument() {
+        let fixture = Fixture(first: image(), automatic: true)
+        fixture.coordinator.requestCapture()
+        fixture.captures[0](image())
+        fixture.analyses[0].complete(false, match(x: 0, y: 12))
+        fixture.captures[1](image())
+        fixture.coordinator.undo()
+        fixture.analyses[1].complete(false, match(x: 0, y: 24))
+        XCTAssertEqual(fixture.coordinator.document.pieces.count, 1)
+        fixture.coordinator.finish()
+        fixture.captures[2](nil)
+        XCTAssertEqual(fixture.finishes.map { $0.pieces.count }, [1])
+        XCTAssertEqual(fixture.captures.count, 3)
+    }
+
+    func testAutomaticCollectionStopsAtCaptureLimitAndUndoReopensCollection() {
+        let fixture = Fixture(first: image(), automatic: true)
+        fixture.coordinator.requestCapture()
+        for index in 0..<23 {
+            fixture.captures[index](image())
+            fixture.analyses[index].complete(false, match(x: 0, y: 12))
+        }
+        XCTAssertEqual(fixture.captures.count, 23)
+        XCTAssertFalse(fixture.coordinator.busy)
+        fixture.coordinator.undo()
+        XCTAssertEqual(fixture.captures.count, 24)
+        XCTAssertEqual(fixture.coordinator.document.pieces.count, 23)
+        fixture.coordinator.cancel()
+        fixture.captures[23](image())
+        XCTAssertEqual(fixture.analyses.count, 23)
+    }
+
     func testSecondAndThirdCapturesUseLatestAcceptedImageAndAccumulateOffsets() throws {
         let fixture = Fixture(first: image())
         let second = image(), third = image()
@@ -372,8 +443,8 @@ final class StitchCaptureCoordinatorTests: XCTestCase {
         var updates: [String] = []
         var finishes: [StitchDocument] = []
 
-        init(first: CGImage) {
-            coordinator = StitchCaptureCoordinator(first: StitchCaptureFrame(image: first), capture: { [weak self] callback in
+        init(first: CGImage, automatic: Bool = false) {
+            coordinator = StitchCaptureCoordinator(first: StitchCaptureFrame(image: first), automaticallyContinues: automatic, capture: { [weak self] callback in
                 self?.captures.append(CaptureReply(callback: callback))
             }, analyze: { [weak self] previous, current, hint, callback in
                 self?.analyses.append(Analysis(previous: previous, current: current, hint: hint, complete: callback))

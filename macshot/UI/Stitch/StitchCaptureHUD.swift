@@ -2,18 +2,16 @@ import AppKit
 
 @MainActor
 final class StitchCaptureHUD {
-    var onCapture: (() -> Void)?
+    var onUndo: (() -> Void)?
     var onFinish: (() -> Void)?
-    var onCancel: (() -> Void)?
 
     private let screen: NSScreen
     private let selection: NSRect
     private let panel: StitchHUDPanel
     private let countLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
-    private let captureButton = NSButton()
+    private let undoButton = NSButton()
     private let finishButton = NSButton()
-    private let cancelButton = NSButton()
 
     init(screen: NSScreen, pixelRect: CGRect, imageSize: CGSize) {
         self.screen = screen
@@ -28,7 +26,7 @@ final class StitchCaptureHUD {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.level = NSWindow.Level(258)
+        panel.level = NSWindow.Level(259)
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -48,10 +46,9 @@ final class StitchCaptureHUD {
             view.addSubview(label)
         }
         statusLabel.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.75)
-        configure(captureButton, title: L("Add Capture"), action: #selector(captureClicked), primary: true)
-        configure(finishButton, title: L("Finish ↵"), action: #selector(finishClicked))
-        configure(cancelButton, title: "\(L("Cancel")) ⎋", action: #selector(cancelClicked))
-        update(count: 1, status: L("Scroll the page, then capture again"), busy: false)
+        configure(undoButton, title: L("Undo"), action: #selector(undoClicked))
+        configure(finishButton, title: L("Finish ↵"), action: #selector(finishClicked), primary: true)
+        update(count: 1, status: L("Drag to capture · hold Space to navigate"), canUndo: false)
     }
 
     var windowNumbers: [CGWindowID] {
@@ -73,17 +70,17 @@ final class StitchCaptureHUD {
         panel.contentView?.addSubview(button)
     }
 
-    func update(count: Int, status: String, busy: Bool) {
+    func update(count: Int, status: String, canUndo: Bool) {
         countLabel.stringValue = "\(L("Stitch Capture")) · \(count) \(L("captures"))"
         statusLabel.stringValue = status
         statusLabel.toolTip = status
-        captureButton.isEnabled = !busy
-        captureButton.title = L("Add Capture")
-        captureButton.alphaValue = busy ? 0.55 : 1
-        let buttons = [captureButton, finishButton, cancelButton]
+        undoButton.isEnabled = canUndo
+        undoButton.title = L("Undo")
+        undoButton.alphaValue = canUndo ? 1 : 0.55
+        let buttons = [undoButton, finishButton]
         let buttonWidths = buttons.map { max(CGFloat(76), $0.intrinsicContentSize.width + 16) }
         let controlsWidth = buttonWidths.reduce(0, +) + 12
-        let desiredWidth = max(CGFloat(540), countLabel.intrinsicContentSize.width + controlsWidth + 30)
+        let desiredWidth = max(CGFloat(460), countLabel.intrinsicContentSize.width + controlsWidth + 30)
         let width = min(desiredWidth, screen.visibleFrame.width - 8)
         let size = NSSize(width: width, height: 62)
         panel.setFrame(ScrollCaptureHUDPanel.hudFrame(
@@ -104,9 +101,8 @@ final class StitchCaptureHUD {
     func show() { panel.orderFrontRegardless() }
     func hide() { panel.orderOut(nil) }
     func close() { panel.close() }
-    @objc private func captureClicked() { onCapture?() }
+    @objc private func undoClicked() { onUndo?() }
     @objc private func finishClicked() { onFinish?() }
-    @objc private func cancelClicked() { onCancel?() }
 }
 
 private final class StitchHUDPanel: NSPanel {
