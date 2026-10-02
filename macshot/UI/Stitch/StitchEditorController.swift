@@ -11,6 +11,70 @@ private final class StitchSlider: NSSlider {
     override func keyDown(with event: NSEvent) { onBegin?(); super.keyDown(with: event); onEnd?() }
 }
 
+private enum StitchSeamParameter: Int, CaseIterable {
+    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength
+
+    func keyPath(for transition: StitchTransition) -> WritableKeyPath<StitchStyle, CGFloat> {
+        switch self {
+        case .blur: return \.blur
+        case .feather: return \.feather
+        case .lineWidth: return \.lineWidth
+        case .shape:
+            switch transition {
+            case .torn: return \.tearRoughness
+            case .breakLine: return \.breakSize
+            default: return \.wave
+            }
+        case .tearWidth: return \.tearWidth
+        case .foldDepth: return \.foldDepth
+        case .foldStrength: return \.foldStrength
+        }
+    }
+
+    var range: ClosedRange<Double> {
+        switch self {
+        case .blur: return 0...30
+        case .feather: return 0...100
+        case .lineWidth: return 0...8
+        case .shape: return 0...14
+        case .tearWidth: return 2...32
+        case .foldDepth: return 2...40
+        case .foldStrength: return 0...1
+        }
+    }
+
+    func title(for transition: StitchTransition) -> String {
+        switch self {
+        case .blur: return L("Blur")
+        case .feather: return L("Fade width")
+        case .lineWidth: return L("Line width")
+        case .shape:
+            switch transition {
+            case .torn: return L("Roughness")
+            case .breakLine: return L("Break size")
+            default: return L("Wave height")
+            }
+        case .tearWidth: return L("Paper width")
+        case .foldDepth: return L("Fold depth")
+        case .foldStrength: return L("Strength")
+        }
+    }
+
+    func formattedValue(_ value: CGFloat) -> String {
+        self == .foldStrength ? String(format: "%.0f%%", Double(value) * 100)
+            : String(format: "%.1f px", Double(value))
+    }
+
+    static func visible(for transition: StitchTransition) -> [Self] {
+        switch transition {
+        case .wave, .breakLine: return [.blur, .feather, .lineWidth, .shape]
+        case .blend: return [.blur, .feather]
+        case .torn: return [.tearWidth, .shape]
+        case .fold: return [.foldDepth, .foldStrength]
+        }
+    }
+}
+
 enum StitchOptionsAction { case seams, pieces, canvas }
 
 /// Edits source pieces on the main editor canvas; the host owns all chrome and output actions.
@@ -41,6 +105,7 @@ final class StitchEditorController: NSObject {
     private var sliders: [StitchSlider] = []
     private var values: [NSTextField] = []
     private var seamLabels: [NSTextField] = []
+    private let seamStylePicker = StitchSeamStylePicker(frame: .zero)
     private let color = NSColorWell()
     private let seamToggle = NSButton(checkboxWithTitle: L("Show stitch seams"), target: nil, action: nil)
     private let renderQueue = DispatchQueue(label: "macshot.stitch-preview", qos: .userInitiated)
@@ -164,42 +229,43 @@ final class StitchEditorController: NSObject {
     }
     func makeSeamOptions() -> NSView {
         if let seamOptions { return seamOptions }
-        let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 280, height: 242))
+        let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 368, height: 322))
         seamToggle.target = self
         seamToggle.action = #selector(toggleSeams)
         seamToggle.contentTintColor = ToolbarLayout.accentColor
-        seamToggle.frame = NSRect(x: 12, y: 207, width: 250, height: 24)
+        seamToggle.identifier = NSUserInterfaceItemIdentifier("stitch.seam.visibility")
         view.addSubview(seamToggle)
+        seamStylePicker.onSelectionChanged = { [weak self] transition in self?.selectSeamTransition(transition) }
+        view.addSubview(seamStylePicker)
         let colorLabel = NSTextField(labelWithString: L("Line color"))
+        colorLabel.identifier = NSUserInterfaceItemIdentifier("stitch.seam.color.label")
         colorLabel.font = .systemFont(ofSize: 11)
         colorLabel.textColor = ToolbarLayout.iconColor
-        colorLabel.frame = NSRect(x: 12, y: 177, width: 170, height: 18)
-        color.frame = NSRect(x: 220, y: 173, width: 46, height: 24)
+        color.identifier = NSUserInterfaceItemIdentifier("stitch.seam.color")
         color.setAccessibilityLabel(L("Seam line color"))
         color.target = self
         color.action = #selector(changeColor)
         view.addSubview(colorLabel)
         view.addSubview(color)
         seamLabels.append(colorLabel)
-        for (index, spec) in [("Blur", 0.0, 30.0), ("Fade width", 0.0, 100.0), ("Line width", 0.0, 8.0), ("Wave height", 0.0, 14.0)].enumerated() {
-            let y = CGFloat(137 - index * 38)
-            let label = NSTextField(labelWithString: L(spec.0))
+        for parameter in StitchSeamParameter.allCases {
+            let label = NSTextField(labelWithString: parameter.title(for: document.style.transition))
             label.font = .systemFont(ofSize: 11)
             label.textColor = ToolbarLayout.iconColor
-            label.frame = NSRect(x: 12, y: y + 10, width: 180, height: 16)
+            label.identifier = NSUserInterfaceItemIdentifier("stitch.seam.\(parameter).label")
             let value = NSTextField(labelWithString: "")
             value.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
             value.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.55)
             value.alignment = .right
-            value.frame = NSRect(x: 201, y: y + 10, width: 65, height: 16)
-            let slider = StitchSlider(value: 0, minValue: spec.1, maxValue: spec.2,
+            value.identifier = NSUserInterfaceItemIdentifier("stitch.seam.\(parameter).value")
+            let slider = StitchSlider(value: 0, minValue: parameter.range.lowerBound, maxValue: parameter.range.upperBound,
                                       target: self, action: #selector(changeStyle(_:)))
-            slider.frame = NSRect(x: 10, y: y - 9, width: 258, height: 20)
-            slider.tag = index
+            slider.identifier = NSUserInterfaceItemIdentifier("stitch.seam.\(parameter)")
+            slider.tag = parameter.rawValue
             slider.isContinuous = true
             slider.controlSize = .small
             slider.trackFillColor = ToolbarLayout.accentColor
-            slider.setAccessibilityLabel(L(spec.0))
+            slider.setAccessibilityLabel(label.stringValue)
             slider.onBegin = { [weak self] in
                 self?.adjustingStyle = true
             }
@@ -340,19 +406,61 @@ final class StitchEditorController: NSObject {
     }
     private func syncSeamControls() {
         let s = document.style
-        for (index, value) in [s.blur, s.feather, s.lineWidth, s.wave].enumerated() {
-            sliders[index].doubleValue = Double(value); values[index].stringValue = String(format: "%.1f px", Double(value))
-        }
-        color.color = s.color; seamToggle.state = s.visible ? .on : .off
-        color.isEnabled = s.visible
+        let parameters = StitchSeamParameter.visible(for: s.transition)
+        let hasColor = s.transition.hasEditableColor
+        let height = 136 + (hasColor ? 34 : 0) + CGFloat(parameters.count) * 38
+        let size = NSSize(width: 368, height: height)
+        seamOptions.setFrameSize(size)
+        // The popover grows above its anchor, so keep treatment choices beside that anchor.
+        seamToggle.frame = NSRect(x: 12, y: 11, width: 344, height: 24)
+        seamStylePicker.frame = NSRect(x: 12, y: 46, width: 344, height: 64)
+        seamStylePicker.selection = s.transition
+        seamStylePicker.isEnabled = s.visible
+        seamToggle.state = s.visible ? .on : .off
+        color.color = s.editableColor
+        if color.isActive && (!hasColor || !s.visible) { color.deactivate() }
+        color.isHidden = !hasColor
+        color.isEnabled = s.visible && hasColor
         color.alphaValue = s.visible ? 1 : 0.35
-        for slider in sliders { slider.isEnabled = s.visible; slider.alphaValue = s.visible ? 1 : 0.35 }
-        for label in seamLabels + values { label.alphaValue = s.visible ? 1 : 0.35 }
+        color.frame = NSRect(x: 308, y: height - 37, width: 46, height: 24)
+        let colorLabel = seamLabels[0]
+        colorLabel.stringValue = s.transition == .torn ? L("Paper color") : L("Line color")
+        color.setAccessibilityLabel(s.transition == .torn ? L("Paper color") : L("Seam line color"))
+        colorLabel.isHidden = !hasColor
+        colorLabel.alphaValue = s.visible ? 1 : 0.35
+        colorLabel.frame = NSRect(x: 12, y: height - 33, width: 258, height: 18)
+        for parameter in StitchSeamParameter.allCases {
+            let index = parameter.rawValue
+            let slider = sliders[index]
+            let label = seamLabels[index + 1]
+            let value = values[index]
+            let visibleIndex = parameters.firstIndex(of: parameter)
+            let enabled = s.visible && visibleIndex != nil
+            let keyPath = parameter.keyPath(for: s.transition)
+            slider.doubleValue = Double(s[keyPath: keyPath])
+            value.stringValue = parameter.formattedValue(s[keyPath: keyPath])
+            label.stringValue = parameter.title(for: s.transition)
+            slider.setAccessibilityLabel(label.stringValue)
+            slider.isHidden = visibleIndex == nil
+            label.isHidden = visibleIndex == nil
+            value.isHidden = visibleIndex == nil
+            slider.isEnabled = enabled
+            slider.alphaValue = s.visible ? 1 : 0.35
+            label.alphaValue = s.visible ? 1 : 0.35
+            value.alphaValue = s.visible ? 1 : 0.35
+            if let visibleIndex {
+                let y = height - 28 - (hasColor ? 34 : 0) - CGFloat(visibleIndex) * 38
+                label.frame = NSRect(x: 12, y: y, width: 260, height: 16)
+                value.frame = NSRect(x: 289, y: y, width: 65, height: 16)
+                slider.frame = NSRect(x: 10, y: y - 19, width: 346, height: 20)
+            }
+        }
+        PopoverHelper.resize(seamOptions, to: size)
     }
     private func previewSeamColor(_ color: NSColor?) {
         guard let style = editorView?.stitchDocument?.style else { return }
         document.style = style
-        if let color { document.style.color = color }
+        if let color { document.style.editableColor = color }
         adjustingStyle = color != nil
         syncSeamControls()
         scheduleRender(publishDocument: false)
@@ -531,13 +639,32 @@ final class StitchEditorController: NSObject {
         if focusCanvas { window?.makeFirstResponder(canvas) }
     }
     @objc private func changeStyle(_ sender: NSSlider) {
-        switch sender.tag { case 0: document.style.blur = sender.doubleValue; case 1: document.style.feather = sender.doubleValue; case 2: document.style.lineWidth = sender.doubleValue; default: document.style.wave = sender.doubleValue }
-        values[sender.tag].stringValue = String(format: "%.1f px", sender.doubleValue)
+        guard document.style.visible, let parameter = StitchSeamParameter(rawValue: sender.tag),
+              StitchSeamParameter.visible(for: document.style.transition).contains(parameter) else { return }
+        let keyPath = parameter.keyPath(for: document.style.transition)
+        if adjustingStyle {
+            document.style[keyPath: keyPath] = sender.doubleValue
+        } else {
+            var next = document
+            next.style[keyPath: keyPath] = sender.doubleValue
+            guard commitDocument(next) else { syncSeamControls(); return }
+        }
+        values[sender.tag].stringValue = parameter.formattedValue(sender.doubleValue)
         scheduleRender()
     }
-    @objc private func changeColor() {
+    private func selectSeamTransition(_ transition: StitchTransition) {
+        guard document.style.visible, document.style.transition != transition else { return }
         var next = document
-        next.style.color = color.color
+        next.style.transition = transition
+        guard commitDocument(next) else { syncSeamControls(); return }
+        syncSeamControls()
+        updateBandGuides()
+        scheduleRender(publishDocument: false)
+    }
+    @objc private func changeColor() {
+        guard document.style.visible, document.style.transition.hasEditableColor else { return }
+        var next = document
+        next.style.editableColor = color.color
         guard commitDocument(next) else { return }
         scheduleRender()
     }

@@ -19,7 +19,7 @@ struct StitchAnnotationLayer {
 
 class EditorView: OverlayView, NSMenuItemValidation {
     override var toolbarColor: NSColor {
-        currentTool == .stitch ? stitchSeamColorPreview ?? stitchDocument?.style.color ?? currentColor : currentColor
+        currentTool == .stitch ? stitchSeamColorPreview ?? stitchDocument?.style.editableColor ?? currentColor : currentColor
     }
 
     private(set) var stitchSeamColorPreview: NSColor?
@@ -146,6 +146,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         stitchDocument = next
         applySelection(NSRect(origin: .zero, size: screenshotImage!.size))
         frame.size = selectionRect.size
+        for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
         updateAnnotationSourceImages(annotations)
         // Reassigning invalidates the annotation layer after moving in place.
         annotations = Array(annotations)
@@ -186,32 +187,34 @@ class EditorView: OverlayView, NSMenuItemValidation {
     func stitchAnnotationPreview() -> CGImage? {
         guard let document = stitchDocument else { return nil }
         return renderStitchAnnotations(annotations, rect: CGRect(origin: .zero, size: selectionRect.size),
-            pixels: document.bounds.size, includeHighlightDim: true)
+            pixels: document.bounds.integral.size, includeHighlightDim: true)
     }
 
     private func stitchAnnotationOwner(_ annotation: Annotation, document: StitchDocument, scale: CGFloat) -> UUID? {
         if let id = annotation.stitchAttachment?.pieceID, document.pieces.contains(where: { $0.id == id }) { return id }
         let r = annotation.boundingRect
-        let center = CGPoint(x: document.bounds.minX + r.midX * scale,
-            y: document.bounds.maxY - r.midY * scale)
+        let rasterBounds = document.bounds.integral
+        let center = CGPoint(x: rasterBounds.minX + r.midX * scale,
+            y: rasterBounds.maxY - r.midY * scale)
         return document.pieces.reversed().first(where: { $0.frame.contains(center) })?.id
     }
 
     func stitchAnnotationLayers() -> [UUID: StitchAnnotationLayer] {
         guard let document = stitchDocument, let screenshotImage else { return [:] }
-        let scale = document.bounds.width / screenshotImage.size.width
+        let rasterBounds = document.bounds.integral
+        let scale = rasterBounds.width / screenshotImage.size.width
         guard scale.isFinite, scale > 0 else { return [:] }
         var grouped: [UUID: [Annotation]] = [:]
         for annotation in annotations {
             if annotation.isStitchRedaction {
                 let attached = document.pieces.filter { $0.id == annotation.stitchAttachment?.pieceID }
                 let pieces = attached.isEmpty ? document.pieces : attached
-                let coverage = annotation.stitchPixelCoverage(in: document.bounds, scale: scale)
+                let coverage = annotation.stitchPixelCoverage(in: rasterBounds, scale: scale)
                 for piece in pieces {
                     let retained = coverage.intersection(piece.frame)
                     guard !retained.isNull, retained.width > 0, retained.height > 0 else { continue }
-                    let clip = CGRect(x: (retained.minX - document.bounds.minX) / scale,
-                        y: (document.bounds.maxY - retained.maxY) / scale,
+                    let clip = CGRect(x: (retained.minX - rasterBounds.minX) / scale,
+                        y: (rasterBounds.maxY - retained.maxY) / scale,
                         width: retained.width / scale, height: retained.height / scale)
                     let fragment = annotation.clone()
                     fragment.stitchAttachment = StitchAnnotationAttachment(pieceID: piece.id,
@@ -236,8 +239,8 @@ class EditorView: OverlayView, NSMenuItemValidation {
                     let radius = hypot(r.width, r.height) / 2
                     r = CGRect(x: r.midX - radius, y: r.midY - radius, width: radius * 2, height: radius * 2)
                 }
-                extent = extent.union(CGRect(x: document.bounds.minX + r.minX * scale,
-                    y: document.bounds.maxY - r.maxY * scale, width: r.width * scale, height: r.height * scale))
+                extent = extent.union(CGRect(x: rasterBounds.minX + r.minX * scale,
+                    y: rasterBounds.maxY - r.maxY * scale, width: r.width * scale, height: r.height * scale))
             }
             extent = extent.integral
             if !extent.width.isFinite || !extent.height.isFinite
@@ -247,8 +250,8 @@ class EditorView: OverlayView, NSMenuItemValidation {
                 // capture. Its own frame always fits the document's budget.
                 extent = piece.frame.integral
             }
-            let rect = CGRect(x: (extent.minX - document.bounds.minX) / scale,
-                y: (document.bounds.maxY - extent.maxY) / scale,
+            let rect = CGRect(x: (extent.minX - rasterBounds.minX) / scale,
+                y: (rasterBounds.maxY - extent.maxY) / scale,
                 width: extent.width / scale, height: extent.height / scale)
             if let image = renderStitchAnnotations(owned, rect: rect, pixels: extent.size, includeHighlightDim: false) {
                 result[piece.id] = StitchAnnotationLayer(image: image, frame: extent)
@@ -261,11 +264,12 @@ class EditorView: OverlayView, NSMenuItemValidation {
 
     func stitchUnattachedAnnotationPreview() -> CGImage? {
         guard let document = stitchDocument, let screenshotImage else { return nil }
-        let scale = document.bounds.width / screenshotImage.size.width
+        let rasterBounds = document.bounds.integral
+        let scale = rasterBounds.width / screenshotImage.size.width
         guard scale.isFinite, scale > 0 else { return nil }
         let unattached = annotations.filter { annotation in
             if annotation.isStitchRedaction {
-                let covered = annotation.stitchPixelCoverage(in: document.bounds, scale: scale)
+                let covered = annotation.stitchPixelCoverage(in: rasterBounds, scale: scale)
                 return !document.pieces.contains { piece in
                     let intersection = piece.frame.intersection(covered)
                     return !intersection.isNull && intersection.width > 0 && intersection.height > 0
@@ -274,7 +278,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
             return stitchAnnotationOwner(annotation, document: document, scale: scale) == nil
         }
         return renderStitchAnnotations(unattached, rect: CGRect(origin: .zero, size: selectionRect.size),
-            pixels: document.bounds.size, includeHighlightDim: true,
+            pixels: rasterBounds.size, includeHighlightDim: true,
             highlightAnnotations: annotations.filter { $0.tool == .highlight })
     }
 
@@ -372,6 +376,23 @@ class EditorView: OverlayView, NSMenuItemValidation {
         } else {
             NSCursor.arrow.set()
         }
+    }
+
+    /// Background clicks arrive here or at the clip view instead of the inline canvas.
+    /// Keep the window event unchanged so the canvas performs its own pixel conversion.
+    @discardableResult
+    func handleStitchMoveMouseDown(with event: NSEvent) -> Bool {
+        guard currentTool == .stitch,
+              let canvas = subviews.compactMap({ $0 as? StitchCanvasView }).first(where: {
+                  !$0.isHidden && $0.mode == .move
+              }) else { return false }
+        canvas.mouseDown(with: event)
+        return true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if handleStitchMoveMouseDown(with: event) { return }
+        super.mouseDown(with: event)
     }
 
     // MARK: - Selection interaction (disabled in editor)

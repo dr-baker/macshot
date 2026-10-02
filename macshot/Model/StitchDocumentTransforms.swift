@@ -7,9 +7,13 @@ extension StitchDocument {
         guard pieces.count == other.pieces.count, placement == other.placement,
             savedPackingState.horizontal == other.savedPackingState.horizontal,
             savedPackingState.length == other.savedPackingState.length,
+            style.transition == other.style.transition,
             style.color == other.style.color, style.lineWidth == other.style.lineWidth,
             style.wave == other.style.wave, style.blur == other.style.blur,
-            style.feather == other.style.feather, style.visible == other.style.visible else { return false }
+            style.feather == other.style.feather, style.tearWidth == other.style.tearWidth,
+            style.tearRoughness == other.style.tearRoughness, style.breakSize == other.style.breakSize,
+            style.paperColor == other.style.paperColor, style.foldDepth == other.style.foldDepth,
+            style.foldStrength == other.style.foldStrength, style.visible == other.style.visible else { return false }
         switch (background, other.background) {
         case (.automatic, .automatic), (.transparent, .transparent): break
         case (.color(let a), .color(let b)): guard a == b else { return false }
@@ -23,6 +27,7 @@ extension StitchDocument {
     func flipped(horizontal: Bool) -> StitchDocument? {
         guard canRender else { return nil }
         var next = self
+        let rasterBounds = bounds.integral
         var images: [(original: CGImage, flipped: CGImage)] = []
         for index in next.pieces.indices {
             let piece = pieces[index]
@@ -45,10 +50,10 @@ extension StitchDocument {
             replacement.lineageID = piece.lineageID
             replacement.source = piece.source
             if horizontal {
-                replacement.origin.x = bounds.minX + bounds.maxX - piece.frame.maxX
+                replacement.origin.x = rasterBounds.minX + rasterBounds.maxX - piece.frame.maxX
                 replacement.source.origin.x = CGFloat(piece.image.width) - piece.source.maxX
             } else {
-                replacement.origin.y = bounds.minY + bounds.maxY - piece.frame.maxY
+                replacement.origin.y = rasterBounds.minY + rasterBounds.maxY - piece.frame.maxY
                 replacement.source.origin.y = CGFloat(piece.image.height) - piece.source.maxY
             }
             next.pieces[index] = replacement

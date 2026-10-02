@@ -53,7 +53,8 @@ enum StitchAnnotationTransforms {
 
     private static func redactionFragments(_ annotation: Annotation, from old: StitchDocument,
         to next: StitchDocument, scale: CGFloat) -> [Annotation]? {
-        let coverage = annotation.stitchPixelCoverage(in: old.bounds, scale: scale)
+        let oldBounds = old.bounds.integral, nextBounds = next.bounds.integral
+        let coverage = annotation.stitchPixelCoverage(in: oldBounds, scale: scale)
         guard !coverage.isNull, coverage.width > 0, coverage.height > 0 else { return [] }
         let attached = old.pieces.filter { $0.id == annotation.stitchAttachment?.pieceID }
         // An ordinary edit clears the attachment so its new coverage can span
@@ -76,9 +77,9 @@ enum StitchAnnotationTransforms {
                 let retained = source.intersection(target.source)
                 guard !retained.isNull, retained.width > 0, retained.height > 0 else { continue }
                 let before = canvas(retained.offsetBy(dx: piece.origin.x - piece.source.minX,
-                    dy: piece.origin.y - piece.source.minY), in: old.bounds, scale: scale)
+                    dy: piece.origin.y - piece.source.minY), in: oldBounds, scale: scale)
                 let after = canvas(retained.offsetBy(dx: target.origin.x - target.source.minX,
-                    dy: target.origin.y - target.source.minY), in: next.bounds, scale: scale)
+                    dy: target.origin.y - target.source.minY), in: nextBounds, scale: scale)
                 let fragment = annotation.clone()
                 let trimmed = before.intersection(fragment.boundingRect)
                 guard fragment.trimStitchRedaction(to: trimmed) else { return nil }
@@ -90,8 +91,8 @@ enum StitchAnnotationTransforms {
         }
         if !intersectedSource {
             let fragment = annotation.clone()
-            fragment.moveWithSource(dx: (old.bounds.minX - next.bounds.minX) / scale,
-                dy: (next.bounds.maxY - old.bounds.maxY) / scale)
+            fragment.moveWithSource(dx: (oldBounds.minX - nextBounds.minX) / scale,
+                dy: (nextBounds.maxY - oldBounds.maxY) / scale)
             fragments.append(fragment)
         }
         return fragments
@@ -99,7 +100,8 @@ enum StitchAnnotationTransforms {
 
     private static func movedPoint(_ point: CGPoint, from old: StitchDocument, to next: StitchDocument,
         scale: CGFloat) -> CGPoint? {
-        let global = CGPoint(x: old.bounds.minX + point.x * scale, y: old.bounds.maxY - point.y * scale)
+        let oldBounds = old.bounds.integral, nextBounds = next.bounds.integral
+        let global = CGPoint(x: oldBounds.minX + point.x * scale, y: oldBounds.maxY - point.y * scale)
         var destination = global
         if let piece = old.pieces.reversed().first(where: { $0.frame.contains(global) }) {
             let source = CGPoint(x: piece.source.minX + global.x - piece.origin.x,
@@ -109,8 +111,8 @@ enum StitchAnnotationTransforms {
             destination = CGPoint(x: target.origin.x + source.x - target.source.minX,
                 y: target.origin.y + source.y - target.source.minY)
         }
-        return CGPoint(x: (destination.x - next.bounds.minX) / scale,
-            y: (next.bounds.maxY - destination.y) / scale)
+        return CGPoint(x: (destination.x - nextBounds.minX) / scale,
+            y: (nextBounds.maxY - destination.y) / scale)
     }
 
     private static func canvas(_ rect: CGRect, in bounds: CGRect, scale: CGFloat) -> CGRect {

@@ -74,6 +74,17 @@ final class StitchEditorInteractionTests: XCTestCase {
         drag(view, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 21, y: 20))
         XCTAssertEqual(view.selectedID, view.document.pieces[0].id)
         XCTAssertTrue(view.alignmentGuides.isEmpty)
+        let original = view.document
+        view.mouseMoved(with: mouse(.mouseMoved, view: view, point: CGPoint(x: 20, y: 20)))
+        XCTAssertNotNil(view.hoveredID)
+        // Standalone canvas padding must deselect without arming a drag into the image.
+        view.mouseDown(with: mouse(.leftMouseDown, view: view, point: CGPoint(x: -20, y: 20)))
+        XCTAssertNil(view.selectedID)
+        XCTAssertNil(view.hoveredID)
+        view.mouseDragged(with: mouse(.leftMouseDragged, view: view, point: CGPoint(x: 20, y: 20)))
+        view.mouseUp(with: mouse(.leftMouseUp, view: view, point: CGPoint(x: 20, y: 20)))
+        XCTAssertNil(view.selectedID)
+        XCTAssertTrue(view.document.isIdentical(to: original))
     }
 
     func testSnapGuidesFollowActualEdgesAndOptionSuppressesThem() {

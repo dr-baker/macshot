@@ -7,19 +7,7 @@ enum StitchRenderer {
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     static func path(for join: StitchJoin, style: StitchStyle) -> CGPath {
-        let path = CGMutablePath()
-        let length = join.end - join.start
-        let steps = max(2, Int(ceil(length / 2)))
-        for i in 0...steps {
-            let along = join.start + length * CGFloat(i) / CGFloat(steps)
-            let envelope = min(1, min(along - join.start, join.end - along) / 12)
-            let wave = sin((along - join.start) * .pi * 2 / 28) * style.wave * envelope
-            let point = join.axis == .horizontal
-                ? CGPoint(x: along, y: join.position + wave)
-                : CGPoint(x: join.position + wave, y: along)
-            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
-        }
-        return path
+        StitchSeamDrawing.path(for: join, style: style)
     }
 
     /// `feather` is the total band width. Distance is perpendicular to the sampled path,
@@ -339,7 +327,7 @@ enum StitchRenderer {
         guard style.visible && !joins.isEmpty else { return original }
         guard let final = makeContext() else { return original }
         final.draw(original, in: CGRect(x: 0, y: 0, width: width, height: height))
-        if style.blur > 0 && style.feather > 0,
+        if style.transition.usesBlur && style.blur > 0 && style.feather > 0,
            let blurredPixels = makeContext(), let destination = final.data {
             let source = CIImage(cgImage: original)
             let blurred = source.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [
@@ -351,26 +339,32 @@ enum StitchRenderer {
                                     width: width, height: height)
                 let output = destination.assumingMemoryBound(to: UInt8.self)
                 let softened = pixels.assumingMemoryBound(to: UInt8.self)
-                // Composite only inside the band. Pixels outside it remain byte-for-byte intact.
-                for index in mask.indices where mask[index] > 0 {
-                    let weight = Int(mask[index])
-                    for channel in 0..<4 {
-                        let offset = index * 4 + channel
-                        output[offset] = UInt8((Int(output[offset]) * (255 - weight)
-                                               + Int(softened[offset]) * weight + 127) / 255)
+                // Keep the seam on captured content. Blur must not paint into missing
+                // canvas beside a short join, even when its fade band is wider than a piece.
+                let slabs = coverage(document.pieces, bounds: bounds, scale: scale, width: width, height: height)
+                for slab in slabs {
+                    for rows in slab.rows {
+                        for y in rows {
+                            for x in slab.columns {
+                                let index = y * width + x
+                                guard mask[index] > 0 else { continue }
+                                let weight = Int(mask[index])
+                                for channel in 0..<4 {
+                                    let offset = index * 4 + channel
+                                    output[offset] = UInt8((Int(output[offset]) * (255 - weight)
+                                                           + Int(softened[offset]) * weight + 127) / 255)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         applyCoordinates(final)
-        final.setLineCap(.round)
-        final.setLineJoin(.round)
-        final.setStrokeColor(style.color.cgColor)
-        final.setLineWidth(style.lineWidth)
-        for join in joins where style.lineWidth > 0 {
-            final.addPath(path(for: join, style: style))
-            final.strokePath()
-        }
+        final.beginPath()
+        final.addRects(document.pieces.map(\.frame))
+        final.clip()
+        for join in joins { StitchSeamDrawing.draw(join, style: style, in: final) }
         return final.makeImage()
     }
 }

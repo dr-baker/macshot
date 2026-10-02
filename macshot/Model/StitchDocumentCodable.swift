@@ -14,17 +14,57 @@ struct SavedStitchDocument: Codable, Equatable {
     }
     var images: [Data]
     var pieces: [Piece]
+    var transition: String
     var lineColor: [CGFloat]
     var lineWidth: CGFloat
     var wave: CGFloat
     var blur: CGFloat
     var feather: CGFloat
+    var tearWidth: CGFloat
+    var tearRoughness: CGFloat
+    var paperColor: [CGFloat]
+    var foldDepth: CGFloat
+    var foldStrength: CGFloat
+    var breakSize: CGFloat
     var visible: Bool
     var background: String
     var backgroundColor: [CGFloat]?
     var packed: Bool
     var packingHorizontal: Bool
     var packingLength: CGFloat
+
+    private enum CodingKeys: String, CodingKey {
+        case images, pieces, transition, lineColor, lineWidth, wave, blur, feather, visible
+        case tearWidth, tearRoughness, paperColor, foldDepth, foldStrength, breakSize
+        case background, backgroundColor, packed, packingHorizontal, packingLength
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let style = StitchStyle()
+        // Captured pixels and source geometry must restore together. Cosmetic
+        // settings can use their defaults when a previous revision omitted them.
+        images = try values.decode([Data].self, forKey: .images)
+        pieces = try values.decode([Piece].self, forKey: .pieces)
+        transition = values.decode(.transition, or: StitchTransition.wave.rawValue)
+        lineColor = values.decode(.lineColor, or: Self.components(style.color))
+        lineWidth = values.decode(.lineWidth, or: style.lineWidth)
+        wave = values.decode(.wave, or: style.wave)
+        blur = values.decode(.blur, or: style.blur)
+        feather = values.decode(.feather, or: style.feather)
+        tearWidth = values.decode(.tearWidth, or: style.tearWidth)
+        tearRoughness = values.decode(.tearRoughness, or: wave)
+        paperColor = values.decode(.paperColor, or: Self.components(style.paperColor))
+        foldDepth = values.decode(.foldDepth, or: style.foldDepth)
+        foldStrength = values.decode(.foldStrength, or: style.foldStrength)
+        breakSize = values.decode(.breakSize, or: wave)
+        visible = values.decode(.visible, or: style.visible)
+        background = values.decode(.background, or: "automatic")
+        backgroundColor = values.decodeOptional(.backgroundColor)
+        packed = values.decode(.packed, or: false)
+        packingHorizontal = values.decode(.packingHorizontal, or: true)
+        packingLength = values.decode(.packingLength, or: 0)
+    }
 
     init?(_ document: StitchDocument) {
         var cache: [(image: CGImage, data: Data)] = []
@@ -61,11 +101,18 @@ struct SavedStitchDocument: Codable, Equatable {
         imageData.removeAll { cached in !sources.contains(where: { $0 === cached.image }) }
         self.images = images
         self.pieces = pieces
+        transition = document.style.transition.rawValue
         lineColor = Self.components(document.style.color)
         lineWidth = document.style.lineWidth
         wave = document.style.wave
         blur = document.style.blur
         feather = document.style.feather
+        tearWidth = document.style.tearWidth
+        tearRoughness = document.style.tearRoughness
+        paperColor = Self.components(document.style.paperColor)
+        foldDepth = document.style.foldDepth
+        foldStrength = document.style.foldStrength
+        breakSize = document.style.breakSize
         visible = document.style.visible
         switch document.background {
         case .automatic: background = "automatic"; backgroundColor = nil
@@ -82,10 +129,13 @@ struct SavedStitchDocument: Codable, Equatable {
               !images.isEmpty, images.count <= pieces.count,
               Set(pieces.map(\.id)).count == pieces.count,
               images.reduce(0, { $0 + min($1.count, SavedCaptureValidation.maximumImageBytes + 1) }) <= SavedCaptureValidation.maximumImageBytes,
-              [lineWidth, wave, blur, feather, packingLength].allSatisfy({ $0.isFinite && $0 >= 0 }),
+              [lineWidth, wave, blur, feather, tearWidth, tearRoughness, foldDepth, foldStrength, breakSize, packingLength].allSatisfy({ $0.isFinite && $0 >= 0 }),
               lineWidth <= 100, wave <= 100, blur <= 100, feather <= 4096,
+              tearWidth <= 100, tearRoughness <= 100, foldDepth <= 100, foldStrength <= 1, breakSize <= 100,
               packingLength <= StitchDocument.maximumDimension,
-              !packed || packingLength > 0, let color = Self.color(lineColor) else { return nil }
+              !packed || packingLength > 0, let color = Self.color(lineColor),
+              let paper = Self.color(paperColor),
+              let transition = StitchTransition(rawValue: transition) else { return nil }
         var pixels: [CGImage] = []
         var totalPixels = 0
         for data in images {
@@ -123,8 +173,12 @@ struct SavedStitchDocument: Codable, Equatable {
         default: return nil
         }
         var style = StitchStyle()
+        style.transition = transition
         style.color = color; style.lineWidth = lineWidth; style.wave = wave
         style.blur = blur; style.feather = feather; style.visible = visible
+        style.tearWidth = tearWidth; style.tearRoughness = tearRoughness; style.paperColor = paper
+        style.foldDepth = foldDepth; style.foldStrength = foldStrength
+        style.breakSize = breakSize
         var document = StitchDocument(pieces: restored, style: style, background: fill)
         document.restorePackingState(packed: packed, horizontal: packingHorizontal, length: packingLength)
         return document.canRender ? document : nil

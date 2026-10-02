@@ -33,8 +33,12 @@ enum StitchBandGuides {
     /// Include this value in the analysis cache key when seam settings change.
     static func contentPadding(document: StitchDocument) -> CGFloat {
         let style = document.style
-        guard style.visible, style.blur > 0, style.feather.isFinite else { return 16 }
-        return max(16, style.feather / 2 + 4)
+        guard style.visible else { return 16 }
+        let blur = style.transition.usesBlur && style.blur > 0 && style.feather.isFinite ? style.feather / 2 : 0
+        // Preserve the established Wave guide spacing. Other treatments reserve
+        // their complete decoration so a recommended cut cannot cover nearby text.
+        if style.transition == .wave { return max(16, blur + 4) }
+        return max(16, max(blur, StitchSeamDrawing.decorationExtent(style: style)) + 4)
     }
 
     static func analyze(document: StitchDocument, isCancelled: () -> Bool = { false }) -> Result {
