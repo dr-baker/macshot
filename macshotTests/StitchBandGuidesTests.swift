@@ -20,9 +20,11 @@ final class StitchBandGuidesTests: XCTestCase {
         XCTAssertEqual(StitchBandGuides.analyze(document: vertical).columns, [0, 76, 124, 200])
     }
 
-    func testColoredBackgroundAndSparseNoiseDoNotHideLargeGap() {
-        let doc = document(width: 300, height: 220, background: [40, 90, 120, 255], noise: true) { _, y in y >= 50 && y < 170 }
-        XCTAssertEqual(StitchBandGuides.analyze(document: doc).rows, [0, 86, 134, 220])
+    func testNonuniformSparseMarksRejectAnOtherwiseBlankColoredGap() {
+        let solid = document(width: 300, height: 220, background: [40, 90, 120, 255]) { _, y in y >= 50 && y < 170 }
+        XCTAssertEqual(StitchBandGuides.analyze(document: solid).rows, [0, 86, 134, 220])
+        let noisy = document(width: 300, height: 220, background: [40, 90, 120, 255], noise: true) { _, y in y >= 50 && y < 170 }
+        XCTAssertEqual(StitchBandGuides.analyze(document: noisy).rows, [0, 220])
     }
 
     func testCropAndNegativeOriginMapBackIntoDocumentPixels() {
@@ -70,9 +72,17 @@ final class StitchBandGuidesTests: XCTestCase {
         let doc = document(width: 1000, height: 2000) { _, y in y >= 700 && y < 1100 }
         let rows = StitchBandGuides.analyze(document: doc).rows
         XCTAssertEqual(rows.count, 4)
-        XCTAssertEqual(rows[1], 736, accuracy: 4)
-        XCTAssertEqual(rows[2], 1064, accuracy: 4)
+        XCTAssertEqual(rows.first, 0)
         XCTAssertEqual(rows.last, 2000)
+        guard rows.count == 4 else { return }
+        // Discovery, boundary erosion, and integral native validation may each
+        // consume a sampled pixel. The seam must still retain its full padding.
+        let padding = StitchBandGuides.contentPadding(document: doc)
+        let maximumSamplingInset = ceil(3 * 2000 / CGFloat(StitchBandGuides.maximumSampleDimension)) + 1
+        XCTAssertGreaterThanOrEqual(rows[1], 700 + padding)
+        XCTAssertLessThanOrEqual(rows[1], 700 + padding + maximumSamplingInset)
+        XCTAssertLessThanOrEqual(rows[2], 1100 - padding)
+        XCTAssertGreaterThanOrEqual(rows[2], 1100 - padding - maximumSamplingInset)
     }
 
     func testGapPaddingTracksVisibleBlurAndRejectsTooNarrowWhitespace() {

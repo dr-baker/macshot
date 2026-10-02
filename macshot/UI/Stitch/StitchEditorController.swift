@@ -350,7 +350,7 @@ final class StitchEditorController: NSObject {
         let cancellation = StitchPreviewCancellation(); guideCancellation = cancellation
         guideQueue.async { [weak self] in
             guard !cancellation.isCancelled else { return }
-            let result = StitchBandGuides.analyze(document: snapshot)
+            let result = StitchBandGuides.analyze(document: snapshot, isCancelled: { cancellation.isCancelled })
             guard !cancellation.isCancelled else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.guideGeneration == token,
