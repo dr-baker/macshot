@@ -1710,6 +1710,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     }
 
     @objc private func spaceDidChange() {
+        StitchCaptureSession.shared.workspaceDidChange()
         guard !overlayControllers.isEmpty else { return }
         dismissOverlays()
     }
