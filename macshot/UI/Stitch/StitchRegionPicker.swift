@@ -22,7 +22,7 @@ final class StitchRegionSelection {
     var windowNumber: CGWindowID { controller.windowNumber }
 
     func show() {
-        controller.setSelectionOnlyMode(onSelect: { [weak self] rect in
+        controller.setSelectionOnlyMode(stitchCapture: true, onSelect: { [weak self] rect in
             guard let self else { return }
             let size = self.capture.screen.frame.size
             let image = self.capture.image

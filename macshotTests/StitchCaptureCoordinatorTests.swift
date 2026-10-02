@@ -3,6 +3,25 @@ import XCTest
 
 @MainActor
 final class StitchCaptureCoordinatorTests: XCTestCase {
+    func testAutomaticContinuationKeepsOutcomeVisibleWhileNextSelectorIsReady() {
+        let fixture = Fixture(first: image(), automatic: true)
+        fixture.coordinator.requestCapture()
+        fixture.captures[0](image())
+        fixture.analyses[0].complete(true, nil)
+        XCTAssertEqual(fixture.captures.count, 2)
+        XCTAssertEqual(fixture.coordinator.selectionStatus, L("Same content · scroll before the next capture"))
+        XCTAssertEqual(fixture.updates.last, fixture.coordinator.selectionStatus)
+        fixture.captures[1](nil)
+        XCTAssertEqual(fixture.captures.count, 3)
+        XCTAssertEqual(fixture.coordinator.selectionStatus, L("Capture failed · try another region"))
+        XCTAssertEqual(fixture.updates.last, fixture.coordinator.selectionStatus)
+        fixture.captures[2](image())
+        fixture.analyses[1].complete(false, match(x: 0, y: 12))
+        XCTAssertEqual(fixture.captures.count, 4)
+        XCTAssertEqual(fixture.coordinator.selectionStatus, L("Overlap matched"))
+        XCTAssertEqual(fixture.updates.last, fixture.coordinator.selectionStatus)
+    }
+
     func testAutomaticCollectionContinuesAfterAcceptDuplicateAndFailureAndStopsOnFinish() {
         let fixture = Fixture(first: image(), automatic: true)
         fixture.coordinator.requestCapture()

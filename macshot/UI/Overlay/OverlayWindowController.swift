@@ -376,13 +376,14 @@ class OverlayWindowController {
     }
 
     /// Use the normal selector to return raw screen-local points without image processing.
-    func setSelectionOnlyMode(onSelect: @escaping (NSRect) -> Void,
+    func setSelectionOnlyMode(stitchCapture: Bool = false, onSelect: @escaping (NSRect) -> Void,
                               onCancel: @escaping () -> Void) {
         selectionOnlyGeneration = UUID()
         pendingRawSelection = nil
         selectionOnlyHandler = onSelect
         selectionOnlyCancelHandler = onCancel
         overlayView?.selectionOnlyMode = true
+        overlayView?.stitchCaptureSelection = stitchCapture
     }
 
     func setStitchSizeRecommendations(referencePixelsPerPoint: CGFloat,

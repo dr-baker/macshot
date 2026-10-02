@@ -10,6 +10,7 @@ final class StitchCaptureSession: NSObject {
     private var hud: StitchCaptureHUD?
     private var selectionCompletion: ((StitchCaptureFrame?) -> Void)?
     private var referenceScale: CGFloat?
+    private var firstCaptureFailure: String?
     private var scrollOffset: CGPoint = .zero
     private var scrollMonitor: Any?
     private var keyMonitor: Any?
@@ -47,7 +48,9 @@ final class StitchCaptureSession: NSObject {
         selectCapture { [weak self] frame in
             guard let self else { return }
             guard let frame else {
-                self.updateHUD(L("Capture failed · try another region"))
+                let message = L("Capture failed · try another region")
+                self.firstCaptureFailure = message
+                self.updateHUD(message)
                 self.selectFirstCapture()
                 return
             }
@@ -123,7 +126,8 @@ final class StitchCaptureSession: NSObject {
                     return picker
                 }
                 for picker in self.pickers { picker.show() }
-                self.updateHUD(L("Drag to capture · hold Space to navigate"))
+                self.updateHUD(self.coordinator?.selectionStatus ?? self.firstCaptureFailure
+                    ?? L("Drag to capture · hold Space to navigate"))
             }
         }
     }
@@ -176,7 +180,7 @@ final class StitchCaptureSession: NSObject {
         // Iterate the original selectors before deciding which unfinished work to drop.
         let completedPickers = pickers
         for picker in completedPickers { picker.flushPendingSelection() }
-        guard let coordinator else { cancel(); return }
+        guard let coordinator else { return }
         // Enter while selecting finishes the captures already accepted, without saving an empty selection.
         if selectionCompletion != nil {
             generation = UUID()
@@ -195,7 +199,7 @@ final class StitchCaptureSession: NSObject {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }; keyMonitor = nil
         for key in hotKeys { UnregisterEventHotKey(key) }; hotKeys = []
         if let handler { RemoveEventHandler(handler) }; handler = nil
-        scrollOffset = .zero; referenceScale = nil
+        scrollOffset = .zero; referenceScale = nil; firstCaptureFailure = nil
     }
     private func startScrollTracking() {
         scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in

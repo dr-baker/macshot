@@ -956,3 +956,7 @@
 "Canvas" = "Canvas";
 "Stitch editing canvas" = "Stitch editing canvas";
 "Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor." = "Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor.";
+
+/* Stitch capture feedback. English fallback pending translation. */
+"Release to capture · hold Space to navigate" = "Release to capture · hold Space to navigate";
+"capture" = "capture";

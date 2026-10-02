@@ -30,6 +30,8 @@ final class StitchCaptureCoordinator {
     private(set) var active = true
     private(set) var busy = false
     private(set) var document: StitchDocument
+    private(set) var lastCaptureOutcome: String?
+    var selectionStatus: String { lastCaptureOutcome ?? L("Drag to capture · hold Space to navigate") }
     var onUpdate: ((String) -> Void)?
     var onFinish: ((StitchDocument) -> Void)?
 
@@ -72,7 +74,7 @@ final class StitchCaptureCoordinator {
             onUpdate?(L("Capture limit reached · press Enter to edit")); completeIfNeeded(); return
         }
         busy = true
-        onUpdate?(L("Capture"))
+        onUpdate?(selectionStatus)
         let token = generation
         capture { [weak self] frame in
             guard let self, self.active, self.generation == token else { return }
@@ -148,6 +150,7 @@ final class StitchCaptureCoordinator {
     }
 
     private func completed(message: String) {
+        lastCaptureOutcome = message
         busy = false
         onUpdate?(message)
         if !finishing && (pending || automaticallyContinues) {

@@ -71,12 +71,15 @@ final class StitchCaptureHUD {
     }
 
     func update(count: Int, status: String, canUndo: Bool) {
-        countLabel.stringValue = "\(L("Stitch Capture")) · \(count) \(L("captures"))"
+        let unit = count == 1 ? L("capture") : L("captures")
+        countLabel.stringValue = "\(L("Stitch Capture")) · \(count) \(unit)"
         statusLabel.stringValue = status
         statusLabel.toolTip = status
         undoButton.isEnabled = canUndo
         undoButton.title = L("Undo")
         undoButton.alphaValue = canUndo ? 1 : 0.55
+        finishButton.isEnabled = count > 0
+        finishButton.alphaValue = count > 0 ? 1 : 0.55
         let buttons = [undoButton, finishButton]
         let buttonWidths = buttons.map { max(CGFloat(76), $0.intrinsicContentSize.width + 16) }
         let controlsWidth = buttonWidths.reduce(0, +) + 12

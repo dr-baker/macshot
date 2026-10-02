@@ -27,6 +27,10 @@ final class StitchCaptureHUDTests: XCTestCase {
         hud.update(count: 1, status: "Selecting", canUndo: false)
         XCTAssertFalse(undo.isEnabled)
         XCTAssertTrue(finish.isEnabled)
+        hud.update(count: 0, status: "Selecting first capture", canUndo: false)
+        XCTAssertFalse(undo.isEnabled)
+        XCTAssertFalse(finish.isEnabled, "Finish requires a capture to hand off to the editor")
+        XCTAssertEqual(finishes, 1)
         XCTAssertEqual(hud.windowNumbers, [number])
     }
 }

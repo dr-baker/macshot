@@ -764,6 +764,11 @@ class OverlayView: NSView {
     var autoQuickSaveMode: Bool = false  // set by "Quick Capture" menu — quick-saves immediately after selection
     var autoScrollCaptureMode: Bool = false  // set by "Scroll Capture" menu — triggers scroll capture immediately after selection
     var selectionOnlyMode: Bool = false
+    var stitchCaptureSelection = false
+    private var selectionRawPoint: NSPoint?
+    // Keep whole-rectangle snapping at the stationary Space-release point.
+    // The next pointer movement resumes ordinary corner resizing.
+    private var selectionUsesRepositionGeometry = false
     /// Stitch-specific targets in overlay points. Ordinary captures leave this nil.
     var stitchSizeRecommendations: ((CGRect, CGSize) -> StitchSelectionRecommendations.Result)?
     var stitchReferencePixelsPerPoint: CGFloat = 1
@@ -2409,17 +2414,23 @@ class OverlayView: NSView {
         .foregroundColor: NSColor.white,
     ]
 
+    var selectingHelperText: String {
+        if stitchCaptureSelection && stitchSizeRecommendations == nil {
+            return L("Release to capture · hold Space to navigate")
+        }
+        if stitchSizeRecommendations != nil {
+            return L("Match a width or height · Option to ignore snapping")
+        }
+        if selectionOnlyMode || autoConfirmMode || autoQuickSaveMode {
+            return L("Hold Space to move. Release to finish")
+        }
+        return L("Hold Space to move. Release to annotate and edit")
+    }
+
     private func drawSelectingHelperText() {
         guard selectionRect.width >= 1, selectionRect.height >= 1 else { return }
 
-        let text: String
-        if stitchSizeRecommendations != nil {
-            text = L("Match a width or height · Option to ignore snapping")
-        } else if selectionOnlyMode || autoConfirmMode || autoQuickSaveMode {
-            text = L("Hold Space to move. Release to finish")
-        } else {
-            text = L("Hold Space to move. Release to annotate and edit")
-        }
+        let text = selectingHelperText
         let attrs = Self.helperTextAttrs
         let size = (text as NSString).size(withAttributes: attrs)
         let padding: CGFloat = 10
@@ -5836,6 +5847,8 @@ class OverlayView: NSView {
             }
             // Always start a drag — snap is resolved in mouseUp if no real drag occurred
             selectionStart = point
+            selectionRawPoint = point
+            selectionUsesRepositionGeometry = false
             selectionRect = NSRect(origin: point, size: .zero)
             state = .selecting
             overlayDelegate?.overlayViewDidBeginSelection()
@@ -6566,6 +6579,10 @@ class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if state == .selecting {
+            updateSelectionRect(to: convert(event.locationInWindow, from: nil),
+                                shiftHeld: event.modifierFlags.contains(.shift), modifiers: event.modifierFlags)
+        }
         spaceRepositioning = false
 
         // Any drag that used boundary snap is ending — clear its guide lines.
@@ -6910,6 +6927,10 @@ class OverlayView: NSView {
     /// identical geometry.
     private func updateSelectionRect(to point: NSPoint, shiftHeld: Bool,
                                      modifiers: NSEvent.ModifierFlags = []) {
+        let repositionGeometry = spaceRepositioning
+            || (selectionUsesRepositionGeometry && selectionRawPoint == point)
+        selectionUsesRepositionGeometry = repositionGeometry
+        selectionRawPoint = point
         var point = point
         if spaceRepositioning {
             let dx = point.x - spaceRepositionLast.x
@@ -6933,16 +6954,16 @@ class OverlayView: NSView {
         // stays exact, and bypassed with Option. The anchor edge stays put.
         // While repositioning with Space the whole rect translates rigidly, so we
         // snap the WHOLE moved rect below instead of just the cursor corner.
-        if !spaceRepositioning, boundarySnapEnabled, !modifiers.contains(.option), let index = boundarySnapIndex,
+        if !repositionGeometry, boundarySnapEnabled, !modifiers.contains(.option), let index = boundarySnapIndex,
            activePreSelectionRatio == nil, !shiftHeld {
             point = snapMovingPoint(point, anchor: selectionStart, index: index)
-        } else if !spaceRepositioning, boundarySnapGuideX != nil || boundarySnapGuideY != nil {
+        } else if !repositionGeometry, boundarySnapGuideX != nil || boundarySnapGuideY != nil {
             boundarySnapGuideX = nil
             boundarySnapGuideY = nil
         }
 
         point = stitchSnappedSelectionPoint(raw: unsnappedPoint, boundaryAdjusted: point,
-            anchor: selectionStart, enabled: !spaceRepositioning && activePreSelectionRatio == nil
+            anchor: selectionStart, enabled: !repositionGeometry && activePreSelectionRatio == nil
                 && !shiftHeld && !modifiers.contains(.option))
         // A matching stitch dimension takes priority over an image boundary on that axis.
         if stitchDimensionGuides.contains(where: { $0.isWidth && $0.matched }) { boundarySnapGuideX = nil }
@@ -6973,7 +6994,7 @@ class OverlayView: NSView {
         // nearby image edges. The snap is applied only to the displayed rect, NOT
         // baked back into selectionStart — the logical anchor stays unsnapped so
         // the rect releases cleanly once the cursor moves past the snap radius.
-        if spaceRepositioning {
+        if repositionGeometry {
             rect = boundarySnappedMovedRect(rect, modifiers: modifiers)
         }
         selectionRect = rect
@@ -7084,6 +7105,8 @@ class OverlayView: NSView {
         }
         if state == .idle && shouldAllowNewSelection() {
             selectionStart = point
+            selectionRawPoint = point
+            selectionUsesRepositionGeometry = false
             selectionRect = NSRect(origin: point, size: .zero)
             state = .selecting
             isAnchoredSelecting = true
@@ -9163,6 +9186,10 @@ class OverlayView: NSView {
     // MARK: - Keyboard
 
     override func flagsChanged(with event: NSEvent) {
+        if state == .selecting, let point = selectionRawPoint {
+            updateSelectionRect(to: point, shiftHeld: event.modifierFlags.contains(.shift),
+                                modifiers: event.modifierFlags)
+        }
         // Re-apply shift constraint immediately when Shift is pressed/released during annotation drag
         if currentAnnotation != nil, let lastPoint = lastDragPoint {
             let shiftHeld = event.modifierFlags.contains(.shift)
@@ -9356,6 +9383,8 @@ class OverlayView: NSView {
                         spaceRepositionLast = lastDragPoint ?? currentCanvasMousePoint ?? .zero
                     } else if isResizingExistingAnnotation {
                         spaceRepositionLast = currentCanvasMousePoint ?? annotationResizeMouseStart
+                    } else if isDraggingNewSelection, let point = selectionRawPoint {
+                        spaceRepositionLast = point
                     } else if isResizingCaptureSelection, let windowPoint = window?.mouseLocationOutsideOfEventStream {
                         spaceRepositionLast = convert(windowPoint, from: nil)
                     } else if let windowPoint = window?.mouseLocationOutsideOfEventStream {

@@ -137,10 +137,98 @@ final class StitchSelectionSnappingTests: XCTestCase {
         }
     }
 
+    func testFirstStitchSelectionTeachesNavigationAndOrdinarySelectionKeepsMoveHint() {
+        let view = OverlayView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        view.selectionOnlyMode = true
+        XCTAssertEqual(view.selectingHelperText, L("Hold Space to move. Release to finish"))
+        view.stitchCaptureSelection = true
+        XCTAssertNil(view.stitchSizeRecommendations)
+        XCTAssertEqual(view.selectingHelperText, L("Release to capture · hold Space to navigate"))
+    }
+
+    func testOptionUpdatesStationarySelectionAndReleaseUsesCurrentModifiers() {
+        let view = view()
+        view.selectionOnlyMode = true
+        view.mouseDown(with: mouse(.leftMouseDown, view, CGPoint(x: 50, y: 50)))
+        let raw = CGPoint(x: 247, y: 153)
+        view.mouseDragged(with: mouse(.leftMouseDragged, view, raw))
+        XCTAssertEqual(view.selectionRect.size, CGSize(width: 200, height: 100))
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
+        XCTAssertEqual(view.selectionRect.size, CGSize(width: 197, height: 103))
+        XCTAssertTrue(view.stitchDimensionGuides.isEmpty)
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertEqual(view.selectionRect.size, CGSize(width: 200, height: 100))
+        // Even without a preceding flagsChanged delivery, mouseUp must honor Option.
+        view.mouseUp(with: mouse(.leftMouseUp, view, raw, .option))
+        XCTAssertEqual(view.selectionRect.size, CGSize(width: 197, height: 103))
+    }
+
+    func testShiftUpdatesStationarySelectionAndRemainsConstrainedOnRelease() {
+        let view = view()
+        view.selectionOnlyMode = true
+        view.mouseDown(with: mouse(.leftMouseDown, view, CGPoint(x: 50, y: 50)))
+        let raw = CGPoint(x: 247, y: 153)
+        view.mouseDragged(with: mouse(.leftMouseDragged, view, raw))
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 56, modifiers: .shift))
+        XCTAssertEqual(view.selectionRect.width, view.selectionRect.height)
+        XCTAssertTrue(view.stitchDimensionGuides.isEmpty)
+        view.mouseUp(with: mouse(.leftMouseUp, view, raw, [.shift, .option]))
+        XCTAssertEqual(view.selectionRect.width, view.selectionRect.height)
+    }
+
+    func testOrdinarySelectionKeepsWholeRectSnapAfterStationarySpaceRelease() {
+        let view = RepositionSnapOverlay(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        reposition(view)
+        let displayed = view.selectionRect
+        XCTAssertEqual(displayed, CGRect(x: 73, y: 62, width: 200, height: 100))
+        view.keyUp(with: TestKeyEvent.keyDown(characters: " ", keyCode: 49))
+        view.mouseUp(with: mouse(.leftMouseUp, view, CGPoint(x: 270, y: 160)))
+        XCTAssertEqual(view.selectionRect, displayed)
+    }
+
+    func testStationarySpaceReleaseStillHonorsOptionAndShift() {
+        let view = RepositionSnapOverlay(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        reposition(view)
+        view.keyUp(with: TestKeyEvent.keyDown(characters: " ", keyCode: 49))
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
+        XCTAssertEqual(view.selectionRect, CGRect(x: 70, y: 60, width: 200, height: 100))
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertEqual(view.selectionRect, CGRect(x: 73, y: 62, width: 200, height: 100))
+        view.mouseUp(with: mouse(.leftMouseUp, view, CGPoint(x: 270, y: 160), [.option, .shift]))
+        XCTAssertEqual(view.selectionRect, CGRect(x: 70, y: 60, width: 100, height: 100))
+    }
+
+    func testPointerMovementAfterSpaceReleaseResumesCornerResizing() {
+        let view = RepositionSnapOverlay(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        reposition(view)
+        view.keyUp(with: TestKeyEvent.keyDown(characters: " ", keyCode: 49))
+        view.mouseDragged(with: mouse(.leftMouseDragged, view, CGPoint(x: 300, y: 180)))
+        XCTAssertEqual(view.selectionRect, CGRect(x: 70, y: 60, width: 230, height: 120))
+        view.mouseUp(with: mouse(.leftMouseUp, view, CGPoint(x: 300, y: 180)))
+        XCTAssertEqual(view.selectionRect, CGRect(x: 70, y: 60, width: 230, height: 120))
+    }
+
+    private func reposition(_ view: OverlayView) {
+        view.selectionOnlyMode = true // Ordinary raw selector; no Stitch context or targets.
+        view.mouseDown(with: mouse(.leftMouseDown, view, CGPoint(x: 50, y: 50)))
+        view.mouseDragged(with: mouse(.leftMouseDragged, view, CGPoint(x: 250, y: 150)))
+        view.keyDown(with: TestKeyEvent.keyDown(characters: " ", keyCode: 49))
+        view.mouseDragged(with: mouse(.leftMouseDragged, view, CGPoint(x: 270, y: 160)))
+    }
+
     private func mouse(_ type: NSEvent.EventType, _ view: OverlayView, _ point: CGPoint,
                        _ modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
         NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil), modifierFlags: modifiers,
             timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
             eventNumber: 0, clickCount: 1, pressure: 1)!
+    }
+}
+
+/// Deterministic boundary hit: exercises the real drag/Space/modifier lifecycle
+/// without waiting for asynchronous screenshot edge detection.
+@MainActor
+private final class RepositionSnapOverlay: OverlayView {
+    override func boundarySnappedMovedRect(_ rect: NSRect, modifiers: NSEvent.ModifierFlags) -> NSRect {
+        modifiers.contains(.option) ? rect : rect.offsetBy(dx: 3, dy: 2)
     }
 }
