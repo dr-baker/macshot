@@ -183,7 +183,8 @@ final class AnnotationGeometryTests: XCTestCase {
     func testOnlyRealAnnotationsAreMovable() {
         XCTAssertFalse(make(.select).isMovable)
         XCTAssertFalse(make(.translateOverlay).isMovable)
-        for tool in AnnotationTool.allCases where tool != .select && tool != .translateOverlay {
+        XCTAssertFalse(make(.stitch).isMovable)
+        for tool in AnnotationTool.allCases where tool != .select && tool != .translateOverlay && tool != .stitch {
             XCTAssertTrue(make(tool).isMovable, "\(tool) should be draggable")
         }
     }

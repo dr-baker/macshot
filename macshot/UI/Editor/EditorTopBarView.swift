@@ -219,6 +219,7 @@ class EditorTopBarView: NSView {
         doneButton = nil
     }
 
+
     @objc private func doneClicked() { onDone?() }
 
     @objc private func cropClicked() {

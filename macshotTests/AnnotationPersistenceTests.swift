@@ -64,6 +64,7 @@ final class AnnotationPersistenceTests: XCTestCase {
         "isCaptureStamp": .persisted,
         // Censor / loupe
         "bakedBlurNSImage": .persisted,
+        "stitchAttachment": .persisted,
         "censorMode": .persisted,
         "loupeMagnification": .persisted,
         "loupeSourceRect": .persisted,
@@ -74,8 +75,8 @@ final class AnnotationPersistenceTests: XCTestCase {
         "randomSeed": .persisted,
         "dimOpacity": .persisted,
         // Intentionally not copied
-        "sourceImage": .transient,        // drawing-time reference, cleared after bake
-        "sourceImageBounds": .transient,  // paired with sourceImage
+        "sourceImage": .clonedOnly,        // exact undo source; history uses its raw canvas
+        "sourceImageBounds": .clonedOnly,
         "outlineGlowImage": .transient,   // selection-highlight cache
         "outlineGlowRect": .transient,    // paired with outlineGlowImage
     ]
@@ -131,6 +132,10 @@ final class AnnotationPersistenceTests: XCTestCase {
         ann.stampImage = ImageProbe.quadrantImage(width: 32, height: 32)
         ann.isCaptureStamp = true
         ann.bakedBlurNSImage = ImageProbe.quadrantImage(width: 24, height: 24)
+        ann.stitchAttachment = StitchAnnotationAttachment(
+            pieceID: UUID(uuidString: "11111111-0000-0000-0000-000000000001"),
+            lineageID: UUID(uuidString: "11111111-0000-0000-0000-000000000002"),
+            clipRect: CGRect(x: 14, y: 36, width: 50, height: 60))
         ann.censorMode = .erase
         ann.loupeMagnification = 3.5
         ann.loupeSourceRect = NSRect(x: 5, y: 6, width: 70, height: 70)
@@ -139,7 +144,7 @@ final class AnnotationPersistenceTests: XCTestCase {
         ann.groupID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")
         ann.randomSeed = 123_456_789
         ann.dimOpacity = 0.42
-        // Transient fields set too, to prove they're dropped on purpose.
+        // Undo retains its source; selection-glow caches are discarded.
         ann.sourceImage = ImageProbe.solidImage()
         ann.sourceImageBounds = NSRect(x: 1, y: 2, width: 3, height: 4)
         ann.outlineGlowImage = ImageProbe.solidImage()
@@ -468,5 +473,50 @@ final class AnnotationPersistenceTests: XCTestCase {
         XCTAssertEqual(target.arrowStyle, source.arrowStyle)
         XCTAssertEqual(target.textAlignment, source.textAlignment)
         XCTAssertEqual(FieldDescriber.describe(target.color), FieldDescriber.describe(source.color))
+    }
+
+    func testCensorSnapshotKeepsItsBakedColorAndSourceWhenLiveStyleChanges() throws {
+        let annotation = Annotation(tool: .pixelate, startPoint: .zero,
+            endPoint: CGPoint(x: 20, y: 20), color: .red, strokeWidth: 1)
+        annotation.censorMode = .solid
+        annotation.sourceImage = ImageProbe.solidImage(width: 40, height: 40)
+        annotation.sourceImageBounds = CGRect(x: 0, y: 0, width: 40, height: 40)
+        annotation.bakePixelate()
+        let snapshot = annotation.clone()
+        annotation.color = .blue
+        annotation.censorMode = .blur
+        annotation.sourceImage = ImageProbe.solidImage(width: 80, height: 80)
+        annotation.move(dx: 20, dy: 20)
+        annotation.copyProperties(from: snapshot)
+        XCTAssertEqual(annotation.censorMode, .solid)
+        XCTAssertTrue(annotation.sourceImage === snapshot.sourceImage)
+        XCTAssertTrue(annotation.bakedBlurNSImage === snapshot.bakedBlurNSImage)
+        let baked = try XCTUnwrap(annotation.bakedBlurNSImage)
+        let pixel = try XCTUnwrap(ImageProbe.pixelColor(baked, x: 5, y: 5))
+        XCTAssertGreaterThan(pixel.redComponent, 0.99)
+        XCTAssertLessThan(pixel.blueComponent, 0.01)
+        XCTAssertGreaterThan(pixel.alphaComponent, 0.99)
+    }
+
+    func testMalformedPresentStitchClippingRejectsStrictAnnotationReload() throws {
+        let annotation = Annotation(tool: .filledRectangle, startPoint: .zero,
+            endPoint: CGPoint(x: 20, y: 20), color: .black, strokeWidth: 1)
+        annotation.stitchAttachment = StitchAnnotationAttachment(pieceID: UUID(), lineageID: UUID(),
+            clipRect: CGRect(x: 0, y: 0, width: 10, height: 10))
+        let data = try XCTUnwrap(AnnotationSerializer.encode([annotation]))
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        for invalid: Any in [NSNull(), "unreadable", [:] as [String: Any], [0, 0, 10, 10]] {
+            var corrupt = rows
+            corrupt[0]["stitchAttachment"] = invalid
+            let changed = try JSONSerialization.data(withJSONObject: corrupt)
+            XCTAssertNil(AnnotationSerializer.decode(changed, requireAll: true))
+        }
+        for rect in [CGRect(x: 0, y: 0, width: 0, height: 10),
+                     CGRect(x: 40, y: 40, width: 10, height: 10)] {
+            annotation.stitchAttachment?.clipRect = rect
+            XCTAssertNil(AnnotationSerializer.decode(try XCTUnwrap(AnnotationSerializer.encode([annotation])), requireAll: true))
+        }
+        annotation.stitchAttachment = nil
+        XCTAssertEqual(AnnotationSerializer.decode(try XCTUnwrap(AnnotationSerializer.encode([annotation])), requireAll: true)?.count, 1)
     }
 }

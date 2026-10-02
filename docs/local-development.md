@@ -1,13 +1,21 @@
 # Deploy a local build
 
-This checkout uses the `local-dev-pipeline` branch. Edit the project in Xcode or
-your editor, then run this from any directory:
+Edit the active development checkout in Xcode or your editor, then run this
+from any directory:
 
 ```sh
 macshot-deploy
 ```
 
-`~/.local/bin/macshot-deploy` points to `scripts/deploy-local.sh`. The command
+`~/.local/bin/macshot-deploy` points to the active checkout's
+`scripts/deploy-local.sh`. Check its target with `readlink ~/.local/bin/macshot-deploy`.
+When switching branches in a separate worktree, run this from the new checkout:
+
+```sh
+ln -sfn "$PWD/scripts/deploy-local.sh" ~/.local/bin/macshot-deploy
+```
+
+The command
 builds a Release app and signs it with the installed Developer ID Application
 certificate. It then quits the previous development copy, installs the new copy
 at `/Applications/macshot Dev.app`, launches it, and verifies the bundle ID,

@@ -215,6 +215,49 @@ final class ScreenshotHistoryTests: XCTestCase {
         }
     }
 
+    func testMalformedRedactionFragmentsFallBackToProtectedFlattenedHistory() async throws {
+        let raw = ImageProbe.solidImage(width: 80, height: 60,
+            color: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        let flattened = ImageProbe.makeImage(width: 80, height: 60) { context in
+            context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+            context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 10, y: 10, width: 20, height: 20))
+        }
+        let piece = StitchPiece(image: try XCTUnwrap(raw.cgImage(forProposedRect: nil, context: nil, hints: nil)))
+        let annotation = Annotation(tool: .filledRectangle, startPoint: .zero,
+            endPoint: CGPoint(x: 80, y: 60), color: .red, strokeWidth: 1)
+        annotation.stitchAttachment = StitchAnnotationAttachment(pieceID: piece.id, lineageID: piece.lineageID,
+            clipRect: CGRect(x: 10, y: 10, width: 20, height: 20))
+        var state = CaptureEditState()
+        state.stitchDocument = try XCTUnwrap(SavedStitchDocument(StitchDocument(pieces: [piece])))
+        let history = makeHistory()
+        withDefaults(["historySize": 10, "historyUnlimited": false]) {
+            history.add(image: flattened, rawImage: raw, annotations: [annotation], editState: state)
+        }
+        await history.waitUntilIdle()
+        let entry = try XCTUnwrap(history.entries.first)
+        XCTAssertNotNil(history.loadEditableCapture(for: entry))
+        let sidecar = history.sidecarURL(for: entry, suffix: "_annotations.json")
+        let original = try Data(contentsOf: sidecar)
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [[String: Any]])
+        let flattenedData = try Data(contentsOf: history.fileURL(for: entry))
+        var unknownPiece = try XCTUnwrap(rows[0]["stitchAttachment"] as? [String: Any])
+        unknownPiece["pieceID"] = UUID().uuidString
+        let invalidPayloads: [Any] = [NSNull(), "unreadable", [:] as [String: Any], unknownPiece]
+        for payload in invalidPayloads {
+            var corrupt = rows
+            corrupt[0]["stitchAttachment"] = payload
+            try JSONSerialization.data(withJSONObject: corrupt).write(to: sidecar)
+            XCTAssertNil(history.loadEditableCapture(for: entry))
+            let protected = try XCTUnwrap(history.loadImage(for: entry))
+            let pixel = try XCTUnwrap(ImageProbe.pixelColor(protected, x: 15, y: 45))
+            XCTAssertGreaterThan(pixel.redComponent, 0.99)
+            XCTAssertLessThan(pixel.blueComponent, 0.01)
+            XCTAssertEqual(try Data(contentsOf: history.fileURL(for: entry)), flattenedData)
+        }
+    }
+
     func testTheOldestCaptureIsDroppedWhenTheLimitIsReached() {
         let history = makeHistory()
         withDefaults(["historySize": 3, "historyUnlimited": false]) {

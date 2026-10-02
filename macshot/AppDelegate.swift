@@ -507,7 +507,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
         // Only open settings if no windows are visible (e.g. pure menu-bar state).
         // If editor/video editor is already open, just bring the app to the front.
-        if !flag {
+        if !flag && !StitchCaptureSession.shared.isPresenting {
             openSettings()
         }
         return false
@@ -686,6 +686,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         mainMenu.addItem(fileMenuItem)
 
         let fileMenu = NSMenu(title: "File")
+        let stitchCaptureItem = NSMenuItem(title: L("Stitch Capture"), action: #selector(stitchCapture), keyEquivalent: "")
+        stitchCaptureItem.target = self
+        HotkeyManager.applyMenuShortcut(for: .stitchCapture, to: stitchCaptureItem)
+        fileMenu.addItem(stitchCaptureItem)
+        fileMenu.addItem(.separator())
         // Standard Close Window (Cmd+W) — routes to NSWindow.performClose(_:) via the
         // responder chain, so it closes whichever window is key (editor, settings, etc.)
         // without any window-specific handling.
@@ -820,6 +825,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             menu.addItem(makeCaptureMenuItem(itemID))
         }
 
+        let stitchItem = NSMenuItem(title: L("Stitch Capture"), action: #selector(stitchCapture), keyEquivalent: "")
+        stitchItem.target = self
+        stitchItem.image = NSImage(systemSymbolName: "rectangle.on.rectangle", accessibilityDescription: nil)
+        HotkeyManager.applyMenuShortcut(for: .stitchCapture, to: stitchItem)
+        menu.addItem(stitchItem)
+
         // Capture Delay submenu
         let delayItem = NSMenuItem(title: L("Capture Delay"), action: nil, keyEquivalent: "")
         delayItem.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
@@ -946,6 +957,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         return item
     }
 
+    @objc private func stitchCapture() {
+        let session = StitchCaptureSession.shared
+        session.thumbnailWindowNumbers = { [weak self] in
+            self?.thumbnailControllers.compactMap(\.windowNumber) ?? []
+        }
+        if session.isPresenting {
+            session.trigger()
+            return
+        }
+        guard canStartCapture, overlayControllers.isEmpty, scrollCaptureController == nil else { return }
+        session.trigger()
+    }
+
     // MARK: - Hotkey
 
     private func registerHotkey() {
@@ -1000,6 +1024,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             },
             clearHistory: { [weak self] in
                 DispatchQueue.main.async { self?.clearHistorySilently() }
+            },
+            stitchCapture: { [weak self] in
+                DispatchQueue.main.async { self?.stitchCapture() }
             }
         )
     }
@@ -1244,13 +1271,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// delay-capture countdown `isCapturing` is already true and the pending mode
     /// belongs to that accepted (not-yet-consumed) capture.
     private var canStartCapture: Bool {
-        !isCapturing && recordingEngine == nil
+        !isCapturing && recordingEngine == nil && !StitchCaptureSession.shared.isPresenting
     }
 
     private func startCapture(fromMenu: Bool = false) {
-        guard !isCapturing else { return }
-        // Don't allow captures while recording
-        guard recordingEngine == nil else { return }
+        guard canStartCapture else { return }
         let trace = makeCaptureTimingTrace()
         captureTimingTrace = trace
         trace?.mark("startCapture entered fromMenu=\(fromMenu)")
@@ -1685,6 +1710,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     }
 
     @objc private func spaceDidChange() {
+        StitchCaptureSession.shared.workspaceDidChange()
         guard !overlayControllers.isEmpty else { return }
         dismissOverlays()
     }
@@ -2480,6 +2506,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             settingsController?.onHotkeyChanged = { [weak self] in
                 self?.registerHotkey()
                 self?.rebuildStatusBarMenu()
+                self?.setupMainMenu()
             }
             settingsController?.onEditorCommandShortcutChanged = { [weak self] in
                 self?.setupMainMenu()
@@ -3158,20 +3185,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
     func overlayDidRequestScrollCapture(_ controller: OverlayWindowController, rect: NSRect, screen: NSScreen) {
         if !AXIsProcessTrusted() {
             dismissOverlays()
-            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-            AXIsProcessTrustedWithOptions(opts)
-            let alert = NSAlert()
-            alert.messageText = L("Accessibility Access Required")
-            alert.informativeText = L("macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again.")
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L("Open Settings"))
-            alert.addButton(withTitle: L("Cancel"))
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
+            AccessibilityPermissionGuide.show()
             return
         }
 
@@ -3243,20 +3257,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
 
     func overlayDidRequestAccessibilityPermission(_ controller: OverlayWindowController) {
         dismissOverlays()
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
-        let alert = NSAlert()
-        alert.messageText = L("Accessibility Access Required")
-        alert.informativeText = L("macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again.")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("Open Settings"))
-        alert.addButton(withTitle: L("Cancel"))
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-        }
+        AccessibilityPermissionGuide.show()
     }
 
     func overlayDidRequestInputMonitoringPermission(_ controller: OverlayWindowController) {
@@ -3291,20 +3292,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
                 scrollCaptureOverlayController = nil
                 dismissOverlays()
 
-                let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-                AXIsProcessTrustedWithOptions(opts)
-                let alert = NSAlert()
-                alert.messageText = L("Accessibility Access Required")
-                alert.informativeText = L("macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again.")
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: L("Open Settings"))
-                alert.addButton(withTitle: L("Cancel"))
-                let response = alert.runModal()
-                if response == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+                AccessibilityPermissionGuide.show()
                 return
             }
         }

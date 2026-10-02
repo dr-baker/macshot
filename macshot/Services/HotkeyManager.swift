@@ -22,6 +22,7 @@ class HotkeyManager {
         case captureLastArea = 10
         case pinFromClipboard = 11
         case clearHistory = 12
+        case stitchCapture = 13
 
         var keyCodeKey: String {
             switch self {
@@ -37,6 +38,7 @@ class HotkeyManager {
             case .captureLastArea: return "hotkeyCaptureLastAreaKeyCode"
             case .pinFromClipboard: return "hotkeyPinClipboardKeyCode"
             case .clearHistory: return "hotkeyClearHistoryKeyCode"
+            case .stitchCapture: return "hotkeyStitchCaptureKeyCode"
             }
         }
 
@@ -54,6 +56,7 @@ class HotkeyManager {
             case .captureLastArea: return "hotkeyCaptureLastAreaModifiers"
             case .pinFromClipboard: return "hotkeyPinClipboardModifiers"
             case .clearHistory: return "hotkeyClearHistoryModifiers"
+            case .stitchCapture: return "hotkeyStitchCaptureModifiers"
             }
         }
 
@@ -75,6 +78,7 @@ class HotkeyManager {
             case .captureLastArea: return L("Capture Last Area")
             case .pinFromClipboard: return L("Pin from Clipboard")
             case .clearHistory: return L("Clear History")
+            case .stitchCapture: return L("Stitch Capture")
             }
         }
 
@@ -92,6 +96,7 @@ class HotkeyManager {
             case .captureLastArea: return 0    // no default hotkey
             case .pinFromClipboard: return 0    // no default hotkey
             case .clearHistory: return 0        // no default hotkey
+            case .stitchCapture: return UInt32(kVK_ANSI_J)
             }
         }
 
@@ -136,7 +141,7 @@ class HotkeyManager {
     }
 
     /// Register all hotkeys with their callbacks.
-    func registerAll(captureArea: @escaping () -> Void, captureFullScreen: @escaping () -> Void, recordArea: @escaping () -> Void, recordScreen: @escaping () -> Void, historyOverlay: @escaping () -> Void, captureOCR: @escaping () -> Void, quickCapture: @escaping () -> Void, scrollCapture: @escaping () -> Void, openFromClipboard: @escaping () -> Void, captureLastArea: @escaping () -> Void, pinFromClipboard: @escaping () -> Void, clearHistory: @escaping () -> Void) {
+    func registerAll(captureArea: @escaping () -> Void, captureFullScreen: @escaping () -> Void, recordArea: @escaping () -> Void, recordScreen: @escaping () -> Void, historyOverlay: @escaping () -> Void, captureOCR: @escaping () -> Void, quickCapture: @escaping () -> Void, scrollCapture: @escaping () -> Void, openFromClipboard: @escaping () -> Void, captureLastArea: @escaping () -> Void, pinFromClipboard: @escaping () -> Void, clearHistory: @escaping () -> Void, stitchCapture: @escaping () -> Void) {
         unregisterAll()
         register(slot: .captureArea, callback: captureArea)
         register(slot: .captureFullScreen, callback: captureFullScreen)
@@ -150,6 +155,7 @@ class HotkeyManager {
         register(slot: .captureLastArea, callback: captureLastArea)
         register(slot: .pinFromClipboard, callback: pinFromClipboard)
         register(slot: .clearHistory, callback: clearHistory)
+        register(slot: .stitchCapture, callback: stitchCapture)
     }
 
     private func installEventHandler() {
@@ -166,6 +172,7 @@ class HotkeyManager {
                 var hotkeyID = EventHotKeyID()
                 GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                                   nil, MemoryLayout<EventHotKeyID>.size, nil, &hotkeyID)
+                guard hotkeyID.signature == OSType(0x4D53_4854) else { return OSStatus(eventNotHandledErr) }
 
                 if let slot = HotkeySlot(rawValue: Int(hotkeyID.id)), let callback = mgr.callbacks[slot] {
                     os_log("CARBON HANDLER ENTERED slot=%{public}d abs=%{public}.6f isMain=%{public}@",

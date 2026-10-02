@@ -49,7 +49,11 @@ enum UndoEntry {
     /// changed the separately-captured window image beautify's window-snap
     /// mode draws from.
     case imageTransform(previousImage: NSImage, previousSnappedWindowImage: NSImage?,
-                        annotationOffsets: [(Annotation, CGFloat, CGFloat)])
+                        annotationOffsets: [(Annotation, CGFloat, CGFloat)],
+                        previousStitchDocument: StitchDocument? = nil,
+                        previousAnnotations: [(object: Annotation, properties: Annotation)]? = nil)
+    /// A full Stitch change shares this stack with ordinary annotation edits.
+    case stitchDocument(StitchEditorSnapshot)
     /// Property change: stores the annotation and a snapshot taken before the edit.
     case propertyChange(annotation: Annotation, snapshot: Annotation)
 
@@ -57,7 +61,7 @@ enum UndoEntry {
         switch self {
         case .added(let a), .deleted(let a, _): return a
         case .propertyChange(let a, _): return a
-        case .imageTransform:
+        case .imageTransform, .stitchDocument:
             return Annotation(
                 tool: .measure, startPoint: .zero, endPoint: .zero, color: .clear, strokeWidth: 0)  // dummy
         }
@@ -259,7 +263,7 @@ class OverlayView: NSView {
     /// Last tool the user explicitly picked — persisted across app launches.
     private static var lastUsedTool: AnnotationTool = {
         if let raw = UserDefaults.standard.object(forKey: "lastUsedTool") as? Int,
-           let tool = AnnotationTool(rawValue: raw) {
+           let tool = AnnotationTool(rawValue: raw), tool != .stitch {
             return tool
         }
         return .arrow
@@ -279,7 +283,7 @@ class OverlayView: NSView {
     }() {
         didSet {
             // Persist drawing tool choices; skip transient/mode tools
-            if OverlayView.shouldRememberLastTool && currentTool != .select && currentTool != .loupe {
+            if OverlayView.shouldRememberLastTool && currentTool != .select && currentTool != .loupe && currentTool != .stitch {
                 OverlayView.lastUsedTool = currentTool
                 UserDefaults.standard.set(currentTool.rawValue, forKey: "lastUsedTool")
             }
@@ -299,6 +303,8 @@ class OverlayView: NSView {
             updateToolbarColorSwatch()
         }
     }
+    /// The active tool's color, displayed in the native toolbar swatch.
+    var toolbarColor: NSColor { currentColor }
     /// currentColor with opacity applied — used for all tools except marker, loupe, measure, pixelate, blur
     private var annotationColor: NSColor { currentColor.withAlphaComponent(currentColorOpacity) }
     var currentStrokeWidth: CGFloat = {
@@ -566,8 +572,7 @@ class OverlayView: NSView {
     var cachedEffectsScreenshot: NSImage?
 
     // Color picker target
-    enum ColorPickerTarget { case drawColor, textBg, textOutline, textGlyphStroke, annotationOutline, loupeOutline }
-    private var colorPickerTarget: ColorPickerTarget = .drawColor
+    enum ColorPickerTarget { case drawColor, stitchSeam, textBg, textOutline, textGlyphStroke, annotationOutline, loupeOutline }
 
     // Beautify toolbar animation
     private var beautifyToolbarAnimProgress: CGFloat = 1.0  // 0..1, 1 = fully settled
@@ -759,6 +764,16 @@ class OverlayView: NSView {
     var autoTranslateOverlayLang: String?  // target language for autoTranslateOverlayMode (nil = saved default)
     var autoQuickSaveMode: Bool = false  // set by "Quick Capture" menu — quick-saves immediately after selection
     var autoScrollCaptureMode: Bool = false  // set by "Scroll Capture" menu — triggers scroll capture immediately after selection
+    var selectionOnlyMode: Bool = false
+    var stitchCaptureSelection = false
+    private var selectionRawPoint: NSPoint?
+    // Keep whole-rectangle snapping at the stationary Space-release point.
+    // The next pointer movement resumes ordinary corner resizing.
+    private var selectionUsesRepositionGeometry = false
+    /// Stitch-specific targets in overlay points. Ordinary captures leave this nil.
+    var stitchSizeRecommendations: ((CGRect, CGSize) -> StitchSelectionRecommendations.Result)?
+    var stitchReferencePixelsPerPoint: CGFloat = 1
+    var stitchDimensionGuides: [StitchDimensionGuide] = []
     var autoConfirmMode: Bool = false  // set by "Add Capture" — auto-confirms selection (no toolbars, no save)
 
     // Recording session overrides (popover settings — nil means use UserDefaults default)
@@ -1133,6 +1148,15 @@ class OverlayView: NSView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleToolbarColorsChanged),
             name: .toolbarColorsDidChange, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .toolbarVisibilityDidChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleToolbarVisibilityChanged),
+            name: .toolbarVisibilityDidChange, object: nil)
+    }
+
+    @objc private func handleToolbarVisibilityChanged() {
+        rebuildToolbarLayout()
+        needsDisplay = true
     }
 
     @objc private func handleToolbarColorsChanged() {
@@ -2137,6 +2161,7 @@ class OverlayView: NSView {
             // selection with an active snap.
             if isResizingSelection || state == .selecting {
                 drawBoundarySnapGuides()
+                drawStitchDimensionGuides()
             }
 
             // Hide the text view when color picker is open for bg/outline (so picker isn't behind it)
@@ -2390,12 +2415,23 @@ class OverlayView: NSView {
         .foregroundColor: NSColor.white,
     ]
 
+    var selectingHelperText: String {
+        if stitchCaptureSelection && stitchSizeRecommendations == nil {
+            return L("Release to capture · hold Space to navigate")
+        }
+        if stitchSizeRecommendations != nil {
+            return L("Match a width or height · Option to ignore snapping")
+        }
+        if selectionOnlyMode || autoConfirmMode || autoQuickSaveMode {
+            return L("Hold Space to move. Release to finish")
+        }
+        return L("Hold Space to move. Release to annotate and edit")
+    }
+
     private func drawSelectingHelperText() {
         guard selectionRect.width >= 1, selectionRect.height >= 1 else { return }
 
-        let text = autoQuickSaveMode
-            ? L("Hold Space to move. Release to finish")
-            : L("Hold Space to move. Release to annotate and edit")
+        let text = selectingHelperText
         let attrs = Self.helperTextAttrs
         let size = (text as NSString).size(withAttributes: attrs)
         let padding: CGFloat = 10
@@ -3433,7 +3469,7 @@ class OverlayView: NSView {
         }
         switch currentTool {
         case .pencil, .line, .arrow, .rectangle, .ellipse, .marker, .number, .loupe, .measure,
-            .pixelate, .stamp, .highlight:
+            .pixelate, .stamp, .highlight, .stitch:
             return true
         case .text:
             return true
@@ -3601,9 +3637,13 @@ class OverlayView: NSView {
             let cgImage = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
 
+        let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: true)
+
         // Save state for undo
         let prevImage = original.copy() as! NSImage
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: []))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         let w = cgImage.width
@@ -3628,12 +3668,22 @@ class OverlayView: NSView {
         // Mirror annotation X coordinates around the image center
         let imgW = original.size.width
         for ann in annotations {
+            ann.mirrorStitchPixels(horizontal: true, in: selectionRect)
             ann.startPoint.x = selectionRect.minX + (selectionRect.maxX - ann.startPoint.x)
             ann.endPoint.x = selectionRect.minX + (selectionRect.maxX - ann.endPoint.x)
             if let cp = ann.controlPoint {
                 ann.controlPoint = NSPoint(
                     x: selectionRect.minX + (selectionRect.maxX - cp.x), y: cp.y)
             }
+            if let anchors = ann.anchorPoints {
+                ann.anchorPoints = anchors.map { NSPoint(x: selectionRect.minX + selectionRect.maxX - $0.x, y: $0.y) }
+            }
+            if !ann.textDrawRect.isEmpty { ann.textDrawRect.origin.x = selectionRect.minX + selectionRect.maxX - ann.textDrawRect.maxX }
+            if var source = ann.loupeSourceRect {
+                source.origin.x = selectionRect.minX + selectionRect.maxX - source.maxX
+                ann.loupeSourceRect = source
+            }
+            ann.rotation = -ann.rotation
             // Mirror freeform points
             if let pts = ann.points {
                 ann.points = pts.map {
@@ -3642,6 +3692,8 @@ class OverlayView: NSView {
             }
         }
 
+        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
     }
@@ -3651,8 +3703,12 @@ class OverlayView: NSView {
             let cgImage = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
 
+        let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: false)
+
         let prevImage = original.copy() as! NSImage
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: []))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         let w = cgImage.width
@@ -3675,12 +3731,22 @@ class OverlayView: NSView {
 
         // Mirror annotation Y coordinates around the image center
         for ann in annotations {
+            ann.mirrorStitchPixels(horizontal: false, in: selectionRect)
             ann.startPoint.y = selectionRect.minY + (selectionRect.maxY - ann.startPoint.y)
             ann.endPoint.y = selectionRect.minY + (selectionRect.maxY - ann.endPoint.y)
             if let cp = ann.controlPoint {
                 ann.controlPoint = NSPoint(
                     x: cp.x, y: selectionRect.minY + (selectionRect.maxY - cp.y))
             }
+            if let anchors = ann.anchorPoints {
+                ann.anchorPoints = anchors.map { NSPoint(x: $0.x, y: selectionRect.minY + selectionRect.maxY - $0.y) }
+            }
+            if !ann.textDrawRect.isEmpty { ann.textDrawRect.origin.y = selectionRect.minY + selectionRect.maxY - ann.textDrawRect.maxY }
+            if var source = ann.loupeSourceRect {
+                source.origin.y = selectionRect.minY + selectionRect.maxY - source.maxY
+                ann.loupeSourceRect = source
+            }
+            ann.rotation = -ann.rotation
             if let pts = ann.points {
                 ann.points = pts.map {
                     NSPoint(x: $0.x, y: selectionRect.minY + (selectionRect.maxY - $0.y))
@@ -3688,6 +3754,8 @@ class OverlayView: NSView {
             }
         }
 
+        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
     }
@@ -3801,7 +3869,10 @@ class OverlayView: NSView {
         let shiftDx = -targetRect.origin.x
         let shiftDy = -targetRect.origin.y
         let offsets = annotations.map { ($0, shiftDx, shiftDy) }
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: offsets))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: offsets,
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
+        redoStack.removeAll()
 
         screenshotImage = NSImage(cgImage: newCG, size: NSSize(width: newPtW, height: newPtH))
         cachedOpaqueRect = nil  // invalidate — image content changed
@@ -3809,12 +3880,13 @@ class OverlayView: NSView {
         // Shift all annotations so they align with the new origin
         if shiftDx != 0 || shiftDy != 0 {
             for ann in annotations {
-                ann.move(dx: shiftDx, dy: shiftDy)
+                ann.moveWithSource(dx: shiftDx, dy: shiftDy)
             }
         }
 
         selectionRect = NSRect(origin: .zero, size: NSSize(width: newPtW, height: newPtH))
         frame.size = NSSize(width: newPtW, height: newPtH)
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
     }
 
@@ -3899,7 +3971,9 @@ class OverlayView: NSView {
         undoStack.append(.imageTransform(
             previousImage: original.copy() as? NSImage ?? original,
             previousSnappedWindowImage: previousSnapped,
-            annotationOffsets: []))
+            annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
         screenshotImage = invertedScreenshot
@@ -4411,25 +4485,35 @@ class OverlayView: NSView {
 
         let cgW = CGFloat(cgOriginal.width)
         let cgH = CGFloat(cgOriginal.height)
+        // Resolve the selection once into exact source pixels. Floating-point
+        // normalization can otherwise turn a whole-pixel crop into fractional
+        // source slices and prevent restoring its editable piece geometry.
+        let pixelX = max(0, (normX * cgW).rounded())
+        let pixelY = max(0, ((1.0 - normY - normH) * cgH).rounded())
         let cgPixelRect = CGRect(
-            x: max(0, normX * cgW),
-            y: max(0, (1.0 - normY - normH) * cgH),  // flip Y for CGImage top-left origin
-            width: min(normW * cgW, cgW - max(0, normX * cgW)),
-            height: min(normH * cgH, cgH - max(0, (1.0 - normY - normH) * cgH))
+            x: pixelX, y: pixelY,
+            width: min((normW * cgW).rounded(), cgW - pixelX),
+            height: min((normH * cgH).rounded(), cgH - pixelY)
         )
 
         guard cgPixelRect.width > 0, cgPixelRect.height > 0,
             let croppedCG = cgOriginal.cropping(to: cgPixelRect)
         else { return }
 
+        let transformedStitch = (self as? EditorView)?.stitchDocument.flatMap { document in
+            document.cropped(to: cgPixelRect.offsetBy(dx: document.bounds.minX, dy: document.bounds.minY))
+        }
+
         // Save state for undo before modifying
         let prevImage = originalImage.copy() as! NSImage
-        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: []))
+        undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
+            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
-        let dx = selectionRect.minX - canvasRect.minX
-        let dy = selectionRect.minY - canvasRect.minY
-        for ann in annotations { ann.move(dx: dx, dy: dy) }
+        let dx = -cgPixelRect.minX / pixScale
+        let dy = -(selectionRect.height - cgPixelRect.maxY / pixScale)
+        for ann in annotations { ann.moveWithSource(dx: dx, dy: dy) }
 
         // Set NSImage size in points (not pixels) to preserve Retina scale
         let croppedPointSize = NSSize(
@@ -4440,6 +4524,8 @@ class OverlayView: NSView {
         // Update selectionRect to match new image size
         selectionRect = NSRect(origin: .zero, size: croppedPointSize)
 
+        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
 
         // Resize view frame to match new image size (scroll view re-centers automatically)
@@ -5127,10 +5213,11 @@ class OverlayView: NSView {
 
         let movableAnnotations = annotations.contains { $0.isMovable }
         bottomButtons = ToolbarLayout.bottomButtons(
-            selectedTool: currentTool, selectedColor: currentColor,
+            selectedTool: currentTool, selectedColor: toolbarColor,
             beautifyEnabled: beautifyEnabled, beautifyStyleIndex: beautifyStyleIndex,
             hasAnnotations: movableAnnotations, isRecording: isRecording,
-            effectsActive: effectsActive
+            effectsActive: effectsActive,
+            stitchSeamsVisible: (self as? EditorView)?.stitchDocument?.style.visible ?? true
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -5203,6 +5290,9 @@ class OverlayView: NSView {
             // Don't overwrite annotation-specific options when editing a selected annotation
             if let ann = selectedAnnotation, toolOptionsRowView?.editingAnnotation === ann {
                 // Already showing this annotation's options — skip rebuild
+            } else if currentTool == .stitch, toolOptionsRowView?.currentTool == .stitch,
+                !showBeautifyInOptionsRow {
+                toolOptionsRowView?.refreshStitchState()
             } else {
                 toolOptionsRowView?.rebuild(for: currentTool)
             }
@@ -5765,6 +5855,8 @@ class OverlayView: NSView {
             }
             // Always start a drag — snap is resolved in mouseUp if no real drag occurred
             selectionStart = point
+            selectionRawPoint = point
+            selectionUsesRepositionGeometry = false
             selectionRect = NSRect(origin: point, size: .zero)
             state = .selecting
             overlayDelegate?.overlayViewDidBeginSelection()
@@ -5971,6 +6063,7 @@ class OverlayView: NSView {
                     newRotation = (newRotation / step).rounded() * step
                 }
                 annotation.rotation = newRotation
+                annotation.updateStitchClipForGeometryEdit()
                 needsDisplay = true
                 return
             }
@@ -5994,7 +6087,7 @@ class OverlayView: NSView {
                         annotation.bakedBlurNSImage = nil
                         annotation.bakeLoupe()
                     }
-                    if annotation.tool == .pixelate { annotation.bakedBlurNSImage = nil }
+                    if annotation.tool == .pixelate || annotation.tool == .blur { annotation.bakedBlurNSImage = nil }
                     cachedCompositedImage = nil
                     needsDisplay = true
                     return
@@ -6355,6 +6448,7 @@ class OverlayView: NSView {
 
                     annotation.startPoint = NSPoint(x: newMinX, y: newMinY)
                     annotation.endPoint = NSPoint(x: newMaxX, y: newMaxY)
+                    annotation.updateStitchClipForGeometryEdit()
                     if annotation.tool == .loupe {
                         // Two-circle loupe: resizing the lens keeps the zoom
                         // (magnification) fixed and re-frames the source so it
@@ -6364,7 +6458,7 @@ class OverlayView: NSView {
                         annotation.bakeLoupe()
                     }
                 }
-                if annotation.tool == .pixelate { annotation.bakedBlurNSImage = nil }
+                if annotation.tool == .pixelate || annotation.tool == .blur { annotation.bakedBlurNSImage = nil }
                 cachedCompositedImage = nil
                 needsDisplay = true
             } else if isLassoSelecting {
@@ -6495,6 +6589,10 @@ class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if state == .selecting {
+            updateSelectionRect(to: convert(event.locationInWindow, from: nil),
+                                shiftHeld: event.modifierFlags.contains(.shift), modifiers: event.modifierFlags)
+        }
         spaceRepositioning = false
 
         // Any drag that used boundary snap is ending — clear its guide lines.
@@ -6561,13 +6659,13 @@ class OverlayView: NSView {
         }
         if isResizingAnnotation {
             isResizingAnnotation = false
-            commitAnnotationManipulationUndo()
+            let changed = commitAnnotationManipulationUndo()
             cachedAnnotationLayerExcludingSelected = nil
             cachedAnnotationLayer = nil
             annotationResizeHandle = .none
             if let ann = selectedAnnotation {
-                if ann.tool == .loupe { ann.bakeLoupe() }
-                if ann.tool == .pixelate { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
+                if changed && ann.tool == .loupe { ann.bakeLoupe() }
+                if changed && (ann.tool == .pixelate || ann.tool == .blur) { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
                 if ann.tool == .stamp && !ann.isCaptureStamp {
                     // Remember the size so the next stamp is placed to match.
                     setActiveStampSize(max(ann.boundingRect.width, ann.boundingRect.height))
@@ -6608,7 +6706,7 @@ class OverlayView: NSView {
                 }
                 // Record the move as an undo entry (and an edit) if anything
                 // actually moved. Each dragged annotation gets its own entry.
-                commitAnnotationManipulationUndo()
+                let changed = commitAnnotationManipulationUndo()
                 isDraggingAnnotation = false
                 didMoveAnnotation = false
                 cachedAnnotationLayerExcludingSelected = nil
@@ -6617,8 +6715,8 @@ class OverlayView: NSView {
                 snapGuideY = nil
                 NSCursor.openHand.set()
                 for ann in selectedAnnotations {
-                    if ann.tool == .loupe { ann.bakeLoupe() }
-                    if ann.tool == .pixelate { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
+                    if changed && ann.tool == .loupe { ann.bakeLoupe() }
+                    if changed && (ann.tool == .pixelate || ann.tool == .blur) { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
                 }
                 // Auto-expand canvas if annotation was dragged outside bounds (editor mode)
                 expandCanvasToFitAnnotations()
@@ -6748,7 +6846,7 @@ class OverlayView: NSView {
             // Real drag — use drawn rect as-is
             state = .selected
             applyPreSelectionLockAfterSelection()
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else if snapMode != .off, let snapRect = hoveredSnapRect, !snapRect.isEmpty {
             // Click (no drag) with snap on — select the hovered target.
@@ -6757,7 +6855,7 @@ class OverlayView: NSView {
             snappedWindowID = selectionIsWindowSnap ? hoveredSnapWindowID : nil
             // Only whole-window snaps use the independent capture that preserves
             // transparent corners. Element snaps are ordinary screen crops.
-            if selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
+            if !selectionOnlyMode, selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
                 Task {
                     if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
                         self.snappedWindowImage = NSImage(cgImage: cgImage,
@@ -6768,13 +6866,13 @@ class OverlayView: NSView {
                 }
             }
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else {
             // Click (no drag), snap off — expand to full screen
             selectionRect = bounds
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         }
         hoveredSnapRect = nil
@@ -6839,6 +6937,10 @@ class OverlayView: NSView {
     /// identical geometry.
     private func updateSelectionRect(to point: NSPoint, shiftHeld: Bool,
                                      modifiers: NSEvent.ModifierFlags = []) {
+        let repositionGeometry = spaceRepositioning
+            || (selectionUsesRepositionGeometry && selectionRawPoint == point)
+        selectionUsesRepositionGeometry = repositionGeometry
+        selectionRawPoint = point
         var point = point
         if spaceRepositioning {
             let dx = point.x - spaceRepositionLast.x
@@ -6849,24 +6951,33 @@ class OverlayView: NSView {
         }
 
         if case .resolution(let pxW, let pxH) = activePreSelectionPreset {
+            stitchDimensionGuides = []
             selectionRect = fixedPreSelectionRect(centeredAt: point, pxW: pxW, pxH: pxH)
             overlayDelegate?.overlayViewSelectionDidChange(selectionRect)
             needsDisplay = true
             return
         }
 
+        let unsnappedPoint = point
         // Boundary snap the MOVING corner (the cursor) to nearby image edges.
         // Skipped for freeform-constrained drags (aspect/shift) so the constraint
         // stays exact, and bypassed with Option. The anchor edge stays put.
         // While repositioning with Space the whole rect translates rigidly, so we
         // snap the WHOLE moved rect below instead of just the cursor corner.
-        if !spaceRepositioning, boundarySnapEnabled, !modifiers.contains(.option), let index = boundarySnapIndex,
+        if !repositionGeometry, boundarySnapEnabled, !modifiers.contains(.option), let index = boundarySnapIndex,
            activePreSelectionRatio == nil, !shiftHeld {
             point = snapMovingPoint(point, anchor: selectionStart, index: index)
-        } else if !spaceRepositioning, boundarySnapGuideX != nil || boundarySnapGuideY != nil {
+        } else if !repositionGeometry, boundarySnapGuideX != nil || boundarySnapGuideY != nil {
             boundarySnapGuideX = nil
             boundarySnapGuideY = nil
         }
+
+        point = stitchSnappedSelectionPoint(raw: unsnappedPoint, boundaryAdjusted: point,
+            anchor: selectionStart, enabled: !repositionGeometry && activePreSelectionRatio == nil
+                && !shiftHeld && !modifiers.contains(.option))
+        // A matching stitch dimension takes priority over an image boundary on that axis.
+        if stitchDimensionGuides.contains(where: { $0.isWidth && $0.matched }) { boundarySnapGuideX = nil }
+        if stitchDimensionGuides.contains(where: { !$0.isWidth && $0.matched }) { boundarySnapGuideY = nil }
 
         let rawW = abs(point.x - selectionStart.x)
         let rawH = abs(point.y - selectionStart.y)
@@ -6893,7 +7004,7 @@ class OverlayView: NSView {
         // nearby image edges. The snap is applied only to the displayed rect, NOT
         // baked back into selectionStart — the logical anchor stays unsnapped so
         // the rect releases cleanly once the cursor moves past the snap radius.
-        if spaceRepositioning {
+        if repositionGeometry {
             rect = boundarySnappedMovedRect(rect, modifiers: modifiers)
         }
         selectionRect = rect
@@ -6935,7 +7046,7 @@ class OverlayView: NSView {
         if selectionRect.width > 5 || selectionRect.height > 5 {
             state = .selected
             applyPreSelectionLockAfterSelection()
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
                 showToolbars = true
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
@@ -6943,7 +7054,7 @@ class OverlayView: NSView {
             selectionRect = snapRect
             selectionIsWindowSnap = snapMode == .window
             snappedWindowID = selectionIsWindowSnap ? hoveredSnapWindowID : nil
-            if selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
+            if !selectionOnlyMode, selectionIsWindowSnap, let wid = hoveredSnapWindowID, let screen = window?.screen {
                 Task {
                     if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
                         self.snappedWindowImage = NSImage(
@@ -6956,14 +7067,14 @@ class OverlayView: NSView {
                 }
             }
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
                 showToolbars = true
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else {
             selectionRect = bounds
             state = .selected
-            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
+            if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
                 showToolbars = true
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
@@ -7004,6 +7115,8 @@ class OverlayView: NSView {
         }
         if state == .idle && shouldAllowNewSelection() {
             selectionStart = point
+            selectionRawPoint = point
+            selectionUsesRepositionGeometry = false
             selectionRect = NSRect(origin: point, size: .zero)
             state = .selecting
             isAnchoredSelecting = true
@@ -7815,6 +7928,10 @@ class OverlayView: NSView {
         tip.needsDisplay = true
     }
 
+    func showToolbarActionMenu(_ action: ToolbarButtonAction, anchorView: NSView) {
+        handleToolbarButtonRightClick(action, anchorView: anchorView)
+    }
+
     private func handleToolbarButtonRightClick(_ action: ToolbarButtonAction, anchorView: NSView) {
         switch action {
         case .autoRedact:
@@ -8130,9 +8247,9 @@ class OverlayView: NSView {
     }
 
     /// Update the color swatch on the main toolbar's color button without a full rebuild.
-    private func updateToolbarColorSwatch() {
+    func updateToolbarColorSwatch() {
         if let idx = bottomButtons.firstIndex(where: { if case .color = $0.action { return true } else { return false } }) {
-            bottomButtons[idx].bgColor = currentColor
+            bottomButtons[idx].bgColor = toolbarColor
             bottomStripView?.updateState(from: bottomButtons)
             // Schedule button redraw on next run loop iteration so it happens after
             // the overlay's own draw pass (which can paint over button subviews).
@@ -8146,8 +8263,20 @@ class OverlayView: NSView {
     }
 
     func handleToolbarAction(_ action: ToolbarButtonAction, mousePoint: NSPoint = .zero) {
+        guard !selectionOnlyMode else { return }
         switch action {
         case .tool(let tool):
+            if tool == .stitch, !isEditorMode {
+                guard state == .selected, !selectionRect.isEmpty, !isRecording,
+                    screenshotImage != nil, let delegate = overlayDelegate else { return }
+                commitTextFieldIfNeeded()
+                // The established editor handoff preserves the raw crop,
+                // editable annotations and processing settings. Stitch stays
+                // transient so the next capture keeps its drawing tool.
+                currentTool = .stitch
+                delegate.overlayViewDidRequestDetach()
+                return
+            }
             commitTextFieldIfNeeded()
             showBeautifyInOptionsRow = false  // switch back to tool options
             currentTool = tool
@@ -8161,9 +8290,14 @@ class OverlayView: NSView {
             currentTool = .loupe
             needsDisplay = true
         case .color:
-            if PopoverHelper.toggleClosedIfOpen() { break }
             let colorBtn = bottomStripView?.buttonViews.first { if case .color = $0.action { return true }; return false }
-            showColorPickerPopover(target: .drawColor, anchorView: colorBtn)
+            if PopoverHelper.toggleClosedIfOpen(anchorView: colorBtn) { break }
+            if let editor = self as? EditorView, currentTool == .stitch, editor.stitchDocument?.style.visible == false {
+                let seamsAnchor = toolOptionsRowView?.subviews.first { $0.identifier?.rawValue == "stitch.seams" } ?? colorBtn
+                if let seamsAnchor { editor.onStitchOptions?(.seams, seamsAnchor) }
+            } else {
+                showColorPickerPopover(target: currentTool == .stitch ? .stitchSeam : .drawColor, anchorView: colorBtn)
+            }
         case .sizeDisplay:
             break
         case .adjustSelection:
@@ -9067,6 +9201,10 @@ class OverlayView: NSView {
     // MARK: - Keyboard
 
     override func flagsChanged(with event: NSEvent) {
+        if state == .selecting, let point = selectionRawPoint {
+            updateSelectionRect(to: point, shiftHeld: event.modifierFlags.contains(.shift),
+                                modifiers: event.modifierFlags)
+        }
         // Re-apply shift constraint immediately when Shift is pressed/released during annotation drag
         if currentAnnotation != nil, let lastPoint = lastDragPoint {
             let shiftHeld = event.modifierFlags.contains(.shift)
@@ -9084,6 +9222,10 @@ class OverlayView: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if selectionOnlyMode {
+            // Consume app/edit commands while the selector owns keyboard focus.
+            return event.modifierFlags.contains(.command)
+        }
         // Text editing: forward standard commands to the active text view.
         if let tv = textEditView {
             if let action = EditorCommandShortcutManager.action(for: event) {
@@ -9163,6 +9305,33 @@ class OverlayView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if selectionOnlyMode {
+            guard !event.modifierFlags.contains(.command),
+                  !event.modifierFlags.contains(.control),
+                  !event.modifierFlags.contains(.option) else { return }
+            switch event.keyCode {
+            case 53:
+                overlayDelegate?.overlayViewDidCancel()
+                return
+            case 36, 76:
+                if state == .selected { overlayDelegate?.overlayViewDidFinishSelection(selectionRect) }
+                return
+            case 48: // Preserve the normal Tab snapping controls below.
+                break
+            case 49 where state == .selecting: // Space repositions an active drag.
+                break
+            default:
+                if state == .idle,
+                   KeyboardShortcutMatcher.matches(event, character: "f", modifiers: []) {
+                    selectionRect = bounds
+                    state = .selected
+                    hoveredSnapRect = nil
+                    overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
+                    needsDisplay = true
+                }
+                return
+            }
+        }
         // Recording setup allows Move and Escape, without activating screenshot
         // tools or output shortcuts. The actual recording uses a separate HUD.
         if isRecording {
@@ -9229,6 +9398,8 @@ class OverlayView: NSView {
                         spaceRepositionLast = lastDragPoint ?? currentCanvasMousePoint ?? .zero
                     } else if isResizingExistingAnnotation {
                         spaceRepositionLast = currentCanvasMousePoint ?? annotationResizeMouseStart
+                    } else if isDraggingNewSelection, let point = selectionRawPoint {
+                        spaceRepositionLast = point
                     } else if isResizingCaptureSelection, let windowPoint = window?.mouseLocationOutsideOfEventStream {
                         spaceRepositionLast = convert(windowPoint, from: nil)
                     } else if let windowPoint = window?.mouseLocationOutsideOfEventStream {
@@ -9475,6 +9646,7 @@ class OverlayView: NSView {
             newAnnotations.append(copy)
         }
         redoStack.removeAll()
+        updateAnnotationSourceImages(newAnnotations)
         selectedAnnotations = newAnnotations
         cachedCompositedImage = nil
         needsDisplay = true
@@ -9499,6 +9671,7 @@ class OverlayView: NSView {
             newAnnotations.append(copy)
         }
         redoStack.removeAll()
+        updateAnnotationSourceImages(newAnnotations)
         selectedAnnotations = newAnnotations
         cachedCompositedImage = nil
         needsDisplay = true
@@ -9520,10 +9693,18 @@ class OverlayView: NSView {
     /// for annotations whose geometry actually changed vs the pre-manipulation
     /// snapshot. Recording these makes such edits undoable AND makes them count as
     /// a change (so the editor shows "Done" and prompts on close).
-    private func commitAnnotationManipulationUndo() {
-        guard !preMoveSnapshots.isEmpty else { return }
+    @discardableResult
+    private func commitAnnotationManipulationUndo() -> Bool {
+        guard !preMoveSnapshots.isEmpty else { return false }
         var pushed = false
-        for (ann, snapshot) in preMoveSnapshots where Self.annotationGeometryChanged(ann, snapshot) {
+        for (ann, snapshot) in preMoveSnapshots {
+            if !Self.annotationGeometryChanged(ann, snapshot, includingStitchAttachment: false) {
+                // Returning a gesture to its original geometry also restores
+                // the source clip and its exact censor pixels.
+                ann.stitchAttachment = snapshot.stitchAttachment
+                ann.bakedBlurNSImage = snapshot.bakedBlurNSImage
+            }
+            guard Self.annotationGeometryChanged(ann, snapshot) else { continue }
             undoStack.append(.propertyChange(annotation: ann, snapshot: snapshot))
             pushed = true
         }
@@ -9532,11 +9713,13 @@ class OverlayView: NSView {
             redoStack.removeAll()
             cachedCompositedImage = nil
         }
+        return pushed
     }
 
     /// Whether two annotations differ in position/size/rotation (the things a
     /// drag/resize/rotate changes).
-    private static func annotationGeometryChanged(_ a: Annotation, _ b: Annotation) -> Bool {
+    private static func annotationGeometryChanged(_ a: Annotation, _ b: Annotation,
+        includingStitchAttachment: Bool = true) -> Bool {
         if a.startPoint != b.startPoint || a.endPoint != b.endPoint { return true }
         if abs(a.rotation - b.rotation) > 0.0001 { return true }
         if a.controlPoint != b.controlPoint { return true }
@@ -9545,6 +9728,7 @@ class OverlayView: NSView {
         if a.textDrawRect != b.textDrawRect { return true }
         if a.loupeSourceRect != b.loupeSourceRect { return true }
         if abs(a.loupeMagnification - b.loupeMagnification) > 0.0001 { return true }
+        if includingStitchAttachment && a.stitchAttachment != b.stitchAttachment { return true }
         return false
     }
 
@@ -9586,24 +9770,46 @@ class OverlayView: NSView {
             ann.copyProperties(from: snapshot)
             redoStack.append(.propertyChange(annotation: ann, snapshot: currentSnapshot))
             cachedCompositedImage = nil
-        case .imageTransform(let previousImage, let previousSnapped, _):
+        case .stitchDocument(let snapshot):
+            if let editor = self as? EditorView {
+                redoStack.append(.stitchDocument(editor.stitchSnapshot()))
+                editor.restoreStitchSnapshot(snapshot)
+            }
+        case .imageTransform(let previousImage, let previousSnapped, _, let previousStitch, let previousAnnotations):
             // Undo crop/flip — swap the current image with the saved one
             let currentImage = screenshotImage?.copy() as? NSImage ?? previousImage
             let currentSnapped = previousSnapped != nil ? snappedWindowImage : nil
             redoStack.append(.imageTransform(previousImage: currentImage,
                                              previousSnappedWindowImage: currentSnapped,
-                                             annotationOffsets: []))
+                                             annotationOffsets: [],
+                                             previousStitchDocument: (self as? EditorView)?.stitchDocument,
+                                             previousAnnotations: annotations.map { ($0, $0.clone()) }))
             screenshotImage = previousImage
+            if let previousAnnotations {
+                for saved in previousAnnotations { saved.object.copyProperties(from: saved.properties) }
+                annotations = previousAnnotations.map(\.object)
+            }
+            if let previousStitch { (self as? EditorView)?.installStitchDocument(previousStitch) }
             if previousSnapped != nil { snappedWindowImage = previousSnapped }
             // Update selectionRect to match restored image size
             if isEditorMode {
                 selectionRect = NSRect(origin: .zero, size: previousImage.size)
                 if isInsideScrollView { frame.size = previousImage.size }
             }
+            updateAnnotationSourceImages(annotations)
             cachedCompositedImage = nil
             resetZoom()
         }
         needsDisplay = true
+        (self as? EditorView)?.onStitchDocumentChanged?()
+        onContentChanged?()
+    }
+
+    func clearStitchAnnotationSelection() {
+        selectedAnnotations.removeAll()
+        hoveredAnnotationClearTimer?.invalidate()
+        hoveredAnnotationClearTimer = nil
+        hoveredAnnotation = nil
     }
 
     private func clearHoverIfNeeded(_ removed: [Annotation]) {
@@ -9653,23 +9859,38 @@ class OverlayView: NSView {
             ann.copyProperties(from: snapshot)
             undoStack.append(.propertyChange(annotation: ann, snapshot: currentSnapshot))
             cachedCompositedImage = nil
-        case .imageTransform(let redoImage, let redoSnapped, _):
+        case .stitchDocument(let snapshot):
+            if let editor = self as? EditorView {
+                undoStack.append(.stitchDocument(editor.stitchSnapshot()))
+                editor.restoreStitchSnapshot(snapshot)
+            }
+        case .imageTransform(let redoImage, let redoSnapped, _, let redoStitch, let redoAnnotations):
             // Redo crop/flip — swap back
             let currentImage = screenshotImage?.copy() as? NSImage ?? redoImage
             let currentSnapped = redoSnapped != nil ? snappedWindowImage : nil
             undoStack.append(.imageTransform(previousImage: currentImage,
                                              previousSnappedWindowImage: currentSnapped,
-                                             annotationOffsets: []))
+                                             annotationOffsets: [],
+                                             previousStitchDocument: (self as? EditorView)?.stitchDocument,
+                                             previousAnnotations: annotations.map { ($0, $0.clone()) }))
             screenshotImage = redoImage
+            if let redoAnnotations {
+                for saved in redoAnnotations { saved.object.copyProperties(from: saved.properties) }
+                annotations = redoAnnotations.map(\.object)
+            }
+            if let redoStitch { (self as? EditorView)?.installStitchDocument(redoStitch) }
             if redoSnapped != nil { snappedWindowImage = redoSnapped }
             if isEditorMode {
                 selectionRect = NSRect(origin: .zero, size: redoImage.size)
                 if isInsideScrollView { frame.size = redoImage.size }
             }
+            updateAnnotationSourceImages(annotations)
             cachedCompositedImage = nil
             if !isInsideScrollView { resetZoom() }
         }
         needsDisplay = true
+        (self as? EditorView)?.onStitchDocumentChanged?()
+        onContentChanged?()
     }
 
     // MARK: - Annotation layer cache
@@ -9936,24 +10157,29 @@ class OverlayView: NSView {
     /// Restore editor state.
     /// Translates annotation coordinates by `offset` (the selection origin in the original view).
     func setAnnotations(_ anns: [Annotation]) {
-        // Set sourceImage on loupe annotations so they can re-bake from the editor's image.
-        // Also set it on pixelate/blur without a baked result (shouldn't happen, but defensive).
-        if let img = screenshotImage {
-            let bounds = captureDrawRect
-            for ann in anns {
-                if ann.tool == .loupe || ((ann.tool == .pixelate || ann.tool == .blur) && ann.bakedBlurNSImage == nil) {
-                    ann.sourceImage = img
-                    ann.sourceImageBounds = bounds
-                    if ann.tool == .loupe { ann.bakeLoupe() }
-                    if ann.tool == .pixelate { ann.bakePixelate() }
-                }
-            }
-        }
+        updateAnnotationSourceImages(anns)
         annotations = anns
         undoStack = anns.map { .added($0) }
         redoStack = []
         cachedCompositedImage = nil
         needsDisplay = true
+    }
+
+    /// Keep persisted bakes intact; later edits sample the current raw canvas.
+    func updateAnnotationSourceImages(_ anns: [Annotation]) {
+        if let img = screenshotImage {
+            let bounds = captureDrawRect
+            for ann in anns {
+                if ann.tool == .loupe || ann.tool == .pixelate || ann.tool == .blur {
+                    ann.sourceImage = img
+                    ann.sourceImageBounds = bounds
+                    if ann.bakedBlurNSImage == nil {
+                        if ann.tool == .loupe { ann.bakeLoupe() }
+                        else { ann.bakePixelate() }
+                    }
+                }
+            }
+        }
     }
 
     func applySelection(_ rect: NSRect) {
@@ -10033,11 +10259,24 @@ class OverlayView: NSView {
     }
 
     func showColorPickerPopover(target: ColorPickerTarget, anchorView: NSView? = nil, anchorRect: NSRect = .zero) {
-        colorPickerTarget = target
+        let picker = makeColorPicker(target: target)
+        let size = picker.preferredSize
+        if let anchor = anchorView {
+            PopoverHelper.show(picker, size: size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        } else if anchorRect != .zero {
+            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: anchorRect.midX, y: anchorRect.midY), in: self, preferredEdge: .minY)
+        } else {
+            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: bounds.midX, y: bounds.midY), in: self, preferredEdge: .minY)
+        }
+    }
+
+    /// Build the native picker separately from its popover so every entry point shares color and undo behavior.
+    func makeColorPicker(target: ColorPickerTarget) -> ColorPickerView {
         let picker = ColorPickerView()
         let initialColor: NSColor
         switch target {
         case .drawColor: initialColor = currentColor
+        case .stitchSeam: initialColor = (self as? EditorView)?.stitchDocument?.style.color ?? currentColor
         case .textBg: initialColor = textEditor.bgColor
         case .textOutline: initialColor = textEditor.outlineColor
         case .textGlyphStroke: initialColor = textEditor.glyphStrokeColor
@@ -10053,20 +10292,56 @@ class OverlayView: NSView {
             initialColor = (editingLoupe ?? selectedAnnotations.first { $0.tool == .loupe })?.outlineColor
                 ?? currentLoupeOutlineColor
         }
-        picker.setColor(initialColor, opacity: currentColorOpacity)
+        picker.setColor(initialColor, opacity: target == .stitchSeam ? initialColor.alphaComponent : currentColorOpacity)
         picker.customColors = customColors
         picker.selectedColorSlot = selectedColorSlot
 
-        picker.onColorChanged = { [weak self] color in
-            guard let self = self else { return }
-            self.applyPickedColor(color)
+        var stitchUndoState: UUID?
+        var stitchGestureActive = false
+        let applySeamColor: (NSColor) -> Void = { [weak self] color in
+            guard let editor = self as? EditorView, var document = editor.stitchDocument,
+                  document.style.visible else { return }
+            if stitchGestureActive {
+                editor.previewStitchSeamColor(color)
+                return
+            }
+            guard document.style.color != color else { return }
+            if stitchUndoState != editor.undoStateIdentity {
+                editor.checkpointStitchDocument()
+                stitchUndoState = editor.undoStateIdentity
+            }
+            document.style.color = color
+            editor.applyStitchDocument(document, registerUndo: false)
+        }
+        if target == .stitchSeam {
+            picker.onGestureBegan = {
+                stitchGestureActive = true
+                stitchUndoState = nil
+            }
+            picker.onGestureEnded = { [weak self] in
+                stitchGestureActive = false
+                guard let editor = self as? EditorView else { return }
+                if let color = editor.stitchSeamColorPreview { applySeamColor(color) }
+                editor.previewStitchSeamColor(nil)
+            }
+        }
+        picker.onColorChanged = { [weak self, weak picker] color in
+            guard let self, let picker else { return }
+            if target == .stitchSeam { applySeamColor(color.withAlphaComponent(picker.opacity)) }
+            else { self.applyPickedColor(color, target: target) }
             picker.saveToSelectedSlot(color)
             // Update toolbar color swatches without rebuilding (which destroys the popover anchor)
             self.toolOptionsRowView?.updateSwatchColors()
             self.needsDisplay = true
         }
         picker.onOpacityChanged = { [weak self] opacity in
-            guard let self = self else { return }
+            guard let self else { return }
+            if target == .stitchSeam {
+                guard let editor = self as? EditorView,
+                      let color = editor.stitchSeamColorPreview ?? editor.stitchDocument?.style.color else { return }
+                applySeamColor(color.withAlphaComponent(opacity))
+                return
+            }
             self.currentColorOpacity = opacity
             OverlayView.lastUsedOpacity = opacity
             UserDefaults.standard.set(Double(opacity), forKey: "lastUsedColorOpacity")
@@ -10081,18 +10356,12 @@ class OverlayView: NSView {
             self?.saveCustomColors()
         }
 
-        let size = picker.preferredSize
-        if let anchor = anchorView {
-            PopoverHelper.show(picker, size: size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
-        } else if anchorRect != .zero {
-            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: anchorRect.midX, y: anchorRect.midY), in: self, preferredEdge: .minY)
-        } else {
-            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: bounds.midX, y: bounds.midY), in: self, preferredEdge: .minY)
-        }
+        return picker
     }
 
-    private func applyPickedColor(_ color: NSColor) {
-        switch colorPickerTarget {
+    private func applyPickedColor(_ color: NSColor, target: ColorPickerTarget) {
+        switch target {
+        case .stitchSeam: break // The native picker's shared edit gesture owns Stitch undo.
         case .drawColor:
             currentColor = color
             applyColorToTextIfEditing()
@@ -10245,6 +10514,10 @@ class OverlayView: NSView {
         autoQuickSaveMode = false
         autoScrollCaptureMode = false
         autoConfirmMode = false
+        selectionOnlyMode = false
+        stitchSizeRecommendations = nil
+        stitchReferencePixelsPerPoint = 1
+        stitchDimensionGuides = []
         needsDisplay = true
     }
 }

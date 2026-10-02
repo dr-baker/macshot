@@ -2,12 +2,13 @@ import Cocoa
 
 extension Notification.Name {
     static let toolbarColorsDidChange = Notification.Name("toolbarColorsDidChange")
+    static let toolbarVisibilityDidChange = Notification.Name("toolbarVisibilityDidChange")
 }
 
 // Toolbar buttons drawn directly in the OverlayView (not a separate window).
 // This avoids window-level z-order issues and matches Flameshot's look.
 
-enum ToolbarButtonAction {
+enum ToolbarButtonAction: Equatable {
     case tool(AnnotationTool)
     case color
     case sizeDisplay
@@ -309,7 +310,7 @@ class ToolbarLayout {
     static func bottomButtons(
         selectedTool: AnnotationTool, selectedColor: NSColor, beautifyEnabled: Bool = false,
         beautifyStyleIndex: Int = 0, hasAnnotations: Bool = false, isRecording: Bool = false,
-        effectsActive: Bool = false
+        effectsActive: Bool = false, stitchSeamsVisible: Bool = true
     ) -> [ToolbarButton] {
         // Hide the bottom bar entirely while recording
         if isRecording { return [] }
@@ -357,6 +358,7 @@ class ToolbarLayout {
             (.stamp, "face.smiling", L("Stamp / Emoji")),
             (.colorSampler, "eyedropper", L("Color Picker")),
             (.measure, "ruler", L("Measure (px)")),
+            (.stitch, "scissors", L("Stitch")),
         ]
 
         for (tool, symbol, tip) in tools {
@@ -376,7 +378,8 @@ class ToolbarLayout {
         }
 
         // Color button
-        var colorBtn = ToolbarButton(action: .color, sfSymbol: nil, tooltip: L("Color"))
+        var colorBtn = ToolbarButton(action: .color, sfSymbol: nil, tooltip: selectedTool == .stitch
+            ? L(stitchSeamsVisible ? "Seam color" : "Show seams to edit color") : L("Color"))
         colorBtn.bgColor = selectedColor
         buttons.append(colorBtn)
 

@@ -134,8 +134,8 @@ jobs:
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             SWIFT_ACTIVE_COMPILATION_CONDITIONS="OFFLINE" \
-            PRODUCT_BUNDLE_IDENTIFIER="com.sw33tlie.macshot.offline" \
-            PRODUCT_NAME="macshot Offline" \
+            MACSHOT_BUNDLE_IDENTIFIER="com.sw33tlie.macshot.offline" \
+            MACSHOT_PRODUCT_NAME="macshot Offline" \
             INFOPLIST_KEY_CFBundleDisplayName="macshot Offline" \
             INFOPLIST_KEY_CFBundleName="macshot Offline" \
             INFOPLIST_KEY_SUFeedURL="https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast-offline.xml" \
@@ -446,7 +446,7 @@ jobs:
                   <pubDate>{date}</pubDate>
                   <sparkle:version>{build_number}</sparkle:version>
                   <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
-                  <sparkle:minimumSystemVersion>12.3</sparkle:minimumSystemVersion>
+                  <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
               {channel_line}
                   <description><![CDATA[
                     <style>
@@ -628,6 +628,7 @@ jobs:
           sed -i '' \
             -e "s/version \".*\"/version \"$VERSION\"/" \
             -e "s/sha256 \".*\"/sha256 \"$SHA256\"/" \
+            -e 's/depends_on macos: :[a-z_]*/depends_on macos: :ventura/' \
             /tmp/tap/Casks/macshot.rb
 
           OFFLINE_CASK="/tmp/tap/Casks/macshot-offline.rb"
@@ -649,7 +650,7 @@ jobs:
             end
 
             auto_updates true
-            depends_on macos: :monterey
+            depends_on macos: :ventura
 
             app "macshot Offline.app"
 

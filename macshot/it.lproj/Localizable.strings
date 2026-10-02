@@ -838,3 +838,130 @@
 "Zoom out timeline" = "Riduci timeline";
 "macOS" = "macOS";
 "Sway" = "Oscillazione";
+
+/* Stitch capture: English fallback pending translation. */
+"Add Images" = "Add Images";
+"Add images" = "Add images";
+"Added image" = "Added image";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Annotate" = "Annotate";
+"Bring Forward" = "Bring Forward";
+"Bring piece forward" = "Bring piece forward";
+"Canvas limit reached · press Enter to edit" = "Canvas limit reached · press Enter to edit";
+"Canvas limit reached. Move pieces closer together." = "Canvas limit reached. Move pieces closer together.";
+"Capture 1" = "Capture 1";
+"Capture limit reached · press Enter to edit" = "Capture limit reached · press Enter to edit";
+"Change seam" = "Change seam";
+"Change seam color" = "Change seam color";
+"Choose Remove Rows or Remove Columns and drag across a gap. Choose Move to reposition pieces." = "Choose Remove Rows or Remove Columns and drag across a gap. Choose Move to reposition pieces.";
+"Close this stitch?" = "Close this stitch?";
+"Collapse space" = "Collapse space";
+"Copied stitched image." = "Copied stitched image.";
+"Delete piece" = "Delete piece";
+"Display changed or capture failed · finish and start a new session" = "Display changed or capture failed · finish and start a new session";
+"Drag a piece. Edges snap together; Option disables snapping." = "Drag a piece. Edges snap together; Option disables snapping.";
+"Drag across the band to remove. Release to join the remaining edges." = "Drag across the band to remove. Release to join the remaining edges.";
+"Drag across the space to remove. Its edges reconnect with a soft stitch seam." = "Drag across the space to remove. Its edges reconnect with a soft stitch seam.";
+"Drag pieces to align their edges. Hold Option to move freely. Arrow keys nudge; Shift moves 10 px." = "Drag pieces to align their edges. Hold Option to move freely. Arrow keys nudge; Shift moves 10 px.";
+"Estimated · drag to adjust" = "Estimated · drag to adjust";
+"Fade width" = "Fade width";
+"Finish ↵" = "Finish ↵";
+"Finishing capture…" = "Finishing capture…";
+"Image exceeds the canvas limit." = "Image exceeds the canvas limit.";
+"Its editable pieces will be discarded. Copy or save the image first to keep the result." = "Its editable pieces will be discarded. Copy or save the image first to keep the result.";
+"Keep Editing" = "Keep Editing";
+"Line color" = "Line color";
+"Line width" = "Line width";
+"Move" = "Move";
+"Move piece" = "Move piece";
+"Open the rendered stitch in the annotation editor. This workspace keeps its editable pieces." = "Open the rendered stitch in the annotation editor. This workspace keeps its editable pieces.";
+"Overlap matched" = "Overlap matched";
+"PIECES" = "PIECES";
+"Remove Columns" = "Remove Columns";
+"Remove Rows" = "Remove Rows";
+"STITCH" = "STITCH";
+"Same content · scroll before the next capture" = "Same content · scroll before the next capture";
+"Save PNG" = "Save PNG";
+"Saved stitched image." = "Saved stitched image.";
+"Screen Recording Access Required" = "Screen Recording Access Required";
+"Scroll the page, then capture again" = "Scroll the page, then capture again";
+"Select rows or columns to collapse space, or drag pieces to arrange them." = "Select rows or columns to collapse space, or drag pieces to arrange them.";
+"Select the area to keep capturing · Esc to cancel" = "Select the area to keep capturing · Esc to cancel";
+"Show stitch seams" = "Show stitch seams";
+"Space collapsed. Undo restores the original pieces." = "Space collapsed. Undo restores the original pieces.";
+"Stitch Capture" = "Stitch Capture";
+"Stitch canvas" = "Stitch canvas";
+"Stitch — collapse rows or columns" = "Stitch — collapse rows or columns";
+"Toggle seams" = "Toggle seams";
+"Unable to capture this display." = "Unable to capture this display.";
+"Unable to render this canvas. Reduce its size and try again." = "Unable to render this canvas. Reduce its size and try again.";
+"Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
+"Wave height" = "Wave height";
+"captures" = "captures";
+"macshot · Stitch" = "macshot · Stitch";
+"pieces" = "pieces";
+
+/* Stitch workspace controls. English fallback pending translation. */
+"Adjacent edge colors" = "Adjacent edge colors";
+"Canvas background" = "Canvas background";
+"Change arrangement" = "Change arrangement";
+"Change canvas background" = "Change canvas background";
+"Fills space between captured pieces." = "Fills space between captured pieces.";
+"Free Move" = "Free Move";
+"Free Move keeps your placement. Packed closes gaps and rearranges pieces on drop." = "Free Move keeps your placement. Packed closes gaps and rearranges pieces on drop.";
+"Free Move · drag pieces anywhere" = "Free Move · drag pieces anywhere";
+"Opened in editor" = "Opened in editor";
+"Packed" = "Packed";
+"Packed · drag pieces to rearrange" = "Packed · drag pieces to rearrange";
+"Piece arrangement" = "Piece arrangement";
+"Preparing image…" = "Preparing image…";
+"Select a band inside the canvas and leave some content on either side." = "Select a band inside the canvas and leave some content on either side.";
+"Solid color" = "Solid color";
+"Unable to save this image." = "Unable to save this image.";
+
+/* Integrated Stitch editor. English fallback pending translation. */
+"Stitch" = "Stitch";
+"Drag to capture · hold Space to navigate" = "Drag to capture · hold Space to navigate";
+"Navigate the page · release Space to select" = "Navigate the page · release Space to select";
+"Capture failed · try another region" = "Capture failed · try another region";
+"Capture removed" = "Capture removed";
+
+// Stitch capture dimension guides
+"%d px tall" = "%d px tall";
+"%d px wide" = "%d px wide";
+"Match a width or height · Option to ignore snapping" = "Match a width or height · Option to ignore snapping";
+
+// Native Stitch tool options
+"Seams" = "Seams";
+"Pieces" = "Pieces";
+"Canvas" = "Canvas";
+"Stitch editing canvas" = "Stitch editing canvas";
+"Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor." = "Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor.";
+
+/* Stitch capture feedback. English fallback pending translation. */
+"Release to capture · hold Space to navigate" = "Release to capture · hold Space to navigate";
+"capture" = "capture";
+
+/* Native Stitch interaction polish. English fallback pending translation. */
+"Arrange pieces tightly and drag to reorder them." = "Arrange pieces tightly and drag to reorder them.";
+"Bring forward one layer" = "Bring forward one layer";
+"Bring to front" = "Bring to front";
+"Canvas background color" = "Canvas background color";
+"Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping." = "Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping.";
+"Drag a horizontal band to remove it. Hold ⌥ to ignore guides." = "Drag a horizontal band to remove it. Hold ⌥ to ignore guides.";
+"Drag a vertical band to remove it. Hold ⌥ to ignore guides." = "Drag a vertical band to remove it. Hold ⌥ to ignore guides.";
+"Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping." = "Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping.";
+"Free Move keeps overlaps. Packed closes gaps and snaps pieces into rows or columns." = "Free Move keeps overlaps. Packed closes gaps and snaps pieces into rows or columns.";
+"Guides ignored" = "Guides ignored";
+"Move captured pieces or drag a band to remove rows or columns. Hold Option to ignore guides or Free Move snapping. Other tool shortcuts use the image editor." = "Move captured pieces or drag a band to remove rows or columns. Hold Option to ignore guides or Free Move snapping. Other tool shortcuts use the image editor.";
+"Move earlier" = "Move earlier";
+"Move later" = "Move later";
+"Move to end" = "Move to end";
+"Place pieces independently and keep precise overlaps." = "Place pieces independently and keep precise overlaps.";
+"Reorder pieces" = "Reorder pieces";
+"Seam color" = "Seam color";
+"Seam line color" = "Seam line color";
+"Send backward one layer" = "Send backward one layer";
+"Show seams to edit color" = "Show seams to edit color";
+"⌥ Ignore guides" = "⌥ Ignore guides";
+"Unable to preserve these redactions. Move or resize them and try again." = "Unable to preserve these redactions. Move or resize them and try again.";

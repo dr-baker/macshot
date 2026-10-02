@@ -284,6 +284,13 @@ final class ScreenshotHistory {
         if hasEditState {
             guard let restored = loadEditState(for: entry) else { return nil }
             if restored.customBeautifyBackgroundPNG != nil && restored.customBeautifyBackground == nil { return nil }
+            if restored.stitchDocument != nil && restored.stitchDocument?.restore() == nil { return nil }
+            if let saved = restored.stitchDocument {
+                for annotation in annotations {
+                    guard let attachment = annotation.stitchAttachment, let id = attachment.pieceID else { continue }
+                    guard saved.pieces.contains(where: { $0.id == id && $0.lineageID == attachment.lineageID }) else { return nil }
+                }
+            }
             editState = restored
         } else { editState = nil }
         return EditableCapture(rawImage: rawImage, annotations: annotations, editState: editState)
