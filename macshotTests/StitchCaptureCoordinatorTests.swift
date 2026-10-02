@@ -397,18 +397,52 @@ final class StitchCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.document.pieces[1].origin, CGPoint(x: 32, y: 0))
     }
 
-    func testScreenPositionIncludesScrollAndNormalizesDisplayDensity() {
-        let retina = StitchCaptureFrame.estimatedPosition(screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
-            pixelRect: CGRect(x: 200, y: 100, width: 400, height: 300), pixelScale: 2, referenceScale: 2,
-            scrollOffset: .zero)
-        let moved = StitchCaptureFrame.estimatedPosition(screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
-            pixelRect: CGRect(x: 400, y: 300, width: 200, height: 200), pixelScale: 2, referenceScale: 2,
-            scrollOffset: CGPoint(x: 0, y: 75))
+    func testScreenPositionIncludesScrollAndNormalizesDisplayDensity() throws {
+        let retina = try XCTUnwrap(StitchCaptureSource.fromPixels(screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
+            pixelRect: CGRect(x: 200, y: 100, width: 400, height: 300), pixelsPerPoint: CGSize(width: 2, height: 2),
+            scrollOffset: .zero)?.estimatedPosition(referenceScale: 2))
+        let moved = try XCTUnwrap(StitchCaptureSource.fromPixels(screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
+            pixelRect: CGRect(x: 400, y: 300, width: 200, height: 200), pixelsPerPoint: CGSize(width: 2, height: 2),
+            scrollOffset: CGPoint(x: 0, y: 75))?.estimatedPosition(referenceScale: 2))
         XCTAssertEqual(CGPoint(x: moved.x - retina.x, y: moved.y - retina.y), CGPoint(x: 200, y: 350))
-        let external = StitchCaptureFrame.estimatedPosition(screenFrame: CGRect(x: 1000, y: 0, width: 1000, height: 800),
-            pixelRect: CGRect(x: 100, y: 50, width: 200, height: 150), pixelScale: 1, referenceScale: 2,
-            scrollOffset: .zero)
+        let external = try XCTUnwrap(StitchCaptureSource.fromPixels(screenFrame: CGRect(x: 1000, y: 0, width: 1000, height: 800),
+            pixelRect: CGRect(x: 100, y: 50, width: 200, height: 150), pixelsPerPoint: CGSize(width: 1, height: 1),
+            scrollOffset: .zero)?.estimatedPosition(referenceScale: 2))
         XCTAssertEqual(external, CGPoint(x: retina.x + 2000, y: retina.y))
+    }
+
+    func testUndoRestoresTheAcceptedScreenReferenceAsWellAsMatchingPixels() {
+        let firstSource = StitchCaptureSource(screenRect: CGRect(x: 40, y: 60, width: 32, height: 24), scrollOffset: .zero)
+        let secondSource = StitchCaptureSource(screenRect: CGRect(x: 140, y: 160, width: 32, height: 24),
+                                              scrollOffset: CGPoint(x: 0, y: 300))
+        var pending: ((StitchCaptureFrame?) -> Void)?
+        let coordinator = StitchCaptureCoordinator(first: .init(image: image(), position: CGPoint(x: 40, y: -84), source: firstSource),
+            capture: { pending = $0 }, analyze: { _, _, _, done in done(false, self.match(x: 0, y: 24)) })
+        let screen = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let initial = coordinator.selectionStartingGuides(screenFrame: screen, scrollOffset: .zero)
+        XCTAssertEqual(initial.screenReferenceRect, firstSource.screenRect)
+        coordinator.requestCapture()
+        pending?(.init(image: image(), position: CGPoint(x: 140, y: 116), source: secondSource))
+        let afterSecond = coordinator.selectionStartingGuides(screenFrame: screen,
+                                                             scrollOffset: secondSource.scrollOffset)
+        XCTAssertEqual(afterSecond.screenReferenceRect, secondSource.screenRect)
+        coordinator.undo()
+        XCTAssertEqual(coordinator.selectionStartingGuides(screenFrame: screen, scrollOffset: .zero), initial)
+        XCTAssertEqual(coordinator.selectionStartingGuides(screenFrame: screen,
+            scrollOffset: secondSource.scrollOffset).vertical.filter(\.isScreenReference).map(\.position), [40, 72])
+    }
+
+    func testStartingGuidesUseRegistrationRelativeToExactDesktopCrop() {
+        let source = StitchCaptureSource(screenRect: CGRect(x: 600, y: 220, width: 32, height: 24), scrollOffset: .zero)
+        var pending: ((StitchCaptureFrame?) -> Void)?
+        let coordinator = StitchCaptureCoordinator(first: .init(image: image(), position: CGPoint(x: 1000, y: 2000)),
+            capture: { pending = $0 }, analyze: { _, _, _, done in done(false, self.match(x: 32, y: 0)) })
+        coordinator.requestCapture()
+        pending?(.init(image: image(), position: CGPoint(x: 1500, y: 2000), source: source))
+        let guides = coordinator.selectionStartingGuides(screenFrame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            scrollOffset: .zero, pointer: CGPoint(x: 570, y: 230))
+        XCTAssertEqual(guides.vertical.filter(\.isScreenReference).map(\.position), [600, 632])
+        XCTAssertEqual(guides.vertical.first(where: { !$0.isScreenReference })?.position, 568)
     }
 
     private func match(x: CGFloat, y: CGFloat) -> StitchAlignment.Match {

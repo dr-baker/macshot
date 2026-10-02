@@ -157,6 +157,7 @@ final class StitchRedactionEditingTests: XCTestCase {
             StitchPiece(image: green, origin: CGPoint(x: 60, y: 0))])
         document.style.visible = false
         let canvas = StitchCanvasView(frame: .zero)
+        canvas.mode = .move
         canvas.refresh(document, preview: StitchRenderer.render(document))
         canvas.annotationLayers = [document.pieces[0].id: StitchAnnotationLayer(image: nil,
             frame: document.pieces[0].frame)]

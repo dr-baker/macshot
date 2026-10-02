@@ -85,11 +85,11 @@ final class StitchCaptureSession: NSObject {
     }
 
     private func captureScreens(for token: StitchCaptureSelectionLifecycle.Token) {
-        let offset = scrollOffset
         hud?.show()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self else { return }
             self.selection.dispatchCapture(for: token) { excluded in
+                let offset = self.scrollOffset
                 ScreenCaptureManager.captureAllScreens(excludingWindowNumbers: excluded) { [weak self] captures in
                     self?.presentCaptures(captures, for: token, scrollOffset: offset)
                 }
@@ -107,14 +107,17 @@ final class StitchCaptureSession: NSObject {
         pickers = captures.map { capture in
             let picker = StitchRegionSelection(capture: capture)
             if let coordinator = coordinator, let referenceScale = referenceScale {
-                let pixelScale = CGFloat(capture.image.width) / capture.screen.frame.width
+                picker.setStartingGuides { [weak coordinator] pointer in
+                    coordinator?.selectionStartingGuides(screenFrame: capture.screen.frame,
+                        scrollOffset: offset, pointer: pointer) ?? .empty
+                }
                 picker.setSizeRecommendations(referenceScale: referenceScale) { [weak coordinator] rect, available in
-                    let pixelRect = CGRect(x: rect.minX * pixelScale,
-                        y: (capture.screen.frame.height - rect.maxY) * pixelScale,
-                        width: rect.width * pixelScale, height: rect.height * pixelScale)
-                    let position = StitchCaptureFrame.estimatedPosition(screenFrame: capture.screen.frame,
-                        pixelRect: pixelRect, pixelScale: pixelScale,
-                        referenceScale: referenceScale, scrollOffset: offset)
+                    let topLeft = CGPoint(x: capture.screen.frame.minX + rect.minX,
+                                          y: capture.screen.frame.minY + rect.maxY)
+                    guard let position = StitchCaptureSource.estimatedPosition(screenTopLeft: topLeft,
+                        scrollOffset: offset, referenceScale: referenceScale) else {
+                        return .init(widths: [], heights: [])
+                    }
                     return (coordinator?.selectionRecommendations(at: position, maximumSize:
                         CGSize(width: available.width * referenceScale, height: available.height * referenceScale))
                         ?? StitchSelectionRecommendations.recommendations(frames: []))
@@ -130,15 +133,17 @@ final class StitchCaptureSession: NSObject {
                 let scale = CGFloat(capture.image.width) / capture.screen.frame.width
                 let baseScale = self.referenceScale ?? scale
                 self.referenceScale = baseScale
-                guard let image = StitchCaptureImageCrop.copy(image: capture.image, rect: rect, scale: baseScale / scale) else {
+                let pixelsPerPoint = CGSize(width: scale,
+                    height: CGFloat(capture.image.height) / capture.screen.frame.height)
+                guard let source = StitchCaptureSource.fromPixels(screenFrame: capture.screen.frame,
+                    pixelRect: rect, pixelsPerPoint: pixelsPerPoint, scrollOffset: offset),
+                    let position = source.estimatedPosition(referenceScale: baseScale),
+                    let image = StitchCaptureImageCrop.copy(image: capture.image, rect: rect, scale: baseScale / scale) else {
                     self.selection.complete(frame: nil, for: token); return
                 }
-                // AppKit global coordinates are bottom-up; document coordinates are top-down.
-                let position = StitchCaptureFrame.estimatedPosition(screenFrame: capture.screen.frame,
-                    pixelRect: rect, pixelScale: scale, referenceScale: baseScale, scrollOffset: offset)
                 self.makeHUD(screen: capture.screen, rect: rect,
                              imageSize: CGSize(width: capture.image.width, height: capture.image.height))
-                self.selection.complete(frame: StitchCaptureFrame(image: image, position: position), for: token)
+                self.selection.complete(frame: StitchCaptureFrame(image: image, position: position, source: source), for: token)
             }
             return picker
         }
@@ -217,10 +222,16 @@ final class StitchCaptureSession: NSObject {
     private func installSessionKeys() {
         // The selector owns keyboard focus while Macshot is active. Handle its
         // keys directly as well as Carbon hotkeys used while navigating another app.
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, self.isPresenting,
-                      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return event }
+                guard let self, self.isPresenting else { return event }
+                if event.type == .flagsChanged {
+                    // Only one display's selector is key. Refresh hover guides
+                    // on every display when Option changes at a stationary pointer.
+                    for picker in self.pickers { picker.refreshStartingModifiers(event.modifierFlags) }
+                    return event
+                }
+                guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return event }
                 let pressed = event.type == .keyDown
                 switch Int(event.keyCode) {
                 case kVK_Space:

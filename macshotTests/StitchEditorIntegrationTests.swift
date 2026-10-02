@@ -137,9 +137,20 @@ final class StitchEditorIntegrationTests: XCTestCase {
         controller.attach(to: editor)
         defer { controller.suspend(); editor.onStitchDocumentChanged = nil; window.orderOut(nil) }
         let canvas = try XCTUnwrap(descendants(editor).compactMap { $0 as? StitchCanvasView }.first)
-        controller.setMode(.columns)
-        XCTAssertEqual(canvas.mode, .columns)
-        canvas.onCut?(.vertical, 80, 120)
+        controller.setMode(.removeSpace)
+        XCTAssertEqual(canvas.mode, .removeSpace)
+        func mouse(_ type: NSEvent.EventType, _ point: CGPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: canvas.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        canvas.mouseDown(with: try mouse(.leftMouseDown, CGPoint(x: 80, y: 60)))
+        canvas.mouseDragged(with: try mouse(.leftMouseDragged, CGPoint(x: 120, y: 63)))
+        XCTAssertEqual(canvas.bandAxis, .vertical)
+        XCTAssertEqual(canvas.removalBand, CGRect(x: 80, y: 0, width: 40, height: 200))
+        XCTAssertEqual(editor.undoStack.count, 0, "Preview must not alter source pixels or annotation history")
+        XCTAssertEqual(mark.startPoint.x, 90)
+        canvas.mouseUp(with: try mouse(.leftMouseUp, CGPoint(x: 120, y: 63)))
         XCTAssertEqual(editor.stitchDocument?.bounds.size, NSSize(width: 200, height: 200))
         XCTAssertEqual(editor.screenshotImage?.size, NSSize(width: 100, height: 100))
         XCTAssertEqual(mark.startPoint.x, 70, accuracy: 0.001)
@@ -152,6 +163,7 @@ final class StitchEditorIntegrationTests: XCTestCase {
         XCTAssertEqual(editor.screenshotImage?.size, NSSize(width: 120, height: 100))
         XCTAssertEqual(mark.startPoint.x, 90, accuracy: 0.001)
         XCTAssertTrue(editor.annotations.first === mark)
+        XCTAssertTrue(editor.stitchDocument?.pieces.first?.image === pixels)
     }
 
     func testOpeningStitchUsesNativeEditorAndPreservesZoomAcrossToolChanges() throws {
@@ -213,13 +225,12 @@ final class StitchEditorIntegrationTests: XCTestCase {
         XCTAssertTrue(canvas.superview === editor)
         XCTAssertEqual(editor.currentTool, .stitch)
         XCTAssertEqual(scroll.magnification, zoom, accuracy: 0.0001)
-        editor.stitchMode = .columns
+        editor.stitchMode = .removeSpace
         canvas.onCut?(.vertical, 80, 120)
         XCTAssertEqual(editor.stitchDocument?.bounds.size, NSSize(width: 200, height: 200))
         editor.undo()
         editor.flipImageVertically()
         XCTAssertTrue(canvas.superview === editor)
-        editor.stitchMode = .rows
         canvas.onCut?(.horizontal, 60, 100)
         XCTAssertEqual(editor.stitchDocument?.bounds.size, NSSize(width: 240, height: 160))
         XCTAssertTrue(window.contentView === root)
@@ -282,12 +293,13 @@ final class StitchEditorIntegrationTests: XCTestCase {
             throw XCTSkip("Set MACSHOT_NATIVE_STITCH_PREVIEW to export the native editor fixture")
         }
         guard !NSScreen.screens.isEmpty else { throw XCTSkip("Preview requires a display") }
+        let application = NSApplication.shared
         let oldTool = UserDefaults.standard.object(forKey: "lastUsedTool")
-        let oldPolicy = NSApp.activationPolicy()
+        let oldPolicy = application.activationPolicy()
         defer {
             if let oldTool { UserDefaults.standard.set(oldTool, forKey: "lastUsedTool") }
             else { UserDefaults.standard.removeObject(forKey: "lastUsedTool") }
-            NSApp.setActivationPolicy(oldPolicy)
+            application.setActivationPolicy(oldPolicy)
         }
         let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1100, pixelsHigh: 900,
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -328,7 +340,7 @@ final class StitchEditorIntegrationTests: XCTestCase {
         let root = try XCTUnwrap(window.contentView)
         let editor = try XCTUnwrap(descendants(root).compactMap { $0 as? EditorView }.first)
         let canvas = try XCTUnwrap(descendants(editor).compactMap { $0 as? StitchCanvasView }.first)
-        editor.stitchMode = .rows
+        editor.stitchMode = .removeSpace
         root.layoutSubtreeIfNeeded()
         let guidesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in canvas.bandGuideRows.count > 2 }, object: canvas)
         await fulfillment(of: [guidesReady], timeout: 5)

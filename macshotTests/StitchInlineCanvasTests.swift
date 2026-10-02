@@ -20,34 +20,259 @@ final class StitchInlineCanvasTests: XCTestCase {
         XCTAssertEqual(canvas.frame, editor.selectionRect)
     }
 
-    func testRowsAndColumnsUseTopDownPixelsIncludingNegativeDocumentOrigin() {
+    func testAutomaticRowsAndColumnsUseTopDownPixelsIncludingNegativeDocumentOrigin() {
         let (editor, canvas) = fixture()
         let window = host(editor)
         defer { window.orderOut(nil) }
         var cuts: [(StitchAxis, CGFloat, CGFloat)] = []
         canvas.onCut = { cuts.append(($0, $1, $2)) }
-        canvas.mode = .rows
-        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 150, y: 80))
+        XCTAssertEqual(canvas.mode, .removeSpace)
+        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 43, y: 80))
         XCTAssertEqual(cuts[0].1, -20)
         XCTAssertEqual(cuts[0].2, 30)
-        canvas.mode = .columns
-        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 150, y: 80))
+        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 150, y: 33))
         XCTAssertEqual(cuts[1].1, -60)
         XCTAssertEqual(cuts[1].2, 50)
         if case .horizontal = cuts[0].0 {} else { XCTFail("Rows axis") }
         if case .vertical = cuts[1].0 {} else { XCTFail("Columns axis") }
     }
 
+    func testDirectionWaitsForDeliberateScreenMovementAndLocksAtEveryProjection() {
+        for projection: CGFloat in [0.25, 0.5, 2] {
+            let (editor, canvas) = fixture()
+            editor.applySelection(CGRect(x: 10, y: 20, width: 400 * projection, height: 200 * projection))
+            canvas.syncInlineGeometry()
+            let window = host(editor)
+            defer { window.orderOut(nil) }
+            var cuts: [(StitchAxis, CGFloat, CGFloat)] = []
+            canvas.onCut = { cuts.append(($0, $1, $2)) }
+            let start = CGPoint(x: 40, y: 30)
+            func point(_ dx: CGFloat, _ dy: CGFloat) -> CGPoint {
+                CGPoint(x: start.x + dx / projection, y: start.y + dy / projection)
+            }
+            canvas.mouseDown(with: mouse(.leftMouseDown, canvas, start))
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(2, 2)))
+            XCTAssertNil(canvas.bandAxis, "Jitter must not choose a cut axis")
+            XCTAssertNil(canvas.removalBand)
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(8, 7.5)))
+            XCTAssertNil(canvas.bandAxis, "Near-diagonal movement must remain undecided")
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(3, 10)))
+            XCTAssertEqual(canvas.bandAxis, .horizontal)
+            XCTAssertEqual(canvas.removalBand, CGRect(x: -100, y: -20, width: 400, height: 10 / projection))
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(40, 11)))
+            XCTAssertEqual(canvas.bandAxis, .horizontal, "A later sideways turn must not change the resolved axis")
+            canvas.mouseUp(with: mouse(.leftMouseUp, canvas, point(40, 11)))
+            XCTAssertEqual(cuts.count, 1)
+            if let cut = cuts.first {
+                XCTAssertEqual(cut.0, .horizontal)
+                XCTAssertEqual(cut.1, -20)
+                XCTAssertEqual(cut.2, -20 + 11 / projection, accuracy: 0.001)
+            }
+            XCTAssertNil(canvas.bandAxis)
+        }
+    }
+
+    func testFractionalBandsMatchRoundedPreviewAndCommittedDimensionsForBothAxes() throws {
+        for origin in [CGPoint.zero, CGPoint(x: -100.4, y: -50.4)] {
+            for axis in [StitchAxis.horizontal, .vertical] {
+                for option in [false, true] {
+                    for reverse in [false, true] {
+                        let (editor, canvas) = fractionalFixture(origin: origin)
+                        let window = host(editor)
+                        defer { window.orderOut(nil) }
+                        let original = canvas.document
+                        let before = try XCTUnwrap(StitchRenderer.render(original))
+                        if option { canvas.bandGuideRows = [12, 20]; canvas.bandGuideColumns = [12, 20] }
+                        let from: CGFloat = reverse ? 20.6 : 11.4, to: CGFloat = reverse ? 11.4 : 20.6
+                        let flags: NSEvent.ModifierFlags = option ? [.option] : []
+                        func point(_ coordinate: CGFloat) -> CGPoint {
+                            axis == .horizontal
+                                ? CGPoint(x: original.bounds.width / 2, y: coordinate - original.bounds.minY)
+                                : CGPoint(x: coordinate - original.bounds.minX, y: original.bounds.height / 2)
+                        }
+                        var after = original, cuts = 0
+                        canvas.onCut = { resolvedAxis, proposedStart, proposedEnd in
+                            cuts += 1
+                            XCTAssertEqual(resolvedAxis, axis)
+                            XCTAssertEqual(proposedStart, from, accuracy: 0.000001)
+                            XCTAssertEqual(proposedEnd, to, accuracy: 0.000001)
+                            XCTAssertTrue(after.collapse(axis: resolvedAxis, from: proposedStart, to: proposedEnd))
+                        }
+                        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, point(from), modifiers: flags))
+                        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(to), modifiers: flags))
+                        let preview = try XCTUnwrap(canvas.removalBand)
+                        XCTAssertEqual(canvas.bandAxis, axis)
+                        XCTAssertEqual(axis == .horizontal ? preview.minY : preview.minX, 11)
+                        XCTAssertEqual(axis == .horizontal ? preview.maxY : preview.maxX, 21)
+                        XCTAssertEqual(canvas.removalAmountText, "10", "11.4 to 20.6 must preview the ten pixels that will be removed")
+                        XCTAssertEqual(canvas.document.pieces[0].source, original.pieces[0].source)
+                        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, point(to), modifiers: flags))
+                        XCTAssertEqual(cuts, 1)
+                        let removed = axis == .horizontal ? original.bounds.height - after.bounds.height : original.bounds.width - after.bounds.width
+                        XCTAssertEqual(removed, 10, accuracy: 0.000001)
+                        let output = try XCTUnwrap(StitchRenderer.render(after))
+                        XCTAssertEqual(axis == .horizontal ? before.height - output.height : before.width - output.width, 10)
+                        XCTAssertTrue(after.pieces.allSatisfy { $0.image === original.pieces[0].image })
+                    }
+                }
+            }
+        }
+    }
+
+    func testFractionalBoundaryClipsCommitProposedEndpointsWithoutRerounding() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            for clipsLower in [false, true] {
+                let (editor, canvas) = fractionalFixture(origin: CGPoint(x: -100.4, y: -50.4))
+                let window = host(editor)
+                defer { window.orderOut(nil) }
+                let original = canvas.document
+                let lower = axis == .horizontal ? original.bounds.minY : original.bounds.minX
+                let upper = axis == .horizontal ? original.bounds.maxY : original.bounds.maxX
+                let from = clipsLower ? lower + 12.6 : upper - 12.6
+                let to = clipsLower ? lower - 8.6 : upper + 8.6
+                let expectedLower = clipsLower ? lower : from.rounded()
+                let expectedUpper = clipsLower ? from.rounded() : upper
+                func point(_ coordinate: CGFloat) -> CGPoint {
+                    axis == .horizontal
+                        ? CGPoint(x: original.bounds.width / 2, y: coordinate - original.bounds.minY)
+                        : CGPoint(x: coordinate - original.bounds.minX, y: original.bounds.height / 2)
+                }
+                var after = original, cuts = 0
+                canvas.onCut = { resolvedAxis, proposedStart, proposedEnd in
+                    cuts += 1
+                    XCTAssertEqual(proposedStart, from, accuracy: 0.000001)
+                    XCTAssertEqual(proposedEnd, to, accuracy: 0.000001)
+                    XCTAssertTrue(after.collapse(axis: resolvedAxis, from: proposedStart, to: proposedEnd))
+                }
+                canvas.mouseDown(with: mouse(.leftMouseDown, canvas, point(from), modifiers: .option))
+                canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(to), modifiers: .option))
+                let preview = try XCTUnwrap(canvas.removalBand)
+                XCTAssertEqual(axis == .horizontal ? preview.minY : preview.minX, expectedLower, accuracy: 0.000001)
+                XCTAssertEqual(axis == .horizontal ? preview.maxY : preview.maxX, expectedUpper, accuracy: 0.000001)
+                XCTAssertEqual(canvas.removalAmountText, clipsLower ? "12.4" : "12.2", "Fractional boundary clips must retain their displayed amount")
+                canvas.mouseUp(with: mouse(.leftMouseUp, canvas, point(to), modifiers: .option))
+                XCTAssertEqual(cuts, 1)
+                let removed = axis == .horizontal ? original.bounds.height - after.bounds.height : original.bounds.width - after.bounds.width
+                XCTAssertEqual(removed, expectedUpper - expectedLower, accuracy: 0.000001)
+                XCTAssertTrue(after.pieces.allSatisfy { $0.image === original.pieces[0].image })
+            }
+        }
+    }
+
+    func testHighProjectionRejectsBandsBelowMinimumPixelOrRetainedRange() {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let (editor, canvas) = fractionalFixture(origin: CGPoint(x: -100.4, y: -50.4))
+            let window = host(editor)
+            defer { window.orderOut(nil) }
+            let original = canvas.document
+            let lower = axis == .horizontal ? original.bounds.minY : original.bounds.minX
+            let upper = axis == .horizontal ? original.bounds.maxY : original.bounds.maxX
+            func point(_ coordinate: CGFloat) -> CGPoint {
+                axis == .horizontal
+                    ? CGPoint(x: original.bounds.width / 2, y: coordinate - original.bounds.minY)
+                    : CGPoint(x: coordinate - original.bounds.minX, y: original.bounds.height / 2)
+            }
+            canvas.onCut = { _, _, _ in XCTFail("An invalid pixel range must not commit") }
+            for (from, to) in [(CGFloat(11.4), CGFloat(12.4)), (lower + 0.1, upper + 0.6)] {
+                canvas.mouseDown(with: mouse(.leftMouseDown, canvas, point(from), modifiers: .option))
+                canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, point(to), modifiers: .option))
+                XCTAssertEqual(canvas.bandAxis, axis, "The eight-times projection has enough screen movement to resolve direction")
+                XCTAssertNil(canvas.removalBand)
+                XCTAssertNil(canvas.removalAmountText)
+                canvas.mouseUp(with: mouse(.leftMouseUp, canvas, point(to), modifiers: .option))
+                var candidate = original
+                XCTAssertFalse(candidate.collapse(axis: axis, from: from, to: to))
+                XCTAssertEqual(candidate.pieces[0].source, original.pieces[0].source)
+            }
+        }
+    }
+
+    func testClicksJitterAmbiguousDragsAndReleaseWithoutPreviewDoNotCut() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.bandGuideRows = [-22, -14]
+        canvas.bandGuideColumns = [-62, -54]
+        canvas.onCut = { _, _, _ in XCTFail("A band must resolve after deliberate movement before it can cut") }
+        for end in [CGPoint(x: 40, y: 30), CGPoint(x: 46, y: 30),
+                    CGPoint(x: 40, y: 36), CGPoint(x: 60, y: 50)] {
+            drag(canvas, from: CGPoint(x: 40, y: 30), to: end)
+            XCTAssertNil(canvas.bandAxis)
+            XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
+        }
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 40, y: 80)))
+        canvas.bandGuideRows = [-20]
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 40, y: 40)))
+        XCTAssertEqual(canvas.bandAxis, .horizontal)
+        XCTAssertNil(canvas.removalBand, "Both endpoints snapped to one guide produce no removal preview")
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 40, y: 70)))
+    }
+
+    func testBandThresholdAndSnapRadiusFollowScrollMagnificationInScreenPoints() {
+        for magnification: CGFloat in [0.5, 1, 4] {
+            let (editor, canvas) = fixture()
+            let scroll = NSScrollView(frame: editor.frame)
+            scroll.allowsMagnification = true
+            scroll.minMagnification = 0.1
+            scroll.maxMagnification = 8
+            scroll.documentView = editor
+            let window = host(scroll)
+            defer { window.orderOut(nil) }
+            scroll.magnification = magnification
+            let zoom = magnification / 2
+            let start = CGPoint(x: 40, y: 30)
+            let end = CGPoint(x: 40, y: 30 + 24 / zoom)
+            canvas.bandGuideRows = [-20 + 7 / zoom]
+            canvas.mouseMoved(with: mouse(.mouseMoved, canvas, start))
+            XCTAssertNil(canvas.bandHoverRow, "Seven screen points must remain outside the six-point snap radius")
+            let guides: [CGFloat] = [-20 + 5 / zoom, -20 + 29 / zoom]
+            canvas.bandGuideRows = guides
+            canvas.mouseMoved(with: mouse(.mouseMoved, canvas, start))
+            XCTAssertEqual(canvas.bandHoverRow, guides[0])
+            var cuts: [(CGFloat, CGFloat)] = []
+            canvas.onCut = { _, from, to in cuts.append((from, to)) }
+            canvas.mouseDown(with: mouse(.leftMouseDown, canvas, start))
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 40, y: 30 + 3 / zoom)))
+            XCTAssertNil(canvas.bandAxis, "Three screen points must remain below the drag threshold")
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, end))
+            XCTAssertEqual(canvas.bandAxis, .horizontal)
+            XCTAssertEqual(canvas.bandGuideMatches, guides)
+            canvas.mouseUp(with: mouse(.leftMouseUp, canvas, end))
+            XCTAssertEqual(cuts.count, 1)
+            XCTAssertEqual(cuts.first?.0, guides[0])
+            XCTAssertEqual(cuts.first?.1, guides[1])
+        }
+    }
+
+    func testReturningInsideThresholdCancelsEvenWhenGuidesWidenTheBand() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.bandGuideRows = [-22, -14]
+        canvas.onCut = { _, _, _ in XCTFail("Returning near the start must cancel the cut") }
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 40, y: 48)))
+        XCTAssertEqual(canvas.bandAxis, .horizontal)
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 40, y: 33)))
+        XCTAssertEqual(canvas.bandGuideMatches, [-22, -14], "Snapping may widen a raw three-pixel movement")
+        XCTAssertNil(canvas.removalBand, "The cut preview must disappear inside the movement threshold")
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 40, y: 33)))
+    }
+
     func testEscapeCancelsInlineBandThenReturnsToNativeEditor() {
         let (editor, canvas) = fixture()
         let window = host(editor)
         defer { window.orderOut(nil) }
-        canvas.mode = .rows
         canvas.onCut = { _, _, _ in XCTFail("Cancelled band applied") }
         canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
-        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 150, y: 80)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 43, y: 80)))
+        XCTAssertEqual(canvas.bandAxis, .horizontal)
         canvas.keyDown(with: TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53))
-        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 150, y: 80)))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 43, y: 80)))
+        XCTAssertNil(canvas.bandAxis)
+        XCTAssertNil(canvas.removalBand)
         XCTAssertTrue(editor.keys.isEmpty)
         canvas.keyDown(with: TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53))
         XCTAssertEqual(editor.keys, [53], "Idle Escape uses the native editor's close behavior")
@@ -57,6 +282,7 @@ final class StitchInlineCanvasTests: XCTestCase {
         let (editor, canvas) = fixture(twoPieces: true)
         let window = host(editor)
         defer { window.orderOut(nil) }
+        canvas.mode = .move
         var moves: [CGPoint] = []
         canvas.onMove = { _, point, _ in moves.append(point) }
         // 2 source pixels per point: four pixels are only two screen points.
@@ -67,14 +293,20 @@ final class StitchInlineCanvasTests: XCTestCase {
         canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 230, y: 20)))
         XCTAssertEqual(moves.last, CGPoint(x: 100, y: -50))
         XCTAssertTrue(canvas.alignmentGuides.contains { $0.start.x == 100 && $0.start.y == -66 })
-        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 230, y: 20)))
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
+        XCTAssertEqual(moves.last, CGPoint(x: 120, y: -50))
+        XCTAssertTrue(canvas.alignmentGuides.isEmpty)
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
         XCTAssertEqual(moves.last, CGPoint(x: 100, y: -50))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 230, y: 20), modifiers: .option))
+        XCTAssertEqual(moves.last, CGPoint(x: 120, y: -50), "Release modifiers must apply without another drag event")
     }
 
     func testNativeToolAndCommandKeysForwardButMoveKeysStayLocal() {
         let (editor, canvas) = fixture()
         let window = host(editor)
         defer { window.orderOut(nil) }
+        canvas.mode = .move
         var deleted = 0, moved = 0
         canvas.onDelete = { deleted += 1 }
         canvas.onMove = { _, _, _ in moved += 1 }
@@ -89,7 +321,7 @@ final class StitchInlineCanvasTests: XCTestCase {
         canvas.keyDown(with: TestKeyEvent.keyDown(characters: "", keyCode: 51))
         XCTAssertEqual(moved, 2)
         XCTAssertEqual(deleted, 1)
-        canvas.mode = .rows
+        canvas.mode = .removeSpace
         canvas.keyDown(with: TestKeyEvent.keyDown(characters: "", keyCode: 51))
         XCTAssertEqual(editor.keys.last, 51)
         XCTAssertEqual(deleted, 1)
@@ -101,17 +333,20 @@ final class StitchInlineCanvasTests: XCTestCase {
         defer { window.orderOut(nil) }
         var cuts: [(StitchAxis, CGFloat, CGFloat)] = []
         canvas.onCut = { cuts.append(($0, $1, $2)) }
-        canvas.mode = .rows
         canvas.bandGuideRows = [-20, 30]
-        drag(canvas, from: CGPoint(x: 40, y: 27), to: CGPoint(x: 150, y: 76))
+        drag(canvas, from: CGPoint(x: 40, y: 27), to: CGPoint(x: 43, y: 76))
         XCTAssertEqual(cuts[0].1, -20)
         XCTAssertEqual(cuts[0].2, 30)
-        drag(canvas, from: CGPoint(x: 40, y: 76), to: CGPoint(x: 150, y: 27))
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 76)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 40, y: 100)))
+        XCTAssertEqual(canvas.bandAxis, .horizontal)
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 150, y: 27)))
+        XCTAssertEqual(canvas.bandAxis, .horizontal, "Reversing past the start and turning sideways must keep the same cut axis")
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 150, y: 27)))
         XCTAssertEqual(cuts[1].1, 30)
         XCTAssertEqual(cuts[1].2, -20)
-        canvas.mode = .columns
         canvas.bandGuideColumns = [-60, 50]
-        drag(canvas, from: CGPoint(x: 38, y: 30), to: CGPoint(x: 147, y: 80))
+        drag(canvas, from: CGPoint(x: 38, y: 30), to: CGPoint(x: 147, y: 33))
         XCTAssertEqual(cuts[2].1, -60)
         XCTAssertEqual(cuts[2].2, 50)
     }
@@ -120,18 +355,17 @@ final class StitchInlineCanvasTests: XCTestCase {
         let (editor, canvas) = fixture()
         let window = host(editor)
         defer { window.orderOut(nil) }
-        canvas.mode = .rows
         canvas.bandGuideRows = [-18, 30]
         var cut: (CGFloat, CGFloat)?
         canvas.onCut = { _, a, b in cut = (a, b) }
         canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
-        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 150, y: 79)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 43, y: 79)))
         XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
         canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
         XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
         canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
         XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
-        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 150, y: 79), modifiers: .option))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 43, y: 79), modifiers: .option))
         XCTAssertEqual(cut?.0, -20)
         XCTAssertEqual(cut?.1, 29)
         XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
@@ -141,36 +375,40 @@ final class StitchInlineCanvasTests: XCTestCase {
         let (editor, canvas) = fixture()
         let window = host(editor)
         defer { window.orderOut(nil) }
-        canvas.mode = .rows
         canvas.bandGuideRows = [-18, 30]
         var cuts: [(CGFloat, CGFloat)] = []
         canvas.onCut = { _, a, b in cuts.append((a, b)) }
         canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
-        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 150, y: 79)))
         canvas.bandGuideRows = [-20, 29]
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 43, y: 79)))
         XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
-        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 150, y: 79)))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 43, y: 79)))
         XCTAssertEqual(cuts[0].0, -18)
         XCTAssertEqual(cuts[0].1, 30)
-        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 150, y: 79))
+        drag(canvas, from: CGPoint(x: 40, y: 30), to: CGPoint(x: 43, y: 79))
         XCTAssertEqual(cuts[1].0, -20)
         XCTAssertEqual(cuts[1].1, 29)
     }
 
-    func testBandHoverHighlightsCandidateAndOptionDisablesIt() {
+    func testBandHoverHighlightsBothPossibleAxesAndOptionDisablesThem() {
         let (editor, canvas) = fixture()
         let window = host(editor)
         defer { window.orderOut(nil) }
-        canvas.mode = .columns
+        canvas.bandGuideRows = [-18, 30]
         canvas.bandGuideColumns = [-60, 50]
         canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
-        XCTAssertEqual(canvas.bandHoverMatch, -60)
+        XCTAssertEqual(canvas.bandHoverRow, -18)
+        XCTAssertEqual(canvas.bandHoverColumn, -60)
+        XCTAssertNil(canvas.bandAxis)
         canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
-        XCTAssertNil(canvas.bandHoverMatch)
+        XCTAssertNil(canvas.bandHoverRow)
+        XCTAssertNil(canvas.bandHoverColumn)
         canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
-        XCTAssertEqual(canvas.bandHoverMatch, -60)
+        XCTAssertEqual(canvas.bandHoverRow, -18)
+        XCTAssertEqual(canvas.bandHoverColumn, -60)
         canvas.mouseExited(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
-        XCTAssertNil(canvas.bandHoverMatch)
+        XCTAssertNil(canvas.bandHoverRow)
+        XCTAssertNil(canvas.bandHoverColumn)
     }
 
     private func fixture(twoPieces: Bool = false) -> (KeyEditor, StitchCanvasView) {
@@ -189,6 +427,16 @@ final class StitchInlineCanvasTests: XCTestCase {
         editor.addSubview(canvas)
         canvas.inlineEditor = editor
         canvas.refresh(StitchDocument(pieces: pieces), preview: nil)
+        return (editor, canvas)
+    }
+    private func fractionalFixture(origin: CGPoint) -> (KeyEditor, StitchCanvasView) {
+        let (editor, canvas) = fixture()
+        var document = canvas.document
+        document.pieces[0].origin = origin
+        document.pieces[0].source.size = CGSize(width: 399.6, height: 199.6)
+        document.style.visible = false
+        editor.applySelection(CGRect(x: 10, y: 20, width: document.bounds.width * 8, height: document.bounds.height * 8))
+        canvas.refresh(document, preview: nil)
         return (editor, canvas)
     }
     private func host(_ editor: NSView) -> NSWindow {

@@ -2,14 +2,14 @@ import AppKit
 
 @MainActor
 final class StitchCanvasView: NSView, NSMenuItemValidation {
-    enum Mode: Int { case move, rows, columns }
+    enum Mode: Int { case removeSpace, move }
     var document = StitchDocument()
     weak var inlineEditor: EditorView? {
         didSet {
             setAccessibilityLabel(L(inlineEditor == nil ? "Stitch canvas" : "Stitch editing canvas"))
             setAccessibilityHelp(L(inlineEditor == nil
-                ? "Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping."
-                : "Move captured pieces or drag a band to remove rows or columns. Hold Option to ignore guides or Free Move snapping. Other tool shortcuts use the image editor."))
+                ? "Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping."
+                : "Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping. Other tool shortcuts use the image editor."))
             syncInlineGeometry()
         }
     }
@@ -17,7 +17,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     var packed = false {
         didSet { if oldValue != packed { cancelGesture() } }
     }
-    var mode = Mode.move {
+    var mode = Mode.removeSpace {
         didSet {
             if oldValue != mode { cancelGesture() }
             window?.invalidateCursorRects(for: self)
@@ -52,9 +52,16 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     var onFit: (() -> Void)?
     var bandGuideRows: [CGFloat] = [] { didSet { refreshBandSnapping(); needsDisplay = true } }
     var bandGuideColumns: [CGFloat] = [] { didSet { refreshBandSnapping(); needsDisplay = true } }
+    private(set) var bandAxis: StitchAxis?
     private(set) var bandGuideMatches: [CGFloat] = []
-    private(set) var bandHoverMatch: CGFloat?
-    private var gestureBandCandidates: [CGFloat]?
+    private(set) var bandHoverRow: CGFloat?
+    private(set) var bandHoverColumn: CGFloat?
+    private var gestureBandGuides: StitchBandGuides.Result?
+    private var bandStartInWindow: CGPoint?
+    private var bandEndInWindow: CGPoint?
+    /// Direction must be deliberate in screen points, independent of image scale and zoom.
+    private static let bandDragThreshold: CGFloat = 4
+    private static let bandDirectionMargin: CGFloat = 2
     private var rawBandStart: CGPoint?
     private var rawBandEnd: CGPoint?
     private var rawBandHover: CGPoint?
@@ -86,7 +93,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         super.init(frame: frame)
         registerForDraggedTypes([.fileURL, .tiff, .png])
         setAccessibilityLabel(L("Stitch canvas"))
-        setAccessibilityHelp(L("Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping."))
+        setAccessibilityHelp(L("Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping."))
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -247,12 +254,8 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
                             operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
-        if mode != .move, let start, let end {
-            let horizontal = mode == .rows
-            let band = horizontal
-                ? CGRect(x: contentBounds.minX, y: min(start.y, end.y), width: contentBounds.width, height: abs(end.y - start.y))
-                : CGRect(x: min(start.x, end.x), y: contentBounds.minY, width: abs(end.x - start.x), height: contentBounds.height)
-            let rect = viewRect(band).intersection(imageRect)
+        if let removal, let bandAxis {
+            let rect = viewRect(removal.rect).intersection(imageRect)
             guard !rect.isNull, !rect.isEmpty,
                   rect.minX.isFinite, rect.minY.isFinite,
                   rect.width.isFinite, rect.height.isFinite else { return }
@@ -262,8 +265,8 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             let border = NSBezierPath(rect: rect)
             border.lineWidth = 1.5 / zoom
             border.stroke()
-            let removed = Int(horizontal ? rect.height : rect.width)
-            let hint = bandCandidates.isEmpty ? "" : "\n" + L(bandSnapBypassed ? "Guides ignored" : "⌥ Ignore guides")
+            let removed = Self.formatRemovalAmount(removal.length)
+            let hint = bandCandidates(for: bandAxis).isEmpty ? "" : "\n" + L(bandSnapBypassed ? "Guides ignored" : "⌥ Ignore guides")
             let text = "−\(removed) px\(hint)" as NSString
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
@@ -291,40 +294,70 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
 
     func cancelEditingGesture() { cancelGesture() }
 
-    private var bandCandidates: [CGFloat] {
-        let range = mode == .rows ? contentBounds.minY...contentBounds.maxY : contentBounds.minX...contentBounds.maxX
-        return (gestureBandCandidates ?? (mode == .rows ? bandGuideRows : bandGuideColumns)).filter { $0.isFinite && range.contains($0) }
+    var removalBand: CGRect? { removal?.rect }
+    var removalAmountText: String? { removal.map { Self.formatRemovalAmount($0.length) } }
+
+    private static func formatRemovalAmount(_ length: CGFloat) -> String {
+        String(format: "%.12g", Double(length))
     }
-    private func bandMatch(_ point: CGPoint) -> CGFloat? {
+    private var removal: StitchDocument.RemovalBand? {
+        guard mode == .removeSpace, let bandAxis, let start, let end,
+              let bandStartInWindow, let bandEndInWindow else { return nil }
+        let distance = bandAxis == .horizontal ? bandEndInWindow.y - bandStartInWindow.y : bandEndInWindow.x - bandStartInWindow.x
+        guard abs(distance) >= Self.bandDragThreshold else { return nil }
+        return document.removalBand(axis: bandAxis, from: bandAxis == .horizontal ? start.y : start.x,
+                                    to: bandAxis == .horizontal ? end.y : end.x)
+    }
+    private func bandCandidates(for axis: StitchAxis) -> [CGFloat] {
+        guard document.canRender else { return [] }
+        let range = axis == .horizontal ? contentBounds.minY...contentBounds.maxY : contentBounds.minX...contentBounds.maxX
+        let guides = gestureBandGuides?.values(for: axis) ?? (axis == .horizontal ? bandGuideRows : bandGuideColumns)
+        return guides.filter { $0.isFinite && range.contains($0) }
+    }
+    private func bandMatch(_ point: CGPoint, axis: StitchAxis) -> CGFloat? {
         guard !bandSnapBypassed else { return nil }
-        let coordinate = mode == .rows ? point.y : point.x
-        guard let closest = bandCandidates.min(by: { abs($0 - coordinate) < abs($1 - coordinate) }),
+        let coordinate = axis == .horizontal ? point.y : point.x
+        guard let closest = bandCandidates(for: axis).min(by: { abs($0 - coordinate) < abs($1 - coordinate) }),
               abs(closest - coordinate) <= 6 / effectiveZoom else { return nil }
         return closest
     }
+    private func resolveBandAxis(at location: CGPoint) {
+        guard bandAxis == nil, let bandStartInWindow else { return }
+        let dx = abs(location.x - bandStartInWindow.x), dy = abs(location.y - bandStartInWindow.y)
+        guard max(dx, dy) >= Self.bandDragThreshold,
+              abs(dx - dy) >= Self.bandDirectionMargin else { return }
+        bandAxis = dy > dx ? .horizontal : .vertical
+    }
     private func refreshBandSnapping() {
-        guard mode != .move else { return }
+        guard mode == .removeSpace else { return }
         bandGuideMatches = []
         func snapped(_ raw: CGPoint) -> CGPoint {
             var point = raw
-            if let match = bandMatch(raw) {
-                if mode == .rows { point.y = match } else { point.x = match }
+            if let bandAxis, let match = bandMatch(raw, axis: bandAxis) {
+                if bandAxis == .horizontal { point.y = match } else { point.x = match }
                 if !bandGuideMatches.contains(match) { bandGuideMatches.append(match) }
             }
             return point
         }
         if let rawBandStart { start = snapped(rawBandStart) }
         if let rawBandEnd { end = snapped(rawBandEnd) }
-        bandHoverMatch = rawBandHover.flatMap { bandMatch($0) }
+        bandHoverRow = rawBandHover.flatMap { bandMatch($0, axis: .horizontal) }
+        bandHoverColumn = rawBandHover.flatMap { bandMatch($0, axis: .vertical) }
     }
     private func drawBandGuides(zoom: CGFloat) {
-        guard mode != .move else { return }
+        guard mode == .removeSpace else { return }
         let region = imageRect.intersection(visibleRect)
         guard !region.isNull else { return }
-        for position in bandCandidates {
-            let coordinate = position - (mode == .rows ? contentBounds.minY : contentBounds.minX) + inset
+        for axis in [StitchAxis.horizontal, .vertical] where bandAxis == nil || bandAxis == axis {
+            drawBandGuides(for: axis, in: region, zoom: zoom)
+        }
+    }
+    private func drawBandGuides(for axis: StitchAxis, in region: CGRect, zoom: CGFloat) {
+        let horizontal = axis == .horizontal
+        for position in bandCandidates(for: axis) {
+            let coordinate = position - (horizontal ? contentBounds.minY : contentBounds.minX) + inset
             let line = NSBezierPath()
-            if mode == .rows {
+            if horizontal {
                 guard coordinate >= region.minY, coordinate <= region.maxY else { continue }
                 line.move(to: CGPoint(x: region.minX, y: coordinate))
                 line.line(to: CGPoint(x: region.maxX, y: coordinate))
@@ -333,17 +366,18 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
                 line.move(to: CGPoint(x: coordinate, y: region.minY))
                 line.line(to: CGPoint(x: coordinate, y: region.maxY))
             }
-            let matched = bandGuideMatches.contains(position) || bandHoverMatch == position
+            let matched = bandAxis == axis ? bandGuideMatches.contains(position)
+                : (horizontal ? bandHoverRow : bandHoverColumn) == position
             if matched {
-                ToolbarLayout.accentColor.withAlphaComponent(0.85).setStroke()
+                ToolbarLayout.accentColor.withAlphaComponent(bandAxis == nil ? 0.5 : 0.85).setStroke()
                 line.lineWidth = 1.5 / zoom
                 line.stroke()
             } else {
                 line.setLineDash([4 / zoom, 5 / zoom], count: 2, phase: 0)
-                NSColor.white.withAlphaComponent(0.25).setStroke()
+                NSColor.white.withAlphaComponent(bandAxis == nil ? 0.16 : 0.3).setStroke()
                 line.lineWidth = 1.5 / zoom
                 line.stroke()
-                NSColor.black.withAlphaComponent(0.18).setStroke()
+                NSColor.black.withAlphaComponent(bandAxis == nil ? 0.12 : 0.18).setStroke()
                 line.lineWidth = 0.75 / zoom
                 line.stroke()
             }
@@ -353,9 +387,9 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     private func cancelGesture() {
         let wasMoving = moving
         start = nil; end = nil; dragBounds = nil; originalOrigin = nil; moving = false
-        gestureBandCandidates = nil
+        gestureBandGuides = nil; bandAxis = nil; bandStartInWindow = nil; bandEndInWindow = nil
         rawBandStart = nil; rawBandEnd = nil; rawBandHover = nil
-        bandGuideMatches = []; bandHoverMatch = nil
+        bandGuideMatches = []; bandHoverRow = nil; bandHoverColumn = nil
         hoveredID = nil; alignmentGuides = []; dragPreviewOrigin = nil; packedPreview = nil
         if wasMoving { onCancelMove?() }
         needsDisplay = true
@@ -374,13 +408,13 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         hoverTracking = area
     }
     override func mouseMoved(with event: NSEvent) {
-        if mode != .move, start == nil {
+        if mode == .removeSpace, start == nil {
             bandSnapBypassed = event.modifierFlags.contains(.option)
             let point = canvasPoint(event)
             rawBandHover = document.bounds.contains(point) ? point : nil
-            let previous = bandHoverMatch
+            let previousRow = bandHoverRow, previousColumn = bandHoverColumn
             refreshBandSnapping()
-            if previous != bandHoverMatch { needsDisplay = true }
+            if previousRow != bandHoverRow || previousColumn != bandHoverColumn { needsDisplay = true }
             return
         }
         guard mode == .move, !moving, start == nil else { return }
@@ -391,7 +425,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseExited(with event: NSEvent) {
         hoveredID = nil
-        rawBandHover = nil; bandHoverMatch = nil
+        rawBandHover = nil; bandHoverRow = nil; bandHoverColumn = nil
         needsDisplay = true
     }
     override func mouseDown(with event: NSEvent) {
@@ -400,8 +434,9 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         let p = canvasPoint(event)
         guard document.bounds.contains(p) else { selectedID = nil; onSelect?(nil); return }
         start = p; end = p; dragBounds = document.bounds
-        if mode != .move {
-            gestureBandCandidates = bandCandidates
+        if mode == .removeSpace {
+            gestureBandGuides = StitchBandGuides.Result(rows: bandCandidates(for: .horizontal), columns: bandCandidates(for: .vertical))
+            bandAxis = nil; bandStartInWindow = event.locationInWindow; bandEndInWindow = event.locationInWindow
             rawBandStart = p; rawBandEnd = p; rawBandHover = nil
             bandSnapBypassed = event.modifierFlags.contains(.option)
             refreshBandSnapping()
@@ -417,42 +452,43 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         guard let start else { return }
         let p = canvasPoint(event)
         end = p
-        if mode != .move {
+        if mode == .removeSpace {
             rawBandEnd = p
+            bandEndInWindow = event.locationInWindow
             bandSnapBypassed = event.modifierFlags.contains(.option)
+            resolveBandAxis(at: event.locationInWindow)
             refreshBandSnapping()
         }
-        if mode == .move, let id = selectedID, let originalOrigin {
+        if mode == .move, selectedID != nil, originalOrigin != nil {
             let zoom = effectiveZoom
             guard moving || hypot(p.x - start.x, p.y - start.y) * zoom >= 3 else { return }
             moving = true
             NSCursor.closedHand.set()
-            var origin = CGPoint(x: originalOrigin.x + p.x - start.x, y: originalOrigin.y + p.y - start.y)
-            if !packed, !event.modifierFlags.contains(.option) {
-                origin = document.snappedOrigin(for: id, proposed: origin, tolerance: 12 / effectiveZoom)
-                alignmentGuides = guides(for: id, origin: origin)
-            } else {
-                alignmentGuides = []
-            }
-            dragPreviewOrigin = origin
-            onMove?(id, origin, false)
+            updateMovePreview(at: p, modifiers: event.modifierFlags)
         }
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
-        if mode != .move, start != nil {
+        let hadBandPreview = removalBand != nil
+        if mode == .removeSpace, start != nil {
             rawBandEnd = canvasPoint(event)
+            bandEndInWindow = event.locationInWindow
             bandSnapBypassed = event.modifierFlags.contains(.option)
             refreshBandSnapping()
         }
+        if mode == .move, moving {
+            updateMovePreview(at: canvasPoint(event), modifiers: event.modifierFlags, notify: false)
+        }
         let a = start, b = end
+        let cutAxis = hadBandPreview && removalBand != nil ? bandAxis : nil
         start = nil; end = nil; dragBounds = nil
-        gestureBandCandidates = nil
+        gestureBandGuides = nil; bandAxis = nil; bandStartInWindow = nil; bandEndInWindow = nil
         rawBandStart = nil; rawBandEnd = nil; bandGuideMatches = []
         if moving, let id = selectedID, let piece = document.pieces.first(where: { $0.id == id }) {
             onMove?(id, dragPreviewOrigin ?? piece.origin, true)
-        } else if mode != .move, let a, let b {
-            onCut?(mode == .rows ? .horizontal : .vertical, mode == .rows ? a.y : a.x, mode == .rows ? b.y : b.x)
+        } else if mode == .removeSpace, let cutAxis, let a, let b {
+            // Keep the proposed endpoints so clipped fractional bounds are not rounded twice.
+            onCut?(cutAxis, cutAxis == .horizontal ? a.y : a.x, cutAxis == .horizontal ? b.y : b.x)
         }
         moving = false; originalOrigin = nil
         alignmentGuides = []; hoveredID = nil; dragPreviewOrigin = nil; packedPreview = nil
@@ -461,10 +497,27 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     }
 
     override func flagsChanged(with event: NSEvent) {
-        guard mode != .move else { super.flagsChanged(with: event); return }
+        if mode == .move {
+            if moving, !packed, let end {
+                updateMovePreview(at: end, modifiers: event.modifierFlags)
+                needsDisplay = true
+            } else { super.flagsChanged(with: event) }
+            return
+        }
         bandSnapBypassed = event.modifierFlags.contains(.option)
         refreshBandSnapping()
         needsDisplay = true
+    }
+
+    private func updateMovePreview(at point: CGPoint, modifiers: NSEvent.ModifierFlags, notify: Bool = true) {
+        guard let start, let id = selectedID, let originalOrigin else { return }
+        var origin = CGPoint(x: originalOrigin.x + point.x - start.x, y: originalOrigin.y + point.y - start.y)
+        if !packed, !modifiers.contains(.option) {
+            origin = document.snappedOrigin(for: id, proposed: origin, tolerance: 12 / effectiveZoom)
+            alignmentGuides = guides(for: id, origin: origin)
+        } else { alignmentGuides = [] }
+        dragPreviewOrigin = origin
+        if notify { onMove?(id, origin, false) }
     }
 
     /// Center on the visible cut, with enough viewport inset to keep the pill's stroke inside.
@@ -543,8 +596,6 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         if KeyboardShortcutMatcher.modifiers(in: event).isEmpty {
             switch KeyboardShortcutMatcher.semanticCharacter(for: event) {
             case "v": onMode?(.move); return
-            case "r": onMode?(.rows); return
-            case "c": onMode?(.columns); return
             default: break
             }
         }

@@ -984,3 +984,12 @@
 "Show seams to edit color" = "Show seams to edit color";
 "⌥ Ignore guides" = "⌥ Ignore guides";
 "Unable to preserve these redactions. Move or resize them and try again." = "Unable to preserve these redactions. Move or resize them and try again.";
+
+/* Direct Stitch removal. English fallback pending translation. */
+"Remove Space" = "Remove Space";
+"Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides." = "Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides.";
+"Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping." = "Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping.";
+"Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping. Other tool shortcuts use the image editor." = "Drag up or down to remove rows, or left or right to remove columns. Choose Move to arrange pieces. Hold Option to ignore snapping. Other tool shortcuts use the image editor.";
+
+/* Stitch capture starting guides. English fallback pending translation. */
+"Start near a guide · Option to ignore snapping" = "Start near a guide · Option to ignore snapping";

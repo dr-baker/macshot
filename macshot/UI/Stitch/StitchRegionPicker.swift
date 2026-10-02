@@ -8,6 +8,14 @@ final class StitchRegionSelection {
     var onPick: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
 
+    func setStartingGuides(provider: @escaping (CGPoint?) -> StitchSelectionGuideGeometry.Result) {
+        controller.setStitchStartingGuides(provider: provider)
+    }
+
+    func refreshStartingModifiers(_ modifiers: NSEvent.ModifierFlags) {
+        controller.refreshStitchStartingModifiers(modifiers)
+    }
+
     func setSizeRecommendations(referenceScale: CGFloat,
         provider: @escaping (CGRect, CGSize) -> StitchSelectionRecommendations.Result) {
         controller.setStitchSizeRecommendations(referencePixelsPerPoint: referenceScale,
