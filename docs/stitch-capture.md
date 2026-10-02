@@ -7,7 +7,7 @@ Choose another drawing tool to annotate the result. The editor keeps the same ca
 Faint guides mark capture edges, existing joins, and large clear gaps. Both ends of a removal band snap near a guide; the matched guide turns purple. Gap suggestions leave room for the seam blur and require clear space across all intersecting captures. Hold **Option** to bypass snapping, even after starting the drag. Guides stay fixed during a drag as background analysis finishes.
 
 - **Remove Space:** drag vertically to reconnect the content above and below, or horizontally to reconnect its left and right edges. The band direction stays fixed once the drag resolves. A click or an unresolved diagonal gesture removes nothing.
-- **Move:** drag individual pieces. Nearby edges snap together in Free Move; hold Option for free placement. In Free Move, arrow keys move a selected piece by one pixel, or ten with Shift. Packed pieces can be dragged or reordered through the Pieces controls.
+- **Move:** drag individual pieces. Click an empty area of the canvas or its surrounding gray background to clear the selection border. Nearby edges snap together in Free Move; hold Option for free placement. In Free Move, arrow keys move a selected piece by one pixel, or ten with Shift. Packed pieces can be dragged or reordered through the Pieces controls.
 
 Touching edges get a soft, wavy seam by default. Open **Seams** in the Stitch options row to choose a treatment from its visual previews:
 

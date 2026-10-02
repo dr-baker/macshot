@@ -394,6 +394,14 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         if wasMoving { onCancelMove?() }
         needsDisplay = true
     }
+
+    private func deselectPiece() {
+        cancelGesture()
+        selectedID = nil
+        onSelect?(nil)
+        window?.invalidateCursorRects(for: self)
+    }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
         if mode == .move {
@@ -432,7 +440,11 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         window?.makeFirstResponder(self)
         hoveredID = nil; alignmentGuides = []; packedPreview = nil
         let p = canvasPoint(event)
-        guard document.bounds.contains(p) else { selectedID = nil; onSelect?(nil); return }
+        let piece = mode == .move ? document.pieces.reversed().first { $0.frame.contains(p) } : nil
+        guard document.bounds.contains(p), mode != .move || piece != nil else {
+            deselectPiece()
+            return
+        }
         start = p; end = p; dragBounds = document.bounds
         if mode == .removeSpace {
             gestureBandGuides = StitchBandGuides.Result(rows: bandCandidates(for: .horizontal), columns: bandCandidates(for: .vertical))
@@ -442,7 +454,6 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             refreshBandSnapping()
         }
         if mode == .move {
-            let piece = document.pieces.reversed().first { $0.frame.contains(p) }
             selectedID = piece?.id; originalOrigin = piece?.origin
             onSelect?(selectedID)
         }
@@ -570,7 +581,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             let pieceKey = mode == .move && !event.modifierFlags.contains(.command)
                 && [51, 117, 123, 124, 125, 126].contains(Int(event.keyCode))
             let stitchEscape = event.keyCode == 53 && !PopoverHelper.isVisible
-                && (start != nil || selectedID != nil)
+                && (start != nil || selectedID != nil || (mode == .move && hoveredID != nil))
             if !stitchEscape && !pieceKey {
                 inlineEditor.keyDown(with: event)
                 return
@@ -600,9 +611,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             }
         }
         if event.keyCode == 53 {
-            cancelGesture()
-            selectedID = nil
-            onSelect?(nil)
+            deselectPiece()
             return
         }
         if event.keyCode == 51 || event.keyCode == 117 { onDelete?(); return }

@@ -5364,9 +5364,9 @@ class OverlayView: NSView {
     private func repositionToolbars() {
         guard let bottomStrip = bottomStripView, let rightStrip = rightStripView else { return }
 
-        // In editor mode, let toolbar gap clicks pass through to the image beneath
-        bottomStrip.passesThrough = isEditorMode
-        rightStrip.passesThrough = isEditorMode
+        // Drawing tools allow gap clicks through. Stitch chrome keeps its piece selection.
+        bottomStrip.passesThrough = isEditorMode && currentTool != .stitch
+        rightStrip.passesThrough = isEditorMode && currentTool != .stitch
 
         let visible = showToolbars && state == .selected && !isScrollCapturing
         let bottomHasButtons = bottomStrip.buttonViews.count > 0

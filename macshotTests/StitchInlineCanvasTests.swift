@@ -304,6 +304,174 @@ final class StitchInlineCanvasTests: XCTestCase {
         XCTAssertEqual(moves.last, CGPoint(x: 120, y: -50), "Release modifiers must apply without another drag event")
     }
 
+    func testMoveClickOnUncoveredCanvasClearsSelectionAndHoverWithoutStartingDrag() {
+        let (editor, canvas) = fixture(twoPieces: true)
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.mode = .move
+        let original = canvas.document
+        var selections: [UUID?] = []
+        canvas.onSelect = { selections.append($0) }
+        canvas.onMove = { _, _, _ in XCTFail("A blank click and drag must not move a piece") }
+        canvas.onCut = { _, _, _ in XCTFail("A blank click must not cut") }
+        canvas.onCancelMove = { XCTFail("A blank click must not create a move transaction") }
+
+        let first = CGPoint(x: 40, y: 30), second = CGPoint(x: 280, y: 30)
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, first))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, first))
+        XCTAssertEqual(canvas.selectedID, original.pieces[0].id)
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, second))
+        XCTAssertEqual(canvas.hoveredID, original.pieces[1].id)
+
+        // The gap is inside document bounds, between the two source pieces.
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 225, y: 30)))
+        XCTAssertNil(canvas.selectedID)
+        XCTAssertNil(canvas.hoveredID)
+        XCTAssertTrue(canvas.needsDisplay, "The selected border and hover outline must be redrawn immediately")
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, second))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, second))
+        XCTAssertNil(canvas.selectedID)
+        XCTAssertTrue(canvas.alignmentGuides.isEmpty)
+        XCTAssertTrue(canvas.document.isIdentical(to: original))
+        XCTAssertTrue(editor.undoStack.isEmpty)
+        XCTAssertEqual(selections, [original.pieces[0].id, nil])
+
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, second))
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, second))
+        XCTAssertEqual(canvas.selectedID, original.pieces[1].id, "Clicking content must select it again")
+        XCTAssertTrue(canvas.document.isIdentical(to: original))
+    }
+
+    func testMoveBackgroundClicksRouteThroughEditorAndCenteredViewportAtDifferentZooms() throws {
+        for zoom: CGFloat in [0.5, 2] {
+            let (editor, canvas) = fixture(twoPieces: true)
+            editor.currentTool = .stitch
+            canvas.mode = .move
+            let (container, clip, window) = scrollHost(editor, magnification: zoom)
+            defer { window.orderOut(nil) }
+            let original = canvas.document
+            canvas.onMove = { _, _, _ in XCTFail("Background clicks must not change geometry") }
+            canvas.onCut = { _, _, _ in XCTFail("Background clicks must not cut") }
+            canvas.onCancelMove = { XCTFail("Background clicks must not create a move transaction") }
+
+            let editorBlank = mouse(.leftMouseDown, editor, CGPoint(x: 250, y: 150))
+            let viewportPoint = CGPoint(x: clip.bounds.minX + 5, y: clip.bounds.minY + 5)
+            XCTAssertFalse(editor.bounds.contains(editor.convert(viewportPoint, from: clip)))
+            let viewportBlank = mouse(.leftMouseDown, clip, viewportPoint)
+            for (event, expectedTarget) in [(editorBlank, editor as NSView), (viewportBlank, clip as NSView)] {
+                canvas.selectedID = original.pieces[0].id
+                canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 280, y: 30)))
+                XCTAssertNotNil(canvas.hoveredID)
+                let target = try XCTUnwrap(recipient(for: event, in: container))
+                XCTAssertTrue(target === expectedTarget, "Background at zoom \(zoom) reached \(type(of: target)), expected \(type(of: expectedTarget))")
+                target.mouseDown(with: event)
+                XCTAssertNil(canvas.selectedID)
+                XCTAssertNil(canvas.hoveredID)
+                XCTAssertTrue(window.firstResponder === canvas)
+                // Follow-up events on the background view must not start an annotation or move.
+                target.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 280, y: 30)))
+                target.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 280, y: 30)))
+                XCTAssertTrue(canvas.document.isIdentical(to: original))
+                XCTAssertTrue(editor.undoStack.isEmpty)
+                XCTAssertEqual(editor.selectionRect, canvas.frame)
+            }
+
+            let reselect = mouse(.leftMouseDown, canvas, CGPoint(x: 280, y: 30))
+            let target = try XCTUnwrap(recipient(for: reselect, in: container))
+            XCTAssertTrue(target === canvas)
+            target.mouseDown(with: reselect)
+            target.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 280, y: 30)))
+            XCTAssertEqual(canvas.selectedID, original.pieces[1].id)
+            editor.currentTool = .arrow
+            XCTAssertFalse(editor.handleStitchMoveMouseDown(with: viewportBlank), "Other tools must retain their event path")
+            XCTAssertEqual(canvas.selectedID, original.pieces[1].id)
+        }
+    }
+
+    func testNativeToolbarAndSeparateOptionsWindowClicksPreserveMoveSelection() throws {
+        let (editor, canvas) = fixture()
+        editor.currentTool = .stitch
+        editor.stitchMode = .move
+        canvas.mode = .move
+        let (container, clip, window) = scrollHost(editor)
+        defer { window.orderOut(nil) }
+        let original = canvas.document
+        canvas.selectedID = original.pieces[0].id
+        canvas.onSelect = { _ in XCTFail("Native control clicks must not deselect the canvas") }
+        var actions = 0
+        let strips = container.subviews.compactMap { $0 as? ToolbarStripView }.filter { !$0.isHidden }
+        let toolbarButton = try XCTUnwrap(strips.flatMap(\.buttonViews).first { $0.onMouseDown == nil })
+        toolbarButton.onClick = { _ in actions += 1 }
+        let options = NSView(frame: CGRect(x: 0, y: 0, width: 100, height: 80))
+        let optionsButton = ToolbarButtonView(action: .copy, sfSymbol: "doc.on.doc", tooltip: "Copy")
+        optionsButton.frame.origin = CGPoint(x: 20, y: 20)
+        optionsButton.onClick = { _ in actions += 1 }
+        options.addSubview(optionsButton)
+        let optionsWindow = NSPanel(contentRect: options.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        optionsWindow.contentView = options
+        defer { optionsWindow.orderOut(nil) }
+
+        for (root, button) in [(container, toolbarButton), (options, optionsButton)] {
+            let event = mouse(.leftMouseDown, button, CGPoint(x: 10, y: 10))
+            let target = try XCTUnwrap(recipient(for: event, in: root))
+            XCTAssertTrue(target === button, "The control must receive its click directly")
+            target.mouseDown(with: event)
+            target.mouseUp(with: mouse(.leftMouseUp, button, CGPoint(x: 10, y: 10)))
+            XCTAssertEqual(canvas.selectedID, original.pieces[0].id)
+        }
+        XCTAssertFalse(strips.isEmpty)
+        for strip in strips {
+            // The one-point inset is in the native strip's padding, outside every button.
+            let padding = CGPoint(x: strip.bounds.minX + 1, y: strip.bounds.midY)
+            XCTAssertFalse(strip.buttonViews.contains { $0.frame.contains(padding) })
+            let event = mouse(.leftMouseDown, strip, padding)
+            let target = try XCTUnwrap(recipient(for: event, in: container))
+            XCTAssertTrue(target === strip, "Stitch toolbar padding must consume the click")
+            target.mouseDown(with: event)
+            target.mouseUp(with: mouse(.leftMouseUp, strip, padding))
+            XCTAssertEqual(canvas.selectedID, original.pieces[0].id)
+        }
+        let scroll = try XCTUnwrap(clip.enclosingScrollView)
+        for tool in [AnnotationTool.arrow, .rectangle] {
+            editor.handleToolbarAction(.tool(tool))
+            for strip in strips where !strip.isHidden {
+                let padding = CGPoint(x: strip.bounds.minX + 1, y: strip.bounds.midY)
+                let event = mouse(.leftMouseDown, strip, padding)
+                let target = try XCTUnwrap(recipient(for: event, in: container))
+                let unobstructed = try XCTUnwrap(recipient(for: event, in: scroll))
+                XCTAssertFalse(target === strip, "Drawing tools must let padding clicks through")
+                XCTAssertTrue(target === unobstructed, "Padding clicks must follow the native path beneath the toolbar")
+            }
+        }
+        XCTAssertEqual(actions, 2)
+        XCTAssertTrue(canvas.document.isIdentical(to: original))
+        XCTAssertTrue(editor.undoStack.isEmpty)
+    }
+
+    func testMoveEscapeDeselectsAndClearsHoverBeforeForwardingUnusedEscape() {
+        let (editor, canvas) = fixture(twoPieces: true)
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.mode = .move
+        let original = canvas.document
+        let hover = mouse(.mouseMoved, canvas, CGPoint(x: 280, y: 30))
+        let escape = TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53)
+        canvas.selectedID = original.pieces[0].id
+        canvas.mouseMoved(with: hover)
+        canvas.keyDown(with: escape)
+        XCTAssertNil(canvas.selectedID)
+        XCTAssertNil(canvas.hoveredID)
+        XCTAssertTrue(editor.keys.isEmpty)
+        canvas.mouseMoved(with: hover)
+        canvas.keyDown(with: escape)
+        XCTAssertNil(canvas.hoveredID, "Escape must also clear a hover-only border")
+        XCTAssertTrue(editor.keys.isEmpty)
+        canvas.keyDown(with: escape)
+        XCTAssertEqual(editor.keys, [53])
+        XCTAssertTrue(canvas.document.isIdentical(to: original))
+        XCTAssertTrue(editor.undoStack.isEmpty)
+    }
+
     func testNativeToolAndCommandKeysForwardButMoveKeysStayLocal() {
         let (editor, canvas) = fixture()
         let window = host(editor)
@@ -445,6 +613,32 @@ final class StitchInlineCanvasTests: XCTestCase {
         let window = NSWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = editor
         return window
+    }
+    private func scrollHost(_ editor: NSView, magnification: CGFloat = 1) -> (NSView, CenteringClipView, NSWindow) {
+        let container = NSView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let scroll = NSScrollView(frame: container.bounds)
+        let clip = CenteringClipView(frame: scroll.contentView.frame)
+        scroll.contentView = clip
+        scroll.documentView = editor
+        scroll.allowsMagnification = true
+        container.addSubview(scroll)
+        if let overlay = editor as? EditorView {
+            overlay.chromeParentView = container
+            // Detached editor chrome is a sibling of the scroll view, outside magnification.
+            for chrome in overlay.subviews where chrome is ToolbarStripView || chrome is ToolOptionsRowView {
+                container.addSubview(chrome)
+            }
+            overlay.rebuildToolbarLayout()
+        }
+        let window = host(container)
+        scroll.magnification = magnification
+        scroll.tile()
+        clip.scroll(to: clip.constrainBoundsRect(clip.bounds).origin)
+        return (container, clip, window)
+    }
+    private func recipient(for event: NSEvent, in root: NSView) -> NSView? {
+        let point = root.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        return root.hitTest(point)
     }
     private func mouse(_ type: NSEvent.EventType, _ canvas: NSView, _ point: CGPoint,
                        modifiers: NSEvent.ModifierFlags = []) -> NSEvent {

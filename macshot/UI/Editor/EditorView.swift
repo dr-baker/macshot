@@ -378,6 +378,23 @@ class EditorView: OverlayView, NSMenuItemValidation {
         }
     }
 
+    /// Background clicks arrive here or at the clip view instead of the inline canvas.
+    /// Keep the window event unchanged so the canvas performs its own pixel conversion.
+    @discardableResult
+    func handleStitchMoveMouseDown(with event: NSEvent) -> Bool {
+        guard currentTool == .stitch,
+              let canvas = subviews.compactMap({ $0 as? StitchCanvasView }).first(where: {
+                  !$0.isHidden && $0.mode == .move
+              }) else { return false }
+        canvas.mouseDown(with: event)
+        return true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if handleStitchMoveMouseDown(with: event) { return }
+        super.mouseDown(with: event)
+    }
+
     // MARK: - Selection interaction (disabled in editor)
 
     override func shouldAllowSelectionResize() -> Bool { false }
