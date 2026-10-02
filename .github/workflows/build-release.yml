@@ -628,6 +628,7 @@ jobs:
           sed -i '' \
             -e "s/version \".*\"/version \"$VERSION\"/" \
             -e "s/sha256 \".*\"/sha256 \"$SHA256\"/" \
+            -e 's/depends_on macos: :[a-z_]*/depends_on macos: :ventura/' \
             /tmp/tap/Casks/macshot.rb
 
           OFFLINE_CASK="/tmp/tap/Casks/macshot-offline.rb"
@@ -649,7 +650,7 @@ jobs:
             end
 
             auto_updates true
-            depends_on macos: :monterey
+            depends_on macos: :ventura
 
             app "macshot Offline.app"
 
