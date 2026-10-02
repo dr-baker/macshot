@@ -206,12 +206,13 @@ class EditorView: OverlayView, NSMenuItemValidation {
             if annotation.isStitchRedaction {
                 let attached = document.pieces.filter { $0.id == annotation.stitchAttachment?.pieceID }
                 let pieces = attached.isEmpty ? document.pieces : attached
+                let coverage = annotation.stitchPixelCoverage(in: document.bounds, scale: scale)
                 for piece in pieces {
-                    let frame = CGRect(x: (piece.frame.minX - document.bounds.minX) / scale,
-                        y: (document.bounds.maxY - piece.frame.maxY) / scale,
-                        width: piece.frame.width / scale, height: piece.frame.height / scale)
-                    let clip = annotation.stitchVisibleBounds.intersection(frame)
-                    guard !clip.isNull, clip.width > 0, clip.height > 0 else { continue }
+                    let retained = coverage.intersection(piece.frame)
+                    guard !retained.isNull, retained.width > 0, retained.height > 0 else { continue }
+                    let clip = CGRect(x: (retained.minX - document.bounds.minX) / scale,
+                        y: (document.bounds.maxY - retained.maxY) / scale,
+                        width: retained.width / scale, height: retained.height / scale)
                     let fragment = annotation.clone()
                     fragment.stitchAttachment = StitchAnnotationAttachment(pieceID: piece.id,
                         lineageID: piece.lineageID, clipRect: clip)
@@ -264,10 +265,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         guard scale.isFinite, scale > 0 else { return nil }
         let unattached = annotations.filter { annotation in
             if annotation.isStitchRedaction {
-                let rect = annotation.stitchVisibleBounds
-                let covered = CGRect(x: document.bounds.minX + rect.minX * scale,
-                    y: document.bounds.maxY - rect.maxY * scale,
-                    width: rect.width * scale, height: rect.height * scale)
+                let covered = annotation.stitchPixelCoverage(in: document.bounds, scale: scale)
                 return !document.pieces.contains { piece in
                     let intersection = piece.frame.intersection(covered)
                     return !intersection.isNull && intersection.width > 0 && intersection.height > 0

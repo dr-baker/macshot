@@ -178,8 +178,19 @@ final class StitchRedactionEditingTests: XCTestCase {
             NSGraphicsContext.restoreGraphicsState()
         }
         let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil)))
-        let hidden = try XCTUnwrap(bitmap.colorAt(x: 105, y: 100))
-        XCTAssertEqual([hidden.redComponent, hidden.greenComponent, hidden.blueComponent, hidden.alphaComponent], [0, 0, 0, 1])
+        // The move badge covers (95,90)..<(119,114). Its neutral opaque
+        // chrome may cover the placeholder, while these interior pixels must
+        // remain exact black rather than exposing the blue source.
+        for y in 116..<123 {
+            for x in 121..<128 {
+                let hidden = try XCTUnwrap(bitmap.colorAt(x: x, y: y))
+                XCTAssertEqual([hidden.redComponent, hidden.greenComponent, hidden.blueComponent, hidden.alphaComponent], [0, 0, 0, 1])
+            }
+        }
+        let badge = try XCTUnwrap(bitmap.colorAt(x: 105, y: 100))
+        XCTAssertEqual(badge.redComponent, badge.greenComponent)
+        XCTAssertEqual(badge.greenComponent, badge.blueComponent)
+        XCTAssertEqual(badge.alphaComponent, 1)
         let visible = try XCTUnwrap(bitmap.colorAt(x: 160, y: 100))
         XCTAssertEqual([visible.redComponent, visible.greenComponent, visible.blueComponent, visible.alphaComponent], [0, 1, 0, 1])
     }

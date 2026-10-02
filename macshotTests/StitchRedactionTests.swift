@@ -126,9 +126,10 @@ final class StitchRedactionTests: XCTestCase {
             for x in 0..<Int(rect.width) {
                 let ax = Int(origin.x) + x, ay = Int(origin.y) + y
                 let ex = Int(rect.minX) + x, ey = Int(rect.minY) + y
-                guard let a = rgba(actual, x: ax, y: ay), let e = rgba(expected, x: ex, y: ey),
+                let actualPixel = rgba(actual, x: ax, y: ay), expectedPixel = rgba(expected, x: ex, y: ey)
+                guard let a = actualPixel, let e = expectedPixel,
                     zip(a, e).allSatisfy({ abs($0 - $1) <= tolerance }) else {
-                    XCTFail("Export pixel \(ax),\(ay) differs from retained fixture pixel \(ex),\(ey)",
+                    XCTFail("Export pixel \(ax),\(ay) is \(String(describing: actualPixel)); retained fixture pixel \(ex),\(ey) is \(String(describing: expectedPixel))",
                         file: file, line: line)
                     return
                 }
@@ -478,10 +479,20 @@ final class StitchRedactionTests: XCTestCase {
             let before = try exported(view)
             assertRegion(before, rect: CGRect(x: 76, y: 44, width: 8, height: 8), equals: redRGBA)
             assertRegion(before, rect: CGRect(x: 76, y: 68, width: 8, height: 8), equals: redRGBA)
+            let topEdge = try XCTUnwrap(rgba(before, x: 93, y: 17))
+            let bottomEdge = try XCTUnwrap(rgba(before, x: 37, y: 73))
+            XCTAssertGreaterThan(topEdge[0], 0)
+            XCTAssertLessThan(topEdge[0], 255)
+            XCTAssertGreaterThan(bottomEdge[0], 0)
+            XCTAssertLessThan(bottomEdge[0], 255)
             var cut = original
             XCTAssertTrue(cut.collapse(axis: .horizontal, from: original.bounds.minY + 56, to: original.bounds.minY + 64))
             XCTAssertTrue(view.applyStitchDocument(cut))
             let cutPixels = try exported(view)
+            // These antialiased corners must retain their original coverage;
+            // clipping at fractional shape bounds previously faded them twice.
+            XCTAssertEqual(try XCTUnwrap(rgba(cutPixels, x: 93, y: 17)), topEdge)
+            XCTAssertEqual(try XCTUnwrap(rgba(cutPixels, x: 37, y: 65)), bottomEdge)
             assertRegion(cutPixels, at: .zero, matches: before, rect: CGRect(x: 0, y: 0, width: 160, height: 56))
             assertRegion(cutPixels, at: CGPoint(x: 0, y: 56), matches: before,
                 rect: CGRect(x: 0, y: 64, width: 160, height: 56))
@@ -489,6 +500,8 @@ final class StitchRedactionTests: XCTestCase {
             moved.pieces[0].origin.x += 40
             XCTAssertTrue(view.applyStitchDocument(moved))
             let movedPixels = try exported(view)
+            XCTAssertEqual(try XCTUnwrap(rgba(movedPixels, x: 133, y: 17)), topEdge)
+            XCTAssertEqual(try XCTUnwrap(rgba(movedPixels, x: 37, y: 65)), bottomEdge)
             assertRegion(movedPixels, at: CGPoint(x: 40, y: 0), matches: before,
                 rect: CGRect(x: 0, y: 0, width: 160, height: 56))
             assertRegion(movedPixels, at: CGPoint(x: 0, y: 56), matches: before,

@@ -53,7 +53,7 @@ enum StitchAnnotationTransforms {
 
     private static func redactionFragments(_ annotation: Annotation, from old: StitchDocument,
         to next: StitchDocument, scale: CGFloat) -> [Annotation]? {
-        let coverage = pixels(annotation.stitchVisibleBounds, in: old.bounds, scale: scale)
+        let coverage = annotation.stitchPixelCoverage(in: old.bounds, scale: scale)
         guard !coverage.isNull, coverage.width > 0, coverage.height > 0 else { return [] }
         let attached = old.pieces.filter { $0.id == annotation.stitchAttachment?.pieceID }
         // An ordinary edit clears the attachment so its new coverage can span
@@ -111,12 +111,6 @@ enum StitchAnnotationTransforms {
         }
         return CGPoint(x: (destination.x - next.bounds.minX) / scale,
             y: (next.bounds.maxY - destination.y) / scale)
-    }
-
-    private static func pixels(_ rect: CGRect, in bounds: CGRect, scale: CGFloat) -> CGRect {
-        guard !rect.isNull else { return .null }
-        return CGRect(x: bounds.minX + rect.minX * scale, y: bounds.maxY - rect.maxY * scale,
-            width: rect.width * scale, height: rect.height * scale)
     }
 
     private static func canvas(_ rect: CGRect, in bounds: CGRect, scale: CGFloat) -> CGRect {

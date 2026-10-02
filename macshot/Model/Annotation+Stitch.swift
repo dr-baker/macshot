@@ -29,6 +29,15 @@ extension Annotation {
         return stitchUnclippedBounds.intersection(attachment.clipRect)
     }
 
+    /// Antialiasing paints the native pixels enclosing fractional shape bounds.
+    /// Clipping at the fractional edge would apply that coverage a second time.
+    func stitchPixelCoverage(in bounds: CGRect, scale: CGFloat) -> CGRect {
+        let rect = stitchVisibleBounds
+        guard !rect.isNull, rect.width > 0, rect.height > 0 else { return .null }
+        return CGRect(x: bounds.minX + rect.minX * scale, y: bounds.maxY - rect.maxY * scale,
+            width: rect.width * scale, height: rect.height * scale).integral
+    }
+
     /// A deliberate resize or rotation defines new coverage. Rebind it to the
     /// captures under the edited mark on the next Stitch operation.
     func updateStitchClipForGeometryEdit() {

@@ -216,11 +216,12 @@ final class StitchEditorDocumentTests: XCTestCase {
         XCTAssertEqual(reopened.stitchDocument?.pieces.map(\.id), original.pieces.map(\.id))
     }
 
-    func testPreviewLayersAssignOverlappingAnnotationOnlyToTopmostPiece() throws {
+    func testPreviewLayersAssignOverlappingOrdinaryAnnotationOnlyToTopmostPiece() throws {
         var original = document()
         original.pieces[1].origin = original.pieces[0].origin
         let view = editor(original)
-        view.annotations = [mark(20, 30)]
+        view.annotations = [Annotation(tool: .rectangle, startPoint: CGPoint(x: 17, y: 27),
+            endPoint: CGPoint(x: 23, y: 33), color: .red, strokeWidth: 2)]
         let layers = view.stitchAnnotationLayers()
         XCTAssertNil(layers[original.pieces[0].id])
         XCTAssertNotNil(layers[original.pieces[1].id])
