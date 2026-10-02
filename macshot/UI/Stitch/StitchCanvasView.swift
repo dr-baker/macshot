@@ -200,8 +200,13 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
                       let original = document.pieces.first(where: { $0.id == piece.id }) else { continue }
                 let delta = displayedFrame(piece).origin
                 let rect = layer.frame.offsetBy(dx: delta.x - original.origin.x, dy: delta.y - original.origin.y)
-                NSImage(cgImage: layer.image, size: layer.frame.size).draw(in: viewRect(rect),
-                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                if let image = layer.image {
+                    NSImage(cgImage: image, size: layer.frame.size).draw(in: viewRect(rect),
+                        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                } else {
+                    NSColor.black.setFill()
+                    NSBezierPath(rect: viewRect(displayedFrame(piece))).fill()
+                }
             }
         }
         if !moving, let annotationPreview {

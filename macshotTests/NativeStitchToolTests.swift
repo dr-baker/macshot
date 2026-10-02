@@ -349,7 +349,7 @@ final class NativeStitchToolTests: XCTestCase {
             window.contentView = view
             let controller = StitchEditorController(document: document, window: window)
             var latest = document
-            controller.onDocumentChanged = { latest = $0; return true }
+            controller.onDocumentChanged = { value, _ in latest = value; return true }
             controller.attach(to: view)
             defer { controller.suspend(); window.orderOut(nil) }
             let canvas = try XCTUnwrap(view.subviews.compactMap { $0 as? StitchCanvasView }.first)
@@ -390,8 +390,7 @@ final class NativeStitchToolTests: XCTestCase {
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
         let controller = StitchEditorController(document: document, window: window)
-        controller.onCheckpoint = { view.checkpointStitchDocument() }
-        controller.onDocumentChanged = { view.applyStitchDocument($0, registerUndo: false) }
+        controller.onDocumentChanged = { value, registerUndo in view.applyStitchDocument(value, registerUndo: registerUndo) }
         view.onStitchDocumentChanged = { [weak controller, weak view] in
             if let document = view?.stitchDocument { controller?.restore(document) }
         }

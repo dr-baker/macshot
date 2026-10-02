@@ -18,8 +18,8 @@ enum StitchOptionsAction { case seams, pieces, canvas }
 final class StitchEditorController: NSObject {
     private weak var window: NSWindow?
     private weak var editorView: EditorView?
-    var onCheckpoint: (() -> Void)?
-    var onDocumentChanged: ((StitchDocument) -> Bool)?
+    /// The host validates, renders, and records undo before committing a change.
+    var onDocumentChanged: ((StitchDocument, Bool) -> Bool)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var canUndo: (() -> Bool)?
@@ -84,7 +84,8 @@ final class StitchEditorController: NSObject {
             guard let self else { return }
             var next = self.document
             if next.collapse(axis: axis, from: from, to: to) {
-                self.checkpoint(L("Collapse space")); self.document = next; self.canvas.selectedID = nil
+                guard self.commitDocument(next) else { return }
+                self.canvas.selectedID = nil
                 self.refresh(); self.showFeedback(L("Space collapsed. Undo restores the original pieces."))
             } else {
                 self.showFeedback(L("Select a band inside the canvas and leave some content on either side."))
@@ -121,7 +122,8 @@ final class StitchEditorController: NSObject {
         guard document.placement != placement else { return }
         var next = document
         guard next.setPlacement(placement), next.canRender else { return }
-        checkpoint(L("Change arrangement")); document = next; refresh()
+        guard commitDocument(next) else { return }
+        refresh()
     }
 
     func focus() {
@@ -199,9 +201,14 @@ final class StitchEditorController: NSObject {
             slider.trackFillColor = ToolbarLayout.accentColor
             slider.setAccessibilityLabel(L(spec.0))
             slider.onBegin = { [weak self] in
-                self?.checkpoint(L("Change seam")); self?.adjustingStyle = true
+                self?.adjustingStyle = true
             }
-            slider.onEnd = { [weak self] in self?.adjustingStyle = false; self?.updateBandGuides(); self?.publish() }
+            slider.onEnd = { [weak self] in
+                guard let self else { return }
+                self.adjustingStyle = false
+                if !self.commitDocument(self.document), let current = self.editorView?.stitchDocument { self.document = current }
+                self.refresh()
+            }
             view.addSubview(label); view.addSubview(value); view.addSubview(slider)
             sliders.append(slider); values.append(value); seamLabels.append(label)
         }
@@ -278,17 +285,21 @@ final class StitchEditorController: NSObject {
         PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
     }
     @objc private func changeBackground() {
-        checkpoint(L("Change canvas background"))
+        var next = document
         switch backgroundChoice.indexOfSelectedItem {
-        case 1: document.background = .color(canvasColor.color)
-        case 2: document.background = .transparent
-        default: document.background = .automatic
+        case 1: next.background = .color(canvasColor.color)
+        case 2: next.background = .transparent
+        default: next.background = .automatic
         }
+        guard commitDocument(next) else { return }
         canvasColor.isHidden = backgroundChoice.indexOfSelectedItem != 1
         refresh()
     }
     @objc private func changeCanvasColor() {
-        checkpoint(L("Change canvas background")); document.background = .color(canvasColor.color); refresh()
+        var next = document
+        next.background = .color(canvasColor.color)
+        guard commitDocument(next) else { return }
+        refresh()
     }
     private func showFeedback(_ text: String) {
         guard let editor = editorView, let parent = editor.chromeParentView ?? editor.superview else { return }
@@ -303,10 +314,18 @@ final class StitchEditorController: NSObject {
             self.feedback.removeFromSuperview()
         }
     }
-    private func checkpoint(_ title: String) { onCheckpoint?() }
+    private func commitDocument(_ next: StitchDocument) -> Bool {
+        guard onDocumentChanged?(next, true) != false else {
+            showFeedback(editorView?.stitchChangeFailureMessage
+                ?? L("Unable to render this canvas. Reduce its size and try again."))
+            return false
+        }
+        document = next
+        return true
+    }
     private func publish() {
         guard !restoring else { return }
-        if onDocumentChanged?(document) == false {
+        if onDocumentChanged?(document, false) == false {
             showFeedback(L("Unable to render this canvas. Reduce its size and try again."))
         }
     }
@@ -487,7 +506,8 @@ final class StitchEditorController: NSObject {
                 return
             }
             guard zip(next.pieces, document.pieces).contains(where: { $0.id != $1.id || $0.origin != $1.origin }) else { return }
-            checkpoint(L("Move piece")); document = next; refresh()
+            guard commitDocument(next) else { canvas.packedPreview = nil; canvas.needsDisplay = true; return }
+            refresh()
             return
         }
         if dragSnapshot == nil { cancelPreview(); dragSnapshot = document }
@@ -496,8 +516,11 @@ final class StitchEditorController: NSObject {
         if !document.canRender { document.pieces[index].origin = old; showFeedback(L("Canvas limit reached. Move pieces closer together.")) }
         canvas.document = document; canvas.needsDisplay = true
         if final {
-            if let snapshot = dragSnapshot, zip(snapshot.pieces, document.pieces).contains(where: { $0.origin != $1.origin }) { checkpoint(L("Move piece")) }
-            dragSnapshot = nil; refresh()
+            let next = document
+            if let snapshot = dragSnapshot { document = snapshot }
+            dragSnapshot = nil
+            _ = commitDocument(next)
+            refresh()
         }
     }
     func setMode(_ mode: StitchCanvasView.Mode, focusCanvas: Bool = true) {
@@ -512,8 +535,18 @@ final class StitchEditorController: NSObject {
         values[sender.tag].stringValue = String(format: "%.1f px", sender.doubleValue)
         scheduleRender()
     }
-    @objc private func changeColor() { checkpoint(L("Change seam color")); document.style.color = color.color; scheduleRender() }
-    @objc private func toggleSeams() { checkpoint(L("Toggle seams")); document.style.visible = seamToggle.state == .on; syncSeamControls(); updateBandGuides(); scheduleRender() }
+    @objc private func changeColor() {
+        var next = document
+        next.style.color = color.color
+        guard commitDocument(next) else { return }
+        scheduleRender()
+    }
+    @objc private func toggleSeams() {
+        var next = document
+        next.style.visible = seamToggle.state == .on
+        guard commitDocument(next) else { return }
+        syncSeamControls(); updateBandGuides(); scheduleRender()
+    }
     @objc private func selectPiece(_ sender: NSButton) {
         let piece = document.pieces[sender.tag]
         setMode(.move, focusCanvas: false); canvas.selectedID = piece.id
@@ -527,15 +560,15 @@ final class StitchEditorController: NSObject {
         var next = document
         next.pieces.removeAll { $0.id == id }
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Canvas limit reached. Move pieces closer together.")); return }
-        checkpoint(L("Delete piece")); document = next; canvas.selectedID = nil; refresh()
+        guard commitDocument(next) else { return }
+        canvas.selectedID = nil; refresh()
     }
     private func reorderPiece(to index: Int) {
         guard let id = canvas.selectedID else { return }
         var next = document
         guard StitchPieceOrder.move(id, in: &next.pieces, to: index) else { return }
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Canvas limit reached. Move pieces closer together.")); return }
-        checkpoint(L("Reorder pieces"))
-        document = next
+        guard commitDocument(next) else { return }
         refresh()
     }
     @objc private func bringForward() { reorderPiece(to: document.pieces.count - 1) }
@@ -560,7 +593,7 @@ final class StitchEditorController: NSObject {
         }
         guard next.pieces.count != document.pieces.count else { return }
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Image exceeds the canvas limit.")); return }
-        checkpoint(L("Add images")); document = next
+        guard commitDocument(next) else { return }
         setMode(.move)
         canvas.selectedID = next.pieces.last?.id
         refresh()

@@ -150,9 +150,10 @@ class Annotation {
     var numberFormat: NumberFormat = .decimal
     var points: [NSPoint]?
     var pressures: [CGFloat]?  // per-point pressure (parallel to points), nil = uniform width
-    var sourceImage: NSImage?    // for pixelate: temporary reference during drawing (cleared after bake)
+    var sourceImage: NSImage?    // current canvas source for later censor/loupe edits
     var sourceImageBounds: NSRect = .zero  // the bounds the image was drawn into
     var bakedBlurNSImage: NSImage?    // baked result for pixelate/blur (NSImage avoids CGImage flip issues)
+    var stitchAttachment: StitchAnnotationAttachment?
     var outlineGlowImage: NSImage?   // cached selection outline glow (invalidated on move/change)
     var outlineGlowRect: NSRect = .zero  // the rect the cached glow covers
     var textImage: NSImage?   // snapshot of the NSTextView at commit time — drawn as-is, no coord math
@@ -250,6 +251,9 @@ class Annotation {
         c.points = points
         c.pressures = pressures
         c.bakedBlurNSImage = bakedBlurNSImage
+        c.sourceImage = sourceImage
+        c.sourceImageBounds = sourceImageBounds
+        c.stitchAttachment = stitchAttachment
         c.textImage = textImage
         c.textDrawRect = textDrawRect
         c.fontSize = fontSize
@@ -318,15 +322,15 @@ class Annotation {
         anchorPoints = src.anchorPoints
         textDrawRect = src.textDrawRect
         rotation = src.rotation
-        if tool == .loupe {
-            loupeSourceRect = src.loupeSourceRect
-            bakedBlurNSImage = nil
-            bakeLoupe()
-        } else if tool == .pixelate || tool == .blur {
-            // Position changed — the baked censor must re-render at the new spot.
-            bakedBlurNSImage = nil
-            bakePixelate()
-        }
+        loupeSourceRect = src.loupeSourceRect
+        // Undo restores the pixels captured with this geometry. Re-baking here
+        // can sample another document size or an older source image.
+        bakedBlurNSImage = src.bakedBlurNSImage
+        sourceImage = src.sourceImage
+        sourceImageBounds = src.sourceImageBounds
+        stitchAttachment = src.stitchAttachment
+        outlineGlowImage = nil
+        outlineGlowRect = .zero
         measureInPoints = src.measureInPoints
         censorMode = src.censorMode
         dimOpacity = src.dimOpacity
@@ -372,6 +376,8 @@ class Annotation {
 
     /// Hit-test: returns true if the point is close enough to this annotation
     func hitTest(point: NSPoint, threshold: CGFloat = 8) -> Bool {
+        if let attachment = stitchAttachment,
+           !attachment.clipRect.insetBy(dx: -threshold, dy: -threshold).contains(point) { return false }
         // For rotated annotations, un-rotate the test point around the annotation's center
         var point = point
         if rotation != 0 && supportsRotation {
@@ -478,6 +484,7 @@ class Annotation {
 
     /// Move this annotation by a delta
     func move(dx: CGFloat, dy: CGFloat) {
+        guard dx != 0 || dy != 0 else { return }
         startPoint.x += dx
         startPoint.y += dy
         endPoint.x += dx
@@ -509,8 +516,15 @@ class Annotation {
         // annotation drag moves the LENS only (the source stays rooted, #197).
         // Moving the source is handled separately (drag the small source circle).
         // Clear baked image so it re-renders at the new position
-        if tool == .loupe || tool == .pixelate {
+        if tool == .loupe || tool == .pixelate || tool == .blur {
             bakedBlurNSImage = nil
+        }
+        if var attachment = stitchAttachment {
+            attachment.clipRect = attachment.clipRect.offsetBy(dx: dx, dy: dy)
+            // A normal annotation drag may move the mark onto another capture.
+            attachment.pieceID = nil
+            attachment.lineageID = nil
+            stitchAttachment = attachment
         }
         // Shift the cached glow rect instead of invalidating — the glow shape
         // doesn't change during a move, only its position.
@@ -602,6 +616,11 @@ class Annotation {
 
     func draw(in context: NSGraphicsContext) {
         NSGraphicsContext.current = context
+
+        // Source cuts clip in the canvas before applying the shape's rotation.
+        context.cgContext.saveGState()
+        defer { context.cgContext.restoreGState() }
+        if let attachment = stitchAttachment { context.cgContext.clip(to: attachment.clipRect) }
 
         // Apply rotation around annotation center
         if rotation != 0 && supportsRotation {
@@ -1933,7 +1952,7 @@ class Annotation {
     private func cropRegionFromSource() -> NSImage? {
         guard let sourceImage = sourceImage else { return nil }
         let rect = boundingRect
-        guard rect.width > 4, rect.height > 4 else { return nil }
+        guard rect.width > 0, rect.height > 0 else { return nil }
 
         let srcBounds = sourceImageBounds
         let regionImage = NSImage(size: rect.size, flipped: false) { _ in
@@ -1962,8 +1981,9 @@ class Annotation {
 
         // Solid mode: no source image needed — just a filled rect
         if mode == .solid {
+            let fillColor = color
             let img = NSImage(size: rect.size, flipped: false) { drawRect in
-                self.color.setFill()
+                fillColor.setFill()
                 NSBezierPath(rect: drawRect).fill()
                 return true
             }
@@ -2023,13 +2043,23 @@ class Annotation {
     /// Unified censor drawing — dispatches based on censorMode.
     private func drawCensor(in context: NSGraphicsContext) {
         let rect = boundingRect
-        guard rect.width > 4, rect.height > 4 else { return }
+        guard rect.width > 0, rect.height > 0 else { return }
 
         // Baked (finalized) — draw the result
         if let baked = bakedBlurNSImage {
             baked.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
             return
         }
+
+        if stitchAttachment != nil {
+            // A committed source fragment stays opaque while an edit rebakes,
+            // including thin fragments and failed image allocations.
+            NSColor.black.setFill()
+            NSBezierPath(rect: rect).fill()
+            return
+        }
+
+        guard rect.width > 4, rect.height > 4 else { return }
 
         // Live preview while drawing
         switch censorMode {
@@ -2136,7 +2166,7 @@ class Annotation {
     private func bakeErase() -> NSImage? {
         guard let src = sourceImage, let srcBounds = sourceImageBounds as NSRect? else { return nil }
         let rect = boundingRect
-        guard rect.width > 2, rect.height > 2 else { return nil }
+        guard rect.width > 0, rect.height > 0 else { return nil }
 
         // Render the source region with some padding into a bitmap for pixel sampling
         let samplePad: CGFloat = 4  // pixels outside the rect to sample

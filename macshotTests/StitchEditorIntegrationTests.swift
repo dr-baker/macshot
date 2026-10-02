@@ -34,8 +34,7 @@ final class StitchEditorIntegrationTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
             styleMask: [.titled], backing: .buffered, defer: false)
         let pane = StitchEditorController(document: doc, window: window)
-        pane.onCheckpoint = { editor.checkpointStitchDocument() }
-        pane.onDocumentChanged = { editor.applyStitchDocument($0, registerUndo: false) }
+        pane.onDocumentChanged = { value, registerUndo in editor.applyStitchDocument(value, registerUndo: registerUndo) }
         pane.onUndo = { editor.undo() }
         pane.onRedo = { editor.redo() }
         pane.canUndo = { !editor.undoStack.isEmpty }
@@ -78,7 +77,7 @@ final class StitchEditorIntegrationTests: XCTestCase {
             styleMask: [.titled], backing: .buffered, defer: false)
         let pane = StitchEditorController(document: StitchDocument(pieces: [StitchPiece(image: pixels)]), window: window)
         var latest: StitchDocument?
-        pane.onDocumentChanged = { latest = $0; return true }
+        pane.onDocumentChanged = { value, _ in latest = value; return true }
         var actions: [ToolbarButtonAction] = []
         pane.onAction = { action, _ in actions.append(action) }
         let editor = StitchShortcutSpyEditor(frame: NSRect(origin: .zero, size: image.size))
@@ -127,8 +126,7 @@ final class StitchEditorIntegrationTests: XCTestCase {
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = editor
         let controller = StitchEditorController(document: document, window: window)
-        controller.onCheckpoint = { editor.checkpointStitchDocument() }
-        controller.onDocumentChanged = { editor.applyStitchDocument($0, registerUndo: false) }
+        controller.onDocumentChanged = { value, registerUndo in editor.applyStitchDocument(value, registerUndo: registerUndo) }
         controller.onUndo = { editor.undo() }
         controller.canUndo = { !editor.undoStack.isEmpty }
         var publications = 0

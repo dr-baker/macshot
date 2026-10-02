@@ -310,12 +310,11 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         guard let doc = view.stitchDocument else { return }
         if stitchController == nil {
             let editor = StitchEditorController(document: doc, window: window)
-            editor.onCheckpoint = { [weak view] in view?.checkpointStitchDocument() }
-            editor.onDocumentChanged = { [weak self, weak view] doc in
+            editor.onDocumentChanged = { [weak self, weak view] doc, registerUndo in
                 guard let self, let view else { return false }
                 self.applyingStitchChange = true
                 defer { self.applyingStitchChange = false }
-                let applied = view.applyStitchDocument(doc, registerUndo: false)
+                let applied = view.applyStitchDocument(doc, registerUndo: registerUndo)
                 if applied {
                     let bounds = doc.bounds
                     self.topBar?.updateSizeLabel(width: Int(bounds.width), height: Int(bounds.height))

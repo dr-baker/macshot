@@ -18,6 +18,8 @@ Use the arrangement menu in the Stitch options row to choose **Free Move** or **
 
 Open **Canvas** in the Stitch options row to change the fill for missing image areas. **Adjacent edge colors** is the default and samples broad adjacent neighborhoods and smoothly blends their dominant background colors into gaps. Text, icons, and borders are filtered out of the fill. **Solid color** uses your chosen color. **Transparent** leaves missing areas transparent in exports and shows a checkerboard in the editor. Captured pixels remain intact.
 
+Redactions follow the original captured pixels. Removing a band splits a crossing redaction into editable fragments and removes only the covered pixels inside that band. Moving, packing, and changing the stacking order of pieces retain each surviving fragment. Pixelate, blur, erase, and solid censors keep their baked pixels while their source moves; later annotation edits sample the current canvas. Undo and history preserve each fragment's source attachment, clipping, and censor pixels.
+
 ## Capture a page in pieces
 
 1. Press **Command–Shift–J**, or choose **Stitch Capture** from the menu bar or File menu.

@@ -11,7 +11,8 @@ struct StitchEditorSnapshot {
 }
 
 struct StitchAnnotationLayer {
-    let image: CGImage
+    /// A missing raster requires an opaque piece placeholder during movement.
+    let image: CGImage?
     /// Global top-down document pixels, including marks crossing piece edges.
     let frame: CGRect
 }
@@ -90,6 +91,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         return saved
     }
     var onStitchDocumentChanged: (() -> Void)?
+    private(set) var stitchChangeFailureMessage: String?
     private var installingStitchImage = false
 
     override var screenshotImage: NSImage? {
@@ -106,6 +108,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
     func installStitchDocument(_ document: StitchDocument) {
         guard document.canRender else { return }
         stitchDocument = document
+        updateAnnotationSourceImages(annotations)
         onStitchDocumentChanged?()
     }
 
@@ -116,6 +119,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
 
     @discardableResult
     func applyStitchDocument(_ next: StitchDocument, registerUndo: Bool = true) -> Bool {
+        stitchChangeFailureMessage = nil
         if let current = stitchDocument, current.isIdentical(to: next) { return true }
         guard next.canRender, let rendered = StitchRenderer.render(next) else { return false }
         let previous = stitchDocument
@@ -123,8 +127,18 @@ class EditorView: OverlayView, NSMenuItemValidation {
             image.cgImage(forProposedRect: nil, context: nil, hints: nil).map { CGFloat($0.width) / image.size.width }
         } ?? 1
         guard scale.isFinite, scale > 0 else { return false }
+        let changes: [StitchAnnotationTransforms.Change]
+        if let previous {
+            guard let prepared = StitchAnnotationTransforms.prepare(annotations, from: previous, to: next,
+                scale: scale, sourceImage: screenshotImage, sourceBounds: captureDrawRect) else {
+                stitchChangeFailureMessage = L("Unable to preserve these redactions. Move or resize them and try again.")
+                return false
+            }
+            changes = prepared
+        } else { changes = annotations.map { ($0, $0.clone()) } }
         if registerUndo { checkpointStitchDocument() }
-        if let previous { moveAttachedAnnotations(from: previous, to: next, scale: scale) }
+        for change in changes { change.object.copyProperties(from: change.properties) }
+        annotations = changes.map(\.object)
         installingStitchImage = true
         screenshotImage = NSImage(cgImage: rendered,
             size: NSSize(width: CGFloat(rendered.width) / scale, height: CGFloat(rendered.height) / scale))
@@ -132,6 +146,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         stitchDocument = next
         applySelection(NSRect(origin: .zero, size: screenshotImage!.size))
         frame.size = selectionRect.size
+        updateAnnotationSourceImages(annotations)
         // Reassigning invalidates the annotation layer after moving in place.
         annotations = Array(annotations)
         cachedCompositedImage = nil
@@ -160,35 +175,11 @@ class EditorView: OverlayView, NSMenuItemValidation {
             applySelection(NSRect(origin: .zero, size: image.size))
             frame.size = image.size
         }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
         onStitchDocumentChanged?()
     }
-
-    /// Annotation centers attach to the topmost capture under them. Cuts use
-    /// the original image/source coordinates, so fragments retain attachments.
-    private func moveAttachedAnnotations(from old: StitchDocument, to next: StitchDocument, scale: CGFloat) {
-        let oldBounds = old.bounds, newBounds = next.bounds
-        annotations = annotations.filter { annotation in
-            let rect = annotation.boundingRect
-            let center = CGPoint(x: oldBounds.minX + rect.midX * scale,
-                                 y: oldBounds.maxY - rect.midY * scale)
-            var destination = center
-            if let piece = old.pieces.reversed().first(where: { $0.frame.contains(center) }) {
-                let sourcePoint = CGPoint(x: piece.source.minX + center.x - piece.origin.x,
-                                          y: piece.source.minY + center.y - piece.origin.y)
-                let target = next.pieces.first(where: { $0.id == piece.id && $0.source.contains(sourcePoint) })
-                    ?? next.pieces.reversed().first(where: { $0.lineageID == piece.lineageID && $0.image === piece.image && $0.source.contains(sourcePoint) })
-                guard let target else { return false }
-                destination = CGPoint(x: target.origin.x + sourcePoint.x - target.source.minX,
-                                      y: target.origin.y + sourcePoint.y - target.source.minY)
-            }
-            annotation.move(dx: (destination.x - newBounds.minX) / scale - rect.midX,
-                            dy: (newBounds.maxY - destination.y) / scale - rect.midY)
-            return true
-        }
-    }
-
 
     /// Transparent annotation pixels for Stitch's canvas, using the same source
     /// scale as its composite rather than the display's backing scale.
@@ -199,6 +190,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
     }
 
     private func stitchAnnotationOwner(_ annotation: Annotation, document: StitchDocument, scale: CGFloat) -> UUID? {
+        if let id = annotation.stitchAttachment?.pieceID, document.pieces.contains(where: { $0.id == id }) { return id }
         let r = annotation.boundingRect
         let center = CGPoint(x: document.bounds.minX + r.midX * scale,
             y: document.bounds.maxY - r.midY * scale)
@@ -211,7 +203,21 @@ class EditorView: OverlayView, NSMenuItemValidation {
         guard scale.isFinite, scale > 0 else { return [:] }
         var grouped: [UUID: [Annotation]] = [:]
         for annotation in annotations {
-            if let owner = stitchAnnotationOwner(annotation, document: document, scale: scale) {
+            if annotation.isStitchRedaction {
+                let attached = document.pieces.filter { $0.id == annotation.stitchAttachment?.pieceID }
+                let pieces = attached.isEmpty ? document.pieces : attached
+                for piece in pieces {
+                    let frame = CGRect(x: (piece.frame.minX - document.bounds.minX) / scale,
+                        y: (document.bounds.maxY - piece.frame.maxY) / scale,
+                        width: piece.frame.width / scale, height: piece.frame.height / scale)
+                    let clip = annotation.stitchVisibleBounds.intersection(frame)
+                    guard !clip.isNull, clip.width > 0, clip.height > 0 else { continue }
+                    let fragment = annotation.clone()
+                    fragment.stitchAttachment = StitchAnnotationAttachment(pieceID: piece.id,
+                        lineageID: piece.lineageID, clipRect: clip)
+                    grouped[piece.id, default: []].append(fragment)
+                }
+            } else if let owner = stitchAnnotationOwner(annotation, document: document, scale: scale) {
                 grouped[owner, default: []].append(annotation)
             }
         }
@@ -220,11 +226,12 @@ class EditorView: OverlayView, NSMenuItemValidation {
             guard let owned = grouped[piece.id], !owned.isEmpty else { continue }
             var extent = piece.frame
             for annotation in owned {
-                var r = annotation.boundingRect.insetBy(dx: -max(12, annotation.strokeWidth * 4),
-                    dy: -max(12, annotation.strokeWidth * 4))
+                let padding = annotation.isStitchRedaction ? 0 : max(12, annotation.strokeWidth * 4)
+                var r = (annotation.isStitchRedaction ? annotation.stitchVisibleBounds : annotation.boundingRect)
+                    .insetBy(dx: -padding, dy: -padding)
                 if !annotation.textDrawRect.isEmpty { r = r.union(annotation.textDrawRect) }
                 // Rotation may put corners outside the unrotated bounding box.
-                if annotation.rotation != 0 {
+                if annotation.rotation != 0 && !annotation.isStitchRedaction {
                     let radius = hypot(r.width, r.height) / 2
                     r = CGRect(x: r.midX - radius, y: r.midY - radius, width: radius * 2, height: radius * 2)
                 }
@@ -232,11 +239,20 @@ class EditorView: OverlayView, NSMenuItemValidation {
                     y: document.bounds.maxY - r.maxY * scale, width: r.width * scale, height: r.height * scale))
             }
             extent = extent.integral
+            if !extent.width.isFinite || !extent.height.isFinite
+                || extent.width > StitchDocument.maximumDimension || extent.height > StitchDocument.maximumDimension
+                || extent.width * extent.height > StitchDocument.maximumPixels {
+                // Large ordinary marks must not remove masks from the moving
+                // capture. Its own frame always fits the document's budget.
+                extent = piece.frame.integral
+            }
             let rect = CGRect(x: (extent.minX - document.bounds.minX) / scale,
                 y: (document.bounds.maxY - extent.maxY) / scale,
                 width: extent.width / scale, height: extent.height / scale)
             if let image = renderStitchAnnotations(owned, rect: rect, pixels: extent.size, includeHighlightDim: false) {
                 result[piece.id] = StitchAnnotationLayer(image: image, frame: extent)
+            } else if owned.contains(where: \.isStitchRedaction) {
+                result[piece.id] = StitchAnnotationLayer(image: nil, frame: piece.frame)
             }
         }
         return result
@@ -246,7 +262,19 @@ class EditorView: OverlayView, NSMenuItemValidation {
         guard let document = stitchDocument, let screenshotImage else { return nil }
         let scale = document.bounds.width / screenshotImage.size.width
         guard scale.isFinite, scale > 0 else { return nil }
-        let unattached = annotations.filter { stitchAnnotationOwner($0, document: document, scale: scale) == nil }
+        let unattached = annotations.filter { annotation in
+            if annotation.isStitchRedaction {
+                let rect = annotation.stitchVisibleBounds
+                let covered = CGRect(x: document.bounds.minX + rect.minX * scale,
+                    y: document.bounds.maxY - rect.maxY * scale,
+                    width: rect.width * scale, height: rect.height * scale)
+                return !document.pieces.contains { piece in
+                    let intersection = piece.frame.intersection(covered)
+                    return !intersection.isNull && intersection.width > 0 && intersection.height > 0
+                }
+            }
+            return stitchAnnotationOwner(annotation, document: document, scale: scale) == nil
+        }
         return renderStitchAnnotations(unattached, rect: CGRect(origin: .zero, size: selectionRect.size),
             pixels: document.bounds.size, includeHighlightDim: true,
             highlightAnnotations: annotations.filter { $0.tool == .highlight })

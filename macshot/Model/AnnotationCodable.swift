@@ -57,6 +57,7 @@ struct CodableAnnotation: Codable {
 
     // Censor (pixelate/blur) baked result
     var bakedBlurPNG: Data?
+    var stitchAttachment: StitchAnnotationAttachment?
 
     // Loupe
     var loupeMagnification: CGFloat?
@@ -136,6 +137,8 @@ struct CodableAnnotation: Codable {
         isCaptureStamp = c.decodeOptional(.isCaptureStamp)
 
         bakedBlurPNG = c.decodeOptional(.bakedBlurPNG)
+        stitchAttachment = c.contains(.stitchAttachment)
+            ? try c.decode(StitchAnnotationAttachment.self, forKey: .stitchAttachment) : nil
 
         loupeMagnification = c.decodeOptional(.loupeMagnification)
         loupeSourceRect = c.decodeOptional(.loupeSourceRect)
@@ -216,6 +219,7 @@ extension Annotation {
         // Baked censor result (pixelate/blur/erase) — skip loupe since it
         // needs re-baking from the editor's source image at the correct coordinates.
         if tool != .loupe, let baked = bakedBlurNSImage { c.bakedBlurPNG = Self.encodeImage(baked) }
+        c.stitchAttachment = stitchAttachment
 
         // Loupe
         c.loupeMagnification = loupeMagnification
@@ -318,6 +322,12 @@ extension Annotation {
         if let data = c.bakedBlurPNG {
             guard let image = SavedCaptureValidation.image(data) else { return nil }
             ann.bakedBlurNSImage = image
+        }
+        if let attachment = c.stitchAttachment {
+            guard attachment.isValid else { return nil }
+            ann.stitchAttachment = attachment
+            let visible = ann.stitchVisibleBounds
+            guard !visible.isNull, visible.width > 0, visible.height > 0 else { return nil }
         }
 
         // Loupe

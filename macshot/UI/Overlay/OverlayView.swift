@@ -3668,6 +3668,7 @@ class OverlayView: NSView {
         // Mirror annotation X coordinates around the image center
         let imgW = original.size.width
         for ann in annotations {
+            ann.mirrorStitchPixels(horizontal: true, in: selectionRect)
             ann.startPoint.x = selectionRect.minX + (selectionRect.maxX - ann.startPoint.x)
             ann.endPoint.x = selectionRect.minX + (selectionRect.maxX - ann.endPoint.x)
             if let cp = ann.controlPoint {
@@ -3692,6 +3693,7 @@ class OverlayView: NSView {
         }
 
         if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
     }
@@ -3729,6 +3731,7 @@ class OverlayView: NSView {
 
         // Mirror annotation Y coordinates around the image center
         for ann in annotations {
+            ann.mirrorStitchPixels(horizontal: false, in: selectionRect)
             ann.startPoint.y = selectionRect.minY + (selectionRect.maxY - ann.startPoint.y)
             ann.endPoint.y = selectionRect.minY + (selectionRect.maxY - ann.endPoint.y)
             if let cp = ann.controlPoint {
@@ -3752,6 +3755,7 @@ class OverlayView: NSView {
         }
 
         if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
     }
@@ -3876,12 +3880,13 @@ class OverlayView: NSView {
         // Shift all annotations so they align with the new origin
         if shiftDx != 0 || shiftDy != 0 {
             for ann in annotations {
-                ann.move(dx: shiftDx, dy: shiftDy)
+                ann.moveWithSource(dx: shiftDx, dy: shiftDy)
             }
         }
 
         selectionRect = NSRect(origin: .zero, size: NSSize(width: newPtW, height: newPtH))
         frame.size = NSSize(width: newPtW, height: newPtH)
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
     }
 
@@ -4506,9 +4511,9 @@ class OverlayView: NSView {
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
-        let dx = selectionRect.minX - canvasRect.minX
-        let dy = selectionRect.minY - canvasRect.minY
-        for ann in annotations { ann.move(dx: dx, dy: dy) }
+        let dx = -cgPixelRect.minX / pixScale
+        let dy = -(selectionRect.height - cgPixelRect.maxY / pixScale)
+        for ann in annotations { ann.moveWithSource(dx: dx, dy: dy) }
 
         // Set NSImage size in points (not pixels) to preserve Retina scale
         let croppedPointSize = NSSize(
@@ -4520,6 +4525,7 @@ class OverlayView: NSView {
         selectionRect = NSRect(origin: .zero, size: croppedPointSize)
 
         if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
 
         // Resize view frame to match new image size (scroll view re-centers automatically)
@@ -6057,6 +6063,7 @@ class OverlayView: NSView {
                     newRotation = (newRotation / step).rounded() * step
                 }
                 annotation.rotation = newRotation
+                annotation.updateStitchClipForGeometryEdit()
                 needsDisplay = true
                 return
             }
@@ -6080,7 +6087,7 @@ class OverlayView: NSView {
                         annotation.bakedBlurNSImage = nil
                         annotation.bakeLoupe()
                     }
-                    if annotation.tool == .pixelate { annotation.bakedBlurNSImage = nil }
+                    if annotation.tool == .pixelate || annotation.tool == .blur { annotation.bakedBlurNSImage = nil }
                     cachedCompositedImage = nil
                     needsDisplay = true
                     return
@@ -6441,6 +6448,7 @@ class OverlayView: NSView {
 
                     annotation.startPoint = NSPoint(x: newMinX, y: newMinY)
                     annotation.endPoint = NSPoint(x: newMaxX, y: newMaxY)
+                    annotation.updateStitchClipForGeometryEdit()
                     if annotation.tool == .loupe {
                         // Two-circle loupe: resizing the lens keeps the zoom
                         // (magnification) fixed and re-frames the source so it
@@ -6450,7 +6458,7 @@ class OverlayView: NSView {
                         annotation.bakeLoupe()
                     }
                 }
-                if annotation.tool == .pixelate { annotation.bakedBlurNSImage = nil }
+                if annotation.tool == .pixelate || annotation.tool == .blur { annotation.bakedBlurNSImage = nil }
                 cachedCompositedImage = nil
                 needsDisplay = true
             } else if isLassoSelecting {
@@ -6651,13 +6659,13 @@ class OverlayView: NSView {
         }
         if isResizingAnnotation {
             isResizingAnnotation = false
-            commitAnnotationManipulationUndo()
+            let changed = commitAnnotationManipulationUndo()
             cachedAnnotationLayerExcludingSelected = nil
             cachedAnnotationLayer = nil
             annotationResizeHandle = .none
             if let ann = selectedAnnotation {
-                if ann.tool == .loupe { ann.bakeLoupe() }
-                if ann.tool == .pixelate { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
+                if changed && ann.tool == .loupe { ann.bakeLoupe() }
+                if changed && (ann.tool == .pixelate || ann.tool == .blur) { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
                 if ann.tool == .stamp && !ann.isCaptureStamp {
                     // Remember the size so the next stamp is placed to match.
                     setActiveStampSize(max(ann.boundingRect.width, ann.boundingRect.height))
@@ -6698,7 +6706,7 @@ class OverlayView: NSView {
                 }
                 // Record the move as an undo entry (and an edit) if anything
                 // actually moved. Each dragged annotation gets its own entry.
-                commitAnnotationManipulationUndo()
+                let changed = commitAnnotationManipulationUndo()
                 isDraggingAnnotation = false
                 didMoveAnnotation = false
                 cachedAnnotationLayerExcludingSelected = nil
@@ -6707,8 +6715,8 @@ class OverlayView: NSView {
                 snapGuideY = nil
                 NSCursor.openHand.set()
                 for ann in selectedAnnotations {
-                    if ann.tool == .loupe { ann.bakeLoupe() }
-                    if ann.tool == .pixelate { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
+                    if changed && ann.tool == .loupe { ann.bakeLoupe() }
+                    if changed && (ann.tool == .pixelate || ann.tool == .blur) { ann.bakedBlurNSImage = nil; ann.bakePixelate() }
                 }
                 // Auto-expand canvas if annotation was dragged outside bounds (editor mode)
                 expandCanvasToFitAnnotations()
@@ -9638,6 +9646,7 @@ class OverlayView: NSView {
             newAnnotations.append(copy)
         }
         redoStack.removeAll()
+        updateAnnotationSourceImages(newAnnotations)
         selectedAnnotations = newAnnotations
         cachedCompositedImage = nil
         needsDisplay = true
@@ -9662,6 +9671,7 @@ class OverlayView: NSView {
             newAnnotations.append(copy)
         }
         redoStack.removeAll()
+        updateAnnotationSourceImages(newAnnotations)
         selectedAnnotations = newAnnotations
         cachedCompositedImage = nil
         needsDisplay = true
@@ -9683,10 +9693,18 @@ class OverlayView: NSView {
     /// for annotations whose geometry actually changed vs the pre-manipulation
     /// snapshot. Recording these makes such edits undoable AND makes them count as
     /// a change (so the editor shows "Done" and prompts on close).
-    private func commitAnnotationManipulationUndo() {
-        guard !preMoveSnapshots.isEmpty else { return }
+    @discardableResult
+    private func commitAnnotationManipulationUndo() -> Bool {
+        guard !preMoveSnapshots.isEmpty else { return false }
         var pushed = false
-        for (ann, snapshot) in preMoveSnapshots where Self.annotationGeometryChanged(ann, snapshot) {
+        for (ann, snapshot) in preMoveSnapshots {
+            if !Self.annotationGeometryChanged(ann, snapshot, includingStitchAttachment: false) {
+                // Returning a gesture to its original geometry also restores
+                // the source clip and its exact censor pixels.
+                ann.stitchAttachment = snapshot.stitchAttachment
+                ann.bakedBlurNSImage = snapshot.bakedBlurNSImage
+            }
+            guard Self.annotationGeometryChanged(ann, snapshot) else { continue }
             undoStack.append(.propertyChange(annotation: ann, snapshot: snapshot))
             pushed = true
         }
@@ -9695,11 +9713,13 @@ class OverlayView: NSView {
             redoStack.removeAll()
             cachedCompositedImage = nil
         }
+        return pushed
     }
 
     /// Whether two annotations differ in position/size/rotation (the things a
     /// drag/resize/rotate changes).
-    private static func annotationGeometryChanged(_ a: Annotation, _ b: Annotation) -> Bool {
+    private static func annotationGeometryChanged(_ a: Annotation, _ b: Annotation,
+        includingStitchAttachment: Bool = true) -> Bool {
         if a.startPoint != b.startPoint || a.endPoint != b.endPoint { return true }
         if abs(a.rotation - b.rotation) > 0.0001 { return true }
         if a.controlPoint != b.controlPoint { return true }
@@ -9708,6 +9728,7 @@ class OverlayView: NSView {
         if a.textDrawRect != b.textDrawRect { return true }
         if a.loupeSourceRect != b.loupeSourceRect { return true }
         if abs(a.loupeMagnification - b.loupeMagnification) > 0.0001 { return true }
+        if includingStitchAttachment && a.stitchAttachment != b.stitchAttachment { return true }
         return false
     }
 
@@ -9775,6 +9796,7 @@ class OverlayView: NSView {
                 selectionRect = NSRect(origin: .zero, size: previousImage.size)
                 if isInsideScrollView { frame.size = previousImage.size }
             }
+            updateAnnotationSourceImages(annotations)
             cachedCompositedImage = nil
             resetZoom()
         }
@@ -9862,6 +9884,7 @@ class OverlayView: NSView {
                 selectionRect = NSRect(origin: .zero, size: redoImage.size)
                 if isInsideScrollView { frame.size = redoImage.size }
             }
+            updateAnnotationSourceImages(annotations)
             cachedCompositedImage = nil
             if !isInsideScrollView { resetZoom() }
         }
@@ -10134,24 +10157,29 @@ class OverlayView: NSView {
     /// Restore editor state.
     /// Translates annotation coordinates by `offset` (the selection origin in the original view).
     func setAnnotations(_ anns: [Annotation]) {
-        // Set sourceImage on loupe annotations so they can re-bake from the editor's image.
-        // Also set it on pixelate/blur without a baked result (shouldn't happen, but defensive).
-        if let img = screenshotImage {
-            let bounds = captureDrawRect
-            for ann in anns {
-                if ann.tool == .loupe || ((ann.tool == .pixelate || ann.tool == .blur) && ann.bakedBlurNSImage == nil) {
-                    ann.sourceImage = img
-                    ann.sourceImageBounds = bounds
-                    if ann.tool == .loupe { ann.bakeLoupe() }
-                    if ann.tool == .pixelate { ann.bakePixelate() }
-                }
-            }
-        }
+        updateAnnotationSourceImages(anns)
         annotations = anns
         undoStack = anns.map { .added($0) }
         redoStack = []
         cachedCompositedImage = nil
         needsDisplay = true
+    }
+
+    /// Keep persisted bakes intact; later edits sample the current raw canvas.
+    func updateAnnotationSourceImages(_ anns: [Annotation]) {
+        if let img = screenshotImage {
+            let bounds = captureDrawRect
+            for ann in anns {
+                if ann.tool == .loupe || ann.tool == .pixelate || ann.tool == .blur {
+                    ann.sourceImage = img
+                    ann.sourceImageBounds = bounds
+                    if ann.bakedBlurNSImage == nil {
+                        if ann.tool == .loupe { ann.bakeLoupe() }
+                        else { ann.bakePixelate() }
+                    }
+                }
+            }
+        }
     }
 
     func applySelection(_ rect: NSRect) {
