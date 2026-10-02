@@ -86,7 +86,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     private(set) var alignmentGuides: [AlignmentGuide] = []
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    private var contentBounds: CGRect { dragBounds ?? document.bounds }
+    private var contentBounds: CGRect { (dragBounds ?? document.bounds).integral }
     private var imageRect: CGRect { CGRect(x: inset, y: inset, width: contentBounds.width, height: contentBounds.height) }
 
     override init(frame: NSRect) {

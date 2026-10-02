@@ -49,7 +49,12 @@ enum StitchBackground {
 
 enum StitchPlacement { case free, packed }
 
+enum StitchTransition: String, CaseIterable, Codable {
+    case wave, blend, torn, fold, breakLine
+}
+
 struct StitchStyle {
+    var transition: StitchTransition = .wave
     var color = NSColor(calibratedRed: 0.23, green: 0.28, blue: 0.34, alpha: 0.9)
     var lineWidth: CGFloat = 1.25
     var wave: CGFloat = 3

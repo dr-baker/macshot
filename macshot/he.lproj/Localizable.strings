@@ -993,3 +993,15 @@
 
 /* Stitch capture starting guides. English fallback pending translation. */
 "Start near a guide · Option to ignore snapping" = "Start near a guide · Option to ignore snapping";
+
+/* Stitch seam treatments */
+"Wave" = "Wave";
+"Blend" = "Blend";
+"Torn" = "Torn";
+"Fold" = "Fold";
+"Break" = "Break";
+"Seam transition" = "Seam transition";
+"Roughness" = "Roughness";
+"Fold depth" = "Fold depth";
+"Break size" = "Break size";
+"Blend has no line" = "Blend has no line";

@@ -428,6 +428,249 @@ final class NativeStitchToolTests: XCTestCase {
         }
     }
 
+    func testSeamTransitionButtonsCommitOnceAndUndoPreservesKnobsAndPieceSelection() throws {
+        let (view, controller, canvas, window) = try stitchFixture()
+        defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
+        var initial = try XCTUnwrap(view.stitchDocument)
+        initial.style.color = NSColor.blue.withAlphaComponent(0.4)
+        initial.style.blur = 7
+        initial.style.feather = 38
+        initial.style.lineWidth = 2.5
+        initial.style.wave = 6
+        XCTAssertTrue(view.applyStitchDocument(initial, registerUndo: false))
+        let selected = initial.pieces[0].id
+        canvas.selectedID = selected
+        let options = controller.makeSeamOptions()
+        let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+        let buttons = picker.subviews.compactMap { $0 as? NSButton }
+        var registeredChanges = 0
+        controller.onDocumentChanged = { value, registerUndo in
+            if registerUndo { registeredChanges += 1 }
+            return view.applyStitchDocument(value, registerUndo: registerUndo)
+        }
+        let choices: [StitchTransition] = [.blend, .torn, .fold, .breakLine, .wave]
+        for (index, transition) in choices.enumerated() {
+            let previous = try XCTUnwrap(view.stitchDocument).style.transition
+            let button = try XCTUnwrap(buttons.first {
+                $0.identifier?.rawValue == "stitch.transition.\(transition.rawValue)"
+            })
+            button.performClick(nil)
+            let style = try XCTUnwrap(view.stitchDocument).style
+            XCTAssertEqual(style.transition, transition)
+            XCTAssertEqual(style.color, initial.style.color)
+            XCTAssertEqual(style.blur, initial.style.blur)
+            XCTAssertEqual(style.feather, initial.style.feather)
+            XCTAssertEqual(style.lineWidth, initial.style.lineWidth)
+            XCTAssertEqual(style.wave, initial.style.wave)
+            XCTAssertEqual(registeredChanges, index + 1)
+            XCTAssertEqual(view.undoStack.count, index + 1)
+            XCTAssertEqual(picker.selection, transition)
+            XCTAssertEqual(button.state, .on)
+            XCTAssertEqual(buttons.filter { $0.state == .on }.count, 1)
+            XCTAssertEqual(canvas.selectedID, selected)
+            XCTAssertTrue(controller.makeSeamOptions() === options)
+            view.undo()
+            XCTAssertEqual(view.stitchDocument?.style.transition, previous)
+            XCTAssertEqual(picker.selection, previous)
+            XCTAssertEqual(canvas.selectedID, selected)
+            view.redo()
+            XCTAssertEqual(view.stitchDocument?.style.transition, transition)
+            XCTAssertEqual(picker.selection, transition)
+            XCTAssertEqual(canvas.selectedID, selected)
+            button.performClick(nil)
+            XCTAssertEqual(registeredChanges, index + 1, "Clicking the selected treatment must keep its selection and history")
+            XCTAssertEqual(view.undoStack.count, index + 1)
+            XCTAssertEqual(button.state, .on)
+        }
+    }
+
+    func testSeamTransitionInspectorEnablesOnlyApplicableControlsAndNamesTheShape() throws {
+        let (view, controller, _, window) = try stitchFixture()
+        defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
+        let options = controller.makeSeamOptions()
+        let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+        let color = try XCTUnwrap(options.subviews.compactMap { $0 as? NSColorWell }.first)
+        let colorLabel = try XCTUnwrap(options.subviews.first {
+            $0.identifier?.rawValue == "stitch.seam.color.label"
+        } as? NSTextField)
+        let sliders = options.subviews.compactMap { $0 as? NSSlider }.sorted { $0.tag < $1.tag }
+        XCTAssertEqual(sliders.count, 4)
+        let shapes: [(StitchTransition, String)] = [(.wave, "Wave height"), (.blend, "Wave height"),
+            (.torn, "Roughness"), (.fold, "Fold depth"), (.breakLine, "Break size")]
+        for (transition, shape) in shapes {
+            let button = try XCTUnwrap(picker.subviews.compactMap { $0 as? NSButton }.first {
+                $0.identifier?.rawValue == "stitch.transition.\(transition.rawValue)"
+            })
+            button.performClick(nil)
+            let usesLine = transition != .blend
+            XCTAssertEqual(color.isEnabled, usesLine)
+            XCTAssertEqual(color.alphaValue, usesLine ? 1 : 0.35)
+            XCTAssertEqual(colorLabel.alphaValue, usesLine ? 1 : 0.35)
+            XCTAssertEqual(sliders.map(\.isEnabled), [true, true, usesLine, usesLine])
+            XCTAssertEqual(sliders[3].accessibilityLabel(), L(shape))
+            let shapeLabel = try XCTUnwrap(options.subviews.compactMap { $0 as? NSTextField }.first {
+                $0.stringValue == L(shape)
+            })
+            XCTAssertEqual(shapeLabel.alphaValue, usesLine ? 1 : 0.35)
+            XCTAssertEqual(picker.selection, transition)
+        }
+    }
+
+    func testSeamTransitionPickerHasDistinctRasterPreviewsAndReadableNativeLabelsInBothSystemAppearances() throws {
+        try withDefaults(["toolbarBgColor": nil, "toolbarIconColor": nil, "toolbarAccentColor": nil]) {
+            let (view, controller, _, window) = try stitchFixture()
+            defer { controller.suspend(); window.orderOut(nil) }
+            let options = controller.makeSeamOptions()
+            let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+            let buttons = picker.subviews.compactMap { $0 as? NSButton }
+            XCTAssertEqual(buttons.map(\.title), ["Wave", "Blend", "Torn", "Fold", "Break"].map { L($0) })
+            XCTAssertGreaterThanOrEqual(options.bounds.width, 350)
+            XCTAssertLessThanOrEqual(options.bounds.width, 380)
+            picker.layoutSubtreeIfNeeded()
+            var previews = Set<Data>()
+            for button in buttons {
+                XCTAssertNotNil(button.target)
+                XCTAssertNotNil(button.action)
+                XCTAssertEqual(button.accessibilityLabel(), button.title)
+                XCTAssertEqual(button.focusRingType, .exterior)
+                let image = try XCTUnwrap(button.image)
+                XCTAssertFalse(image.isTemplate)
+                let pixels = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+                previews.insert(try XCTUnwrap(pixels.dataProvider?.data) as Data)
+                let titleWidth = (button.title as NSString).size(withAttributes: [
+                    .font: try XCTUnwrap(button.font)
+                ]).width
+                XCTAssertLessThan(titleWidth, button.bounds.width - 8)
+                XCTAssertTrue(picker.bounds.contains(button.frame))
+            }
+            XCTAssertEqual(previews.count, 5, "Each treatment needs a preview that shows its rendered result")
+            for systemAppearance in [NSAppearance.Name.aqua, .darkAqua] {
+                window.appearance = NSAppearance(named: systemAppearance)
+                XCTAssertEqual(options.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]), .darkAqua)
+                for button in buttons {
+                    XCTAssertEqual(button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]), .darkAqua)
+                    XCTAssertEqual(button.contentTintColor, ToolbarLayout.iconColor)
+                }
+            }
+            try exportSeamInspectorPreviewsIfRequested(view: view, options: options)
+        }
+    }
+
+    private func exportSeamInspectorPreviewsIfRequested(view: EditorView, options: NSView) throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["MACSHOT_SEAM_INSPECTOR_PREVIEW_DIR"]
+            ?? environment["TEST_RUNNER_MACSHOT_SEAM_INSPECTOR_PREVIEW_DIR"], !path.isEmpty else { return }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let window = NSWindow(contentRect: options.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = options
+        defer { window.orderOut(nil) }
+        for transition in [StitchTransition.wave, .blend] {
+            var document = try XCTUnwrap(view.stitchDocument)
+            document.style.transition = transition
+            XCTAssertTrue(view.applyStitchDocument(document, registerUndo: false))
+            for (appearance, suffix) in [(NSAppearance.Name.aqua, "aqua"), (.darkAqua, "dark-aqua")] {
+                window.appearance = NSAppearance(named: appearance)
+                options.layoutSubtreeIfNeeded()
+                options.displayIfNeeded()
+                let bitmap = try XCTUnwrap(options.bitmapImageRepForCachingDisplay(in: options.bounds))
+                options.cacheDisplay(in: options.bounds, to: bitmap)
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: directory.appendingPathComponent("inspector-\(transition.rawValue)-\(suffix).png"))
+            }
+        }
+    }
+
+    func testBlendColorButtonOpensSeamsKeepsItsSwatchDimAndOnlyAffectsStitch() throws {
+        try withDefaults(["lastUsedColor": nil, "lastUsedColorOpacity": 0.42, "customColors": nil,
+            "rememberLastTool": false]) {
+            let view = StitchColorRoutingEditorView(frame: NSRect(x: 0, y: 0, width: 100, height: 80))
+            view.screenshotImage = ImageProbe.quadrantImage(width: 100, height: 80)
+            view.applySelection(view.bounds)
+            let pixels = try XCTUnwrap(view.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            var document = StitchDocument(pieces: [StitchPiece(image: pixels)])
+            document.style.transition = .blend
+            document.style.color = NSColor.blue.withAlphaComponent(0.6)
+            view.installStitchDocument(document)
+            view.currentColor = .orange
+            view.currentTool = .stitch
+            let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.contentView = view
+            defer { view.onStitchOptions = nil; window.orderOut(nil) }
+            view.rebuildToolbarLayout()
+            var seamRequests = 0
+            view.onStitchOptions = { action, anchor in
+                if case .seams = action { seamRequests += 1 }
+                else { XCTFail("Blend color must offer seam treatments") }
+                XCTAssertEqual(anchor.identifier?.rawValue, "stitch.seams")
+            }
+            let colorButton = try XCTUnwrap(view.bottomButtons.first { $0.action == .color })
+            XCTAssertEqual(colorButton.tooltip, L("Blend has no line"))
+            XCTAssertLessThan(try XCTUnwrap(colorButton.bgColor).alphaComponent, document.style.color.alphaComponent)
+            view.handleToolbarAction(.color)
+            XCTAssertEqual(seamRequests, 1)
+            XCTAssertTrue(view.requestedColorTargets.isEmpty)
+            view.previewStitchSeamColor(NSColor.purple.withAlphaComponent(0.5))
+            view.updateToolbarColorSwatch()
+            let updatedColor = try XCTUnwrap(view.bottomButtons.first { $0.action == .color }?.bgColor)
+            XCTAssertLessThan(updatedColor.alphaComponent, view.toolbarColor.alphaComponent)
+            let strip = try XCTUnwrap(view.subviews.compactMap { $0 as? ToolbarStripView }.first {
+                $0.buttonViews.contains { $0.action == .color }
+            })
+            XCTAssertEqual(strip.buttonViews.first { $0.action == .color }?.swatchColor, updatedColor)
+            view.previewStitchSeamColor(nil)
+
+            document.style.visible = false
+            view.installStitchDocument(document)
+            view.rebuildToolbarLayout()
+            let hiddenColorButton = try XCTUnwrap(view.bottomButtons.first { $0.action == .color })
+            XCTAssertEqual(hiddenColorButton.tooltip, L("Show seams to edit color"))
+            XCTAssertEqual(hiddenColorButton.bgColor, document.style.color)
+            view.handleToolbarAction(.color)
+            XCTAssertEqual(seamRequests, 2)
+            XCTAssertTrue(view.requestedColorTargets.isEmpty)
+
+            document.style.visible = true
+            document.style.transition = .wave
+            view.installStitchDocument(document)
+            view.rebuildToolbarLayout()
+            let waveColorButton = try XCTUnwrap(view.bottomButtons.first { $0.action == .color })
+            XCTAssertEqual(waveColorButton.tooltip, L("Seam color"))
+            XCTAssertEqual(waveColorButton.bgColor, document.style.color)
+            view.handleToolbarAction(.color)
+            XCTAssertEqual(seamRequests, 2)
+            XCTAssertEqual(view.requestedColorTargets.last, .stitchSeam)
+
+            document.style.transition = .blend
+            view.installStitchDocument(document)
+            view.currentTool = .arrow
+            view.rebuildToolbarLayout()
+            let drawingColorButton = try XCTUnwrap(view.bottomButtons.first { $0.action == .color })
+            XCTAssertEqual(drawingColorButton.tooltip, L("Color"))
+            XCTAssertEqual(drawingColorButton.bgColor, view.currentColor)
+            view.updateToolbarColorSwatch()
+            XCTAssertEqual(view.bottomButtons.first { $0.action == .color }?.bgColor, view.currentColor)
+            view.handleToolbarAction(.color)
+            XCTAssertEqual(seamRequests, 2)
+            XCTAssertEqual(view.requestedColorTargets.last, .drawColor)
+        }
+    }
+
+    func testRejectedSeamTransitionRestoresPickerSelectionWithoutAddingHistory() throws {
+        let (view, controller, _, window) = try stitchFixture()
+        defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
+        let picker = try XCTUnwrap(controller.makeSeamOptions().subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+        controller.onDocumentChanged = { _, _ in false }
+        let torn = try XCTUnwrap(picker.subviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "stitch.transition.torn"
+        })
+        torn.performClick(nil)
+        XCTAssertEqual(picker.selection, .wave)
+        XCTAssertEqual(view.stitchDocument?.style.transition, .wave)
+        XCTAssertEqual(torn.state, .off)
+        XCTAssertTrue(view.undoStack.isEmpty)
+    }
+
     func testHiddenSeamsDisableInspectorControlsAndNativeColorOffersVisibilityChoice() throws {
         let (view, controller, canvas, window) = try stitchFixture()
         defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
@@ -435,12 +678,23 @@ final class NativeStitchToolTests: XCTestCase {
         let options = controller.makeSeamOptions()
         let toggle = try XCTUnwrap(options.subviews.compactMap { $0 as? NSButton }.first)
         let color = try XCTUnwrap(options.subviews.compactMap { $0 as? NSColorWell }.first)
+        let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+        let choices = picker.subviews.compactMap { $0 as? NSButton }
         let sliders = options.subviews.compactMap { $0 as? NSSlider }
         XCTAssertEqual(sliders.count, 4)
+        try XCTUnwrap(choices.first { $0.identifier?.rawValue == "stitch.transition.fold" }).performClick(nil)
         toggle.state = .off
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(toggle.action), to: toggle.target, from: toggle))
         XCTAssertFalse(try XCTUnwrap(view.stitchDocument).style.visible)
         XCTAssertFalse(color.isEnabled)
+        XCTAssertFalse(picker.isEnabled)
+        XCTAssertLessThan(picker.alphaValue, 1)
+        XCTAssertTrue(choices.allSatisfy { !$0.isEnabled })
+        let hiddenHistoryCount = view.undoStack.count
+        try XCTUnwrap(choices.first { $0.identifier?.rawValue == "stitch.transition.blend" }).performClick(nil)
+        XCTAssertEqual(view.stitchDocument?.style.transition, .fold)
+        XCTAssertEqual(picker.selection, .fold)
+        XCTAssertEqual(view.undoStack.count, hiddenHistoryCount)
         XCTAssertTrue(sliders.allSatisfy { !$0.isEnabled && $0.alphaValue < 1 })
         XCTAssertTrue(options.subviews.compactMap { $0 as? NSTextField }.allSatisfy { $0.alphaValue < 1 })
         XCTAssertTrue(toggle.isEnabled)
@@ -455,6 +709,9 @@ final class NativeStitchToolTests: XCTestCase {
         view.undo()
         XCTAssertTrue(try XCTUnwrap(view.stitchDocument).style.visible)
         XCTAssertTrue(color.isEnabled)
+        XCTAssertTrue(picker.isEnabled)
+        XCTAssertTrue(choices.allSatisfy(\.isEnabled))
+        XCTAssertEqual(picker.selection, .fold)
         XCTAssertTrue(sliders.allSatisfy { $0.isEnabled && $0.alphaValue == 1 })
         XCTAssertEqual(view.bottomButtons.first { $0.action == .color }?.tooltip, L("Seam color"))
         XCTAssertEqual(canvas.selectedID, view.stitchDocument?.pieces.first?.id)
@@ -519,6 +776,14 @@ final class NativeStitchToolTests: XCTestCase {
         ToolShortcutManager.setKey("v", for: .stitch)
         XCTAssertEqual(ToolShortcutManager.lookupAction(for: "v"), .tool(.stitch))
         XCTAssertEqual(ToolShortcutManager.tooltipShortcut(for: .tool(.stitch)), "v")
+    }
+}
+
+@MainActor
+private final class StitchColorRoutingEditorView: EditorView {
+    var requestedColorTargets: [ColorPickerTarget] = []
+    override func showColorPickerPopover(target: ColorPickerTarget, anchorView: NSView? = nil, anchorRect: NSRect = .zero) {
+        requestedColorTargets.append(target)
     }
 }
 

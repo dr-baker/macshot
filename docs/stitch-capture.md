@@ -9,7 +9,15 @@ Faint guides mark capture edges, existing joins, and large clear gaps. Both ends
 - **Remove Space:** drag vertically to reconnect the content above and below, or horizontally to reconnect its left and right edges. The band direction stays fixed once the drag resolves. A click or an unresolved diagonal gesture removes nothing.
 - **Move:** drag individual pieces. Nearby edges snap together in Free Move; hold Option for free placement. In Free Move, arrow keys move a selected piece by one pixel, or ten with Shift. Packed pieces can be dragged or reordered through the Pieces controls.
 
-Touching edges get a soft, wavy seam. Open **Seams** in the Stitch options row to adjust color, line width, wave height, blur, and fade width. The native **Color** swatch also edits the seam color while Stitch is selected. The blur is strongest at the center line and fades to untouched pixels across the selected width. Toggle **Show stitch seams** to hide the effect; turn it on again to edit the seam's appearance. These controls apply to all joins in the current stitch. Undo and redo cover cuts, movement, and seam changes.
+Touching edges get a soft, wavy seam by default. Open **Seams** in the Stitch options row to choose a treatment from its visual previews:
+
+- **Wave:** a fine, wavy line in a fading blur.
+- **Blend:** a soft blur without a line.
+- **Torn:** an irregular edge with a small paper highlight and shadow.
+- **Fold:** a straight crease with fading light and shade.
+- **Break:** a fine line interrupted by two cut marks.
+
+Adjust blur, fade width, line color, and line width in the same panel. The shape control changes wave height, torn-edge roughness, fold depth, or break size. Blend dims the unused line controls. The native **Color** swatch edits line color, or opens **Seams** when the current treatment has no line. The blur is strongest at the join and fades to untouched pixels across the selected width. Toggle **Show stitch seams** to hide the effect. These settings apply to all joins in the current stitch. Undo and redo cover cuts, movement, and treatment changes. Crop, flip, previews, copied images, and saved files use the same treatment renderer; magnifiers refresh to show the current seam while censor bakes stay intact.
 
 Use **Add Capture** to capture another region into the current Stitch document. While drawing a region, dashed guides suggest matching widths and heights from nearby pieces and continuous rows or columns. A guide turns purple when the selection snaps to that size. Nearby alternatives appear as you approach them; hold **Option** for an arbitrary size. In Stitch Capture, faint guides are visible before you start the next selection. They show the previous capture's screen edges and nearby layout references, so you can line up the starting corner as well as the final size. You can also paste or drag image files onto the canvas. Open **Pieces** in the Stitch options row to select a thumbnail, change its stacking order, or remove it.
 
@@ -43,5 +51,7 @@ New Stitch labels use English fallback in locales awaiting translation.
 ## Validation
 
 Automated checks cover the native toolbar and contextual controls, automatic band direction and axis locking, fractional preview and cut boundaries, shared annotation undo, tool switching without changing zoom or the editor root, pixel-to-point canvas projection, starting guides before the next capture, hover feedback, scroll and Undo references, dimension recommendations, continuous spans without bridging gaps, alternate sizes, reverse drags, stationary Option and Shift overrides, display scale conversion, registered layout coordinates, varied region sizes, spatial placement, overlap matching, repeat/queued captures, failure/retry, Finish, cancellation, keyboard routing, raw selection isolation, and the fading blur. Native rendering fixtures cover idle capture guides and band previews. Renderer fixtures verify both seam orientations and untouched pixels outside the blur band.
+
+Treatment checks cover both orientations, light and dark content, reduced previews, transparent gaps beside short joins, native picker selection and applicable controls, editable history, untouched pixels outside the seam, fractional flips and piece movement with attached censors, magnifier refresh, preserved censor bakes, and immediate raster consistency through crop, flip, Undo, and Redo.
 
 Runtime checks use this Mac's current OS. macOS 13 remains the deployment target; a separate Ventura installation has not been tested.

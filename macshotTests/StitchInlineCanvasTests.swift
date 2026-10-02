@@ -82,13 +82,15 @@ final class StitchInlineCanvasTests: XCTestCase {
                         defer { window.orderOut(nil) }
                         let original = canvas.document
                         let before = try XCTUnwrap(StitchRenderer.render(original))
+                        XCTAssertEqual(canvas.bounds.width, CGFloat(before.width))
+                        XCTAssertEqual(canvas.bounds.height, CGFloat(before.height))
                         if option { canvas.bandGuideRows = [12, 20]; canvas.bandGuideColumns = [12, 20] }
                         let from: CGFloat = reverse ? 20.6 : 11.4, to: CGFloat = reverse ? 11.4 : 20.6
                         let flags: NSEvent.ModifierFlags = option ? [.option] : []
                         func point(_ coordinate: CGFloat) -> CGPoint {
                             axis == .horizontal
-                                ? CGPoint(x: original.bounds.width / 2, y: coordinate - original.bounds.minY)
-                                : CGPoint(x: coordinate - original.bounds.minX, y: original.bounds.height / 2)
+                                ? CGPoint(x: CGFloat(before.width) / 2, y: coordinate - original.bounds.integral.minY)
+                                : CGPoint(x: coordinate - original.bounds.integral.minX, y: CGFloat(before.height) / 2)
                         }
                         var after = original, cuts = 0
                         canvas.onCut = { resolvedAxis, proposedStart, proposedEnd in
@@ -134,8 +136,8 @@ final class StitchInlineCanvasTests: XCTestCase {
                 let expectedUpper = clipsLower ? from.rounded() : upper
                 func point(_ coordinate: CGFloat) -> CGPoint {
                     axis == .horizontal
-                        ? CGPoint(x: original.bounds.width / 2, y: coordinate - original.bounds.minY)
-                        : CGPoint(x: coordinate - original.bounds.minX, y: original.bounds.height / 2)
+                        ? CGPoint(x: original.bounds.integral.width / 2, y: coordinate - original.bounds.integral.minY)
+                        : CGPoint(x: coordinate - original.bounds.integral.minX, y: original.bounds.integral.height / 2)
                 }
                 var after = original, cuts = 0
                 canvas.onCut = { resolvedAxis, proposedStart, proposedEnd in
@@ -169,8 +171,8 @@ final class StitchInlineCanvasTests: XCTestCase {
             let upper = axis == .horizontal ? original.bounds.maxY : original.bounds.maxX
             func point(_ coordinate: CGFloat) -> CGPoint {
                 axis == .horizontal
-                    ? CGPoint(x: original.bounds.width / 2, y: coordinate - original.bounds.minY)
-                    : CGPoint(x: coordinate - original.bounds.minX, y: original.bounds.height / 2)
+                    ? CGPoint(x: original.bounds.integral.width / 2, y: coordinate - original.bounds.integral.minY)
+                    : CGPoint(x: coordinate - original.bounds.integral.minX, y: original.bounds.integral.height / 2)
             }
             canvas.onCut = { _, _, _ in XCTFail("An invalid pixel range must not commit") }
             for (from, to) in [(CGFloat(11.4), CGFloat(12.4)), (lower + 0.1, upper + 0.6)] {
@@ -435,7 +437,7 @@ final class StitchInlineCanvasTests: XCTestCase {
         document.pieces[0].origin = origin
         document.pieces[0].source.size = CGSize(width: 399.6, height: 199.6)
         document.style.visible = false
-        editor.applySelection(CGRect(x: 10, y: 20, width: document.bounds.width * 8, height: document.bounds.height * 8))
+        editor.applySelection(CGRect(x: 10, y: 20, width: document.bounds.integral.width * 8, height: document.bounds.integral.height * 8))
         canvas.refresh(document, preview: nil)
         return (editor, canvas)
     }

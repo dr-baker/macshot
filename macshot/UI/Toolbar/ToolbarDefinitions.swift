@@ -310,7 +310,7 @@ class ToolbarLayout {
     static func bottomButtons(
         selectedTool: AnnotationTool, selectedColor: NSColor, beautifyEnabled: Bool = false,
         beautifyStyleIndex: Int = 0, hasAnnotations: Bool = false, isRecording: Bool = false,
-        effectsActive: Bool = false, stitchSeamsVisible: Bool = true
+        effectsActive: Bool = false, stitchSeamsVisible: Bool = true, stitchSeamUsesLine: Bool = true
     ) -> [ToolbarButton] {
         // Hide the bottom bar entirely while recording
         if isRecording { return [] }
@@ -378,9 +378,14 @@ class ToolbarLayout {
         }
 
         // Color button
-        var colorBtn = ToolbarButton(action: .color, sfSymbol: nil, tooltip: selectedTool == .stitch
-            ? L(stitchSeamsVisible ? "Seam color" : "Show seams to edit color") : L("Color"))
-        colorBtn.bgColor = selectedColor
+        let colorTooltip: String
+        if selectedTool == .stitch {
+            if !stitchSeamsVisible { colorTooltip = L("Show seams to edit color") }
+            else { colorTooltip = stitchSeamUsesLine ? L("Seam color") : L("Blend has no line") }
+        } else { colorTooltip = L("Color") }
+        var colorBtn = ToolbarButton(action: .color, sfSymbol: nil, tooltip: colorTooltip)
+        colorBtn.bgColor = selectedTool == .stitch && stitchSeamsVisible && !stitchSeamUsesLine
+            ? selectedColor.withAlphaComponent(selectedColor.alphaComponent * 0.3) : selectedColor
         buttons.append(colorBtn)
 
         // Undo / Redo

@@ -14,6 +14,7 @@ struct SavedStitchDocument: Codable, Equatable {
     }
     var images: [Data]
     var pieces: [Piece]
+    var transition: String
     var lineColor: [CGFloat]
     var lineWidth: CGFloat
     var wave: CGFloat
@@ -25,6 +26,32 @@ struct SavedStitchDocument: Codable, Equatable {
     var packed: Bool
     var packingHorizontal: Bool
     var packingLength: CGFloat
+
+    private enum CodingKeys: String, CodingKey {
+        case images, pieces, transition, lineColor, lineWidth, wave, blur, feather, visible
+        case background, backgroundColor, packed, packingHorizontal, packingLength
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let style = StitchStyle()
+        // Captured pixels and source geometry must restore together. Cosmetic
+        // settings can use their defaults when a previous revision omitted them.
+        images = try values.decode([Data].self, forKey: .images)
+        pieces = try values.decode([Piece].self, forKey: .pieces)
+        transition = values.decode(.transition, or: StitchTransition.wave.rawValue)
+        lineColor = values.decode(.lineColor, or: Self.components(style.color))
+        lineWidth = values.decode(.lineWidth, or: style.lineWidth)
+        wave = values.decode(.wave, or: style.wave)
+        blur = values.decode(.blur, or: style.blur)
+        feather = values.decode(.feather, or: style.feather)
+        visible = values.decode(.visible, or: style.visible)
+        background = values.decode(.background, or: "automatic")
+        backgroundColor = values.decodeOptional(.backgroundColor)
+        packed = values.decode(.packed, or: false)
+        packingHorizontal = values.decode(.packingHorizontal, or: true)
+        packingLength = values.decode(.packingLength, or: 0)
+    }
 
     init?(_ document: StitchDocument) {
         var cache: [(image: CGImage, data: Data)] = []
@@ -61,6 +88,7 @@ struct SavedStitchDocument: Codable, Equatable {
         imageData.removeAll { cached in !sources.contains(where: { $0 === cached.image }) }
         self.images = images
         self.pieces = pieces
+        transition = document.style.transition.rawValue
         lineColor = Self.components(document.style.color)
         lineWidth = document.style.lineWidth
         wave = document.style.wave
@@ -85,7 +113,8 @@ struct SavedStitchDocument: Codable, Equatable {
               [lineWidth, wave, blur, feather, packingLength].allSatisfy({ $0.isFinite && $0 >= 0 }),
               lineWidth <= 100, wave <= 100, blur <= 100, feather <= 4096,
               packingLength <= StitchDocument.maximumDimension,
-              !packed || packingLength > 0, let color = Self.color(lineColor) else { return nil }
+              !packed || packingLength > 0, let color = Self.color(lineColor),
+              let transition = StitchTransition(rawValue: transition) else { return nil }
         var pixels: [CGImage] = []
         var totalPixels = 0
         for data in images {
@@ -123,6 +152,7 @@ struct SavedStitchDocument: Codable, Equatable {
         default: return nil
         }
         var style = StitchStyle()
+        style.transition = transition
         style.color = color; style.lineWidth = lineWidth; style.wave = wave
         style.blur = blur; style.feather = feather; style.visible = visible
         var document = StitchDocument(pieces: restored, style: style, background: fill)

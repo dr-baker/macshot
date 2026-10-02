@@ -41,6 +41,7 @@ final class StitchEditorController: NSObject {
     private var sliders: [StitchSlider] = []
     private var values: [NSTextField] = []
     private var seamLabels: [NSTextField] = []
+    private let seamStylePicker = StitchSeamStylePicker(frame: .zero)
     private let color = NSColorWell()
     private let seamToggle = NSButton(checkboxWithTitle: L("Show stitch seams"), target: nil, action: nil)
     private let renderQueue = DispatchQueue(label: "macshot.stitch-preview", qos: .userInitiated)
@@ -164,17 +165,22 @@ final class StitchEditorController: NSObject {
     }
     func makeSeamOptions() -> NSView {
         if let seamOptions { return seamOptions }
-        let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 280, height: 242))
+        let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 368, height: 322))
         seamToggle.target = self
         seamToggle.action = #selector(toggleSeams)
         seamToggle.contentTintColor = ToolbarLayout.accentColor
-        seamToggle.frame = NSRect(x: 12, y: 207, width: 250, height: 24)
+        seamToggle.identifier = NSUserInterfaceItemIdentifier("stitch.seam.visibility")
+        seamToggle.frame = NSRect(x: 12, y: 287, width: 344, height: 24)
         view.addSubview(seamToggle)
+        seamStylePicker.frame = NSRect(x: 12, y: 212, width: 344, height: 64)
+        seamStylePicker.onSelectionChanged = { [weak self] transition in self?.selectSeamTransition(transition) }
+        view.addSubview(seamStylePicker)
         let colorLabel = NSTextField(labelWithString: L("Line color"))
+        colorLabel.identifier = NSUserInterfaceItemIdentifier("stitch.seam.color.label")
         colorLabel.font = .systemFont(ofSize: 11)
         colorLabel.textColor = ToolbarLayout.iconColor
-        colorLabel.frame = NSRect(x: 12, y: 177, width: 170, height: 18)
-        color.frame = NSRect(x: 220, y: 173, width: 46, height: 24)
+        colorLabel.frame = NSRect(x: 12, y: 177, width: 258, height: 18)
+        color.frame = NSRect(x: 308, y: 173, width: 46, height: 24)
         color.setAccessibilityLabel(L("Seam line color"))
         color.target = self
         color.action = #selector(changeColor)
@@ -186,15 +192,15 @@ final class StitchEditorController: NSObject {
             let label = NSTextField(labelWithString: L(spec.0))
             label.font = .systemFont(ofSize: 11)
             label.textColor = ToolbarLayout.iconColor
-            label.frame = NSRect(x: 12, y: y + 10, width: 180, height: 16)
+            label.frame = NSRect(x: 12, y: y + 10, width: 260, height: 16)
             let value = NSTextField(labelWithString: "")
             value.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
             value.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.55)
             value.alignment = .right
-            value.frame = NSRect(x: 201, y: y + 10, width: 65, height: 16)
+            value.frame = NSRect(x: 289, y: y + 10, width: 65, height: 16)
             let slider = StitchSlider(value: 0, minValue: spec.1, maxValue: spec.2,
                                       target: self, action: #selector(changeStyle(_:)))
-            slider.frame = NSRect(x: 10, y: y - 9, width: 258, height: 20)
+            slider.frame = NSRect(x: 10, y: y - 9, width: 346, height: 20)
             slider.tag = index
             slider.isContinuous = true
             slider.controlSize = .small
@@ -343,11 +349,29 @@ final class StitchEditorController: NSObject {
         for (index, value) in [s.blur, s.feather, s.lineWidth, s.wave].enumerated() {
             sliders[index].doubleValue = Double(value); values[index].stringValue = String(format: "%.1f px", Double(value))
         }
+        seamStylePicker.selection = s.transition
+        seamStylePicker.isEnabled = s.visible
         color.color = s.color; seamToggle.state = s.visible ? .on : .off
-        color.isEnabled = s.visible
-        color.alphaValue = s.visible ? 1 : 0.35
-        for slider in sliders { slider.isEnabled = s.visible; slider.alphaValue = s.visible ? 1 : 0.35 }
-        for label in seamLabels + values { label.alphaValue = s.visible ? 1 : 0.35 }
+        let hasLine = s.visible && s.transition != .blend
+        color.isEnabled = hasLine
+        color.alphaValue = hasLine ? 1 : 0.35
+        seamLabels[0].alphaValue = hasLine ? 1 : 0.35
+        let shapeLabel: String
+        switch s.transition {
+        case .wave, .blend: shapeLabel = L("Wave height")
+        case .torn: shapeLabel = L("Roughness")
+        case .fold: shapeLabel = L("Fold depth")
+        case .breakLine: shapeLabel = L("Break size")
+        }
+        seamLabels[4].stringValue = shapeLabel
+        sliders[3].setAccessibilityLabel(shapeLabel)
+        for (index, slider) in sliders.enumerated() {
+            let enabled = s.visible && (index < 2 || hasLine)
+            slider.isEnabled = enabled
+            slider.alphaValue = enabled ? 1 : 0.35
+            seamLabels[index + 1].alphaValue = enabled ? 1 : 0.35
+            values[index].alphaValue = enabled ? 1 : 0.35
+        }
     }
     private func previewSeamColor(_ color: NSColor?) {
         guard let style = editorView?.stitchDocument?.style else { return }
@@ -534,6 +558,15 @@ final class StitchEditorController: NSObject {
         switch sender.tag { case 0: document.style.blur = sender.doubleValue; case 1: document.style.feather = sender.doubleValue; case 2: document.style.lineWidth = sender.doubleValue; default: document.style.wave = sender.doubleValue }
         values[sender.tag].stringValue = String(format: "%.1f px", sender.doubleValue)
         scheduleRender()
+    }
+    private func selectSeamTransition(_ transition: StitchTransition) {
+        guard document.style.visible, document.style.transition != transition else { return }
+        var next = document
+        next.style.transition = transition
+        guard commitDocument(next) else { syncSeamControls(); return }
+        syncSeamControls()
+        updateBandGuides()
+        scheduleRender(publishDocument: false)
     }
     @objc private func changeColor() {
         var next = document

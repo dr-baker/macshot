@@ -3680,6 +3680,9 @@ class OverlayView: NSView {
         else { return }
 
         let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: true)
+        let stitchPixels = transformedStitch.flatMap { StitchRenderer.render($0) }
+        guard transformedStitch == nil || stitchPixels != nil else { return }
+        if let stitchPixels, stitchPixels.width != cgImage.width || stitchPixels.height != cgImage.height { return }
 
         // Save state for undo
         let prevImage = original.copy() as! NSImage
@@ -3688,22 +3691,20 @@ class OverlayView: NSView {
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
-        let w = cgImage.width
-        let h = cgImage.height
-        // Preserve the source image's color space so colors stay correct.
-        let cs = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        guard
-            let ctx = CGContext(
-                data: nil, width: w, height: h,
-                bitsPerComponent: 8,
-                bytesPerRow: 0, space: cs,
-                bitmapInfo: bitmapInfo)
-        else { return }
-        ctx.translateBy(x: CGFloat(w), y: 0)
-        ctx.scaleBy(x: -1, y: 1)
-        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let flipped = ctx.makeImage() else { return }
+        let flipped: CGImage
+        if let stitchPixels { flipped = stitchPixels }
+        else {
+            let w = cgImage.width, h = cgImage.height
+            let cs = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+            let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                bytesPerRow: 0, space: cs, bitmapInfo: bitmapInfo) else { return }
+            ctx.translateBy(x: CGFloat(w), y: 0)
+            ctx.scaleBy(x: -1, y: 1)
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+            guard let image = ctx.makeImage() else { return }
+            flipped = image
+        }
 
         screenshotImage = NSImage(cgImage: flipped, size: original.size)
 
@@ -3734,7 +3735,10 @@ class OverlayView: NSView {
             }
         }
 
-        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        if let transformedStitch {
+            for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
+            (self as? EditorView)?.installStitchDocument(transformedStitch)
+        }
         updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
@@ -3746,6 +3750,9 @@ class OverlayView: NSView {
         else { return }
 
         let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: false)
+        let stitchPixels = transformedStitch.flatMap { StitchRenderer.render($0) }
+        guard transformedStitch == nil || stitchPixels != nil else { return }
+        if let stitchPixels, stitchPixels.width != cgImage.width || stitchPixels.height != cgImage.height { return }
 
         let prevImage = original.copy() as! NSImage
         undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
@@ -3753,21 +3760,20 @@ class OverlayView: NSView {
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
-        let w = cgImage.width
-        let h = cgImage.height
-        let cs = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        guard
-            let ctx = CGContext(
-                data: nil, width: w, height: h,
-                bitsPerComponent: 8,
-                bytesPerRow: 0, space: cs,
-                bitmapInfo: bitmapInfo)
-        else { return }
-        ctx.translateBy(x: 0, y: CGFloat(h))
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let flipped = ctx.makeImage() else { return }
+        let flipped: CGImage
+        if let stitchPixels { flipped = stitchPixels }
+        else {
+            let w = cgImage.width, h = cgImage.height
+            let cs = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+            let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                bytesPerRow: 0, space: cs, bitmapInfo: bitmapInfo) else { return }
+            ctx.translateBy(x: 0, y: CGFloat(h))
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+            guard let image = ctx.makeImage() else { return }
+            flipped = image
+        }
 
         screenshotImage = NSImage(cgImage: flipped, size: original.size)
 
@@ -3796,7 +3802,10 @@ class OverlayView: NSView {
             }
         }
 
-        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        if let transformedStitch {
+            for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
+            (self as? EditorView)?.installStitchDocument(transformedStitch)
+        }
         updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
         needsDisplay = true
@@ -4545,6 +4554,9 @@ class OverlayView: NSView {
         let transformedStitch = (self as? EditorView)?.stitchDocument.flatMap { document in
             document.cropped(to: cgPixelRect.offsetBy(dx: document.bounds.minX, dy: document.bounds.minY))
         }
+        let stitchPixels = transformedStitch.flatMap { StitchRenderer.render($0) }
+        guard transformedStitch == nil || stitchPixels != nil else { return }
+        if let stitchPixels, stitchPixels.width != croppedCG.width || stitchPixels.height != croppedCG.height { return }
 
         // Save state for undo before modifying
         let prevImage = originalImage.copy() as! NSImage
@@ -4561,12 +4573,15 @@ class OverlayView: NSView {
         let croppedPointSize = NSSize(
             width: CGFloat(croppedCG.width) / pixScale,
             height: CGFloat(croppedCG.height) / pixScale)
-        screenshotImage = NSImage(cgImage: croppedCG, size: croppedPointSize)
+        screenshotImage = NSImage(cgImage: stitchPixels ?? croppedCG, size: croppedPointSize)
 
         // Update selectionRect to match new image size
         selectionRect = NSRect(origin: .zero, size: croppedPointSize)
 
-        if let transformedStitch { (self as? EditorView)?.installStitchDocument(transformedStitch) }
+        if let transformedStitch {
+            for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
+            (self as? EditorView)?.installStitchDocument(transformedStitch)
+        }
         updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
 
@@ -5259,7 +5274,8 @@ class OverlayView: NSView {
             beautifyEnabled: beautifyEnabled, beautifyStyleIndex: beautifyStyleIndex,
             hasAnnotations: movableAnnotations, isRecording: isRecording,
             effectsActive: effectsActive,
-            stitchSeamsVisible: (self as? EditorView)?.stitchDocument?.style.visible ?? true
+            stitchSeamsVisible: (self as? EditorView)?.stitchDocument?.style.visible ?? true,
+            stitchSeamUsesLine: (self as? EditorView)?.stitchDocument?.style.transition != .blend
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -8321,7 +8337,9 @@ class OverlayView: NSView {
     /// Update the color swatch on the main toolbar's color button without a full rebuild.
     func updateToolbarColorSwatch() {
         if let idx = bottomButtons.firstIndex(where: { if case .color = $0.action { return true } else { return false } }) {
-            bottomButtons[idx].bgColor = toolbarColor
+            let style = (self as? EditorView)?.stitchDocument?.style
+            let blend = currentTool == .stitch && style?.visible == true && style?.transition == .blend
+            bottomButtons[idx].bgColor = blend ? toolbarColor.withAlphaComponent(toolbarColor.alphaComponent * 0.3) : toolbarColor
             bottomStripView?.updateState(from: bottomButtons)
             // Schedule button redraw on next run loop iteration so it happens after
             // the overlay's own draw pass (which can paint over button subviews).
@@ -8364,7 +8382,8 @@ class OverlayView: NSView {
         case .color:
             let colorBtn = bottomStripView?.buttonViews.first { if case .color = $0.action { return true }; return false }
             if PopoverHelper.toggleClosedIfOpen(anchorView: colorBtn) { break }
-            if let editor = self as? EditorView, currentTool == .stitch, editor.stitchDocument?.style.visible == false {
+            if let editor = self as? EditorView, currentTool == .stitch,
+                editor.stitchDocument?.style.visible == false || editor.stitchDocument?.style.transition == .blend {
                 let seamsAnchor = toolOptionsRowView?.subviews.first { $0.identifier?.rawValue == "stitch.seams" } ?? colorBtn
                 if let seamsAnchor { editor.onStitchOptions?(.seams, seamsAnchor) }
             } else {
