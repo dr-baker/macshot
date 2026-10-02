@@ -32,7 +32,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         onStitchSeamColorPreview?(color)
     }
 
-    var stitchMode: StitchCanvasView.Mode = .rows {
+    var stitchMode: StitchCanvasView.Mode = .removeSpace {
         didSet {
             guard stitchMode != oldValue else { return }
             onStitchModeChanged?(stitchMode)

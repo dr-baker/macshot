@@ -143,17 +143,23 @@ final class NativeStitchToolTests: XCTestCase {
         row.rebuild(for: .stitch)
         let modes = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.mode" } as? NSSegmentedControl)
         XCTAssertEqual(modes.selectedSegment, 0)
-        XCTAssertEqual(modes.segmentCount, 3)
-        for index in 0..<3 { XCTAssertTrue(modes.toolTip(forSegment: index)?.contains("⌥") == true) }
+        XCTAssertEqual(view.stitchMode, .removeSpace)
+        XCTAssertEqual(modes.segmentCount, 2)
+        XCTAssertEqual(modes.label(forSegment: 0), L("Remove Space"))
+        XCTAssertEqual(modes.label(forSegment: 1), L("Move"))
+        XCTAssertEqual(modes.toolTip(forSegment: 0),
+            L("Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides."))
+        for index in 0..<2 { XCTAssertTrue(modes.toolTip(forSegment: index)?.contains("⌥") == true) }
         var modeChanges: [StitchCanvasView.Mode] = []
         view.onStitchModeChanged = { modeChanges.append($0) }
         modes.selectedSegment = 1
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(modes.action), to: modes.target, from: modes))
-        XCTAssertEqual(view.stitchMode, .columns)
-        XCTAssertEqual(modeChanges, [.columns])
-        modes.selectedSegment = 2
-        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(modes.action), to: modes.target, from: modes))
         XCTAssertEqual(view.stitchMode, .move)
+        XCTAssertEqual(modeChanges, [.move])
+        modes.selectedSegment = 0
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(modes.action), to: modes.target, from: modes))
+        XCTAssertEqual(view.stitchMode, .removeSpace)
+        XCTAssertEqual(modeChanges, [.move, .removeSpace])
 
         var placements: [StitchPlacement] = []
         view.onStitchPlacementChanged = { placements.append($0) }
@@ -220,7 +226,7 @@ final class NativeStitchToolTests: XCTestCase {
         XCTAssertTrue(anchor?.superview === row)
         XCTAssertTrue(document.pack())
         XCTAssertTrue(view.applyStitchDocument(document))
-        view.stitchMode = .columns
+        view.stitchMode = .move
         let placement = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.placement" } as? NSPopUpButton)
         let modes = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.mode" } as? NSSegmentedControl)
         XCTAssertEqual(placement.indexOfSelectedItem, 1)

@@ -46,18 +46,52 @@ final class StitchBandContentSafetyTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testRecommendedBlankBandsCollapseAndRenderWithoutChangingProtectedText() throws {
         for scale in [1, 2] {
             for dark in [false, true] {
                 for axis in [StitchAxis.horizontal, .vertical] {
                     try autoreleasepool {
                         var doc = fixture(kind: axis == .horizontal ? "blank" : "column-blank", scale: scale, dark: dark)
-                        let guides = contentGuides(doc, axis: axis)
+                        let analysis = StitchBandGuides.analyze(document: doc)
+                        let edges = StitchBandGuides.geometry(document: doc).values(for: axis)
+                        let guides = analysis.values(for: axis).filter { !edges.contains($0) }
                         XCTAssertEqual(guides.count, 2)
                         guard guides.count == 2 else { return }
                         let before = try XCTUnwrap(StitchRenderer.render(doc))
                         let lo = Int(guides[0].rounded()), hi = Int(guides[1].rounded())
-                        XCTAssertTrue(doc.collapse(axis: axis, from: guides[0], to: guides[1]))
+                        let originalPieces = doc.pieces
+                        let canvas = StitchCanvasView(frame: .zero)
+                        canvas.refresh(doc, preview: nil)
+                        canvas.bandGuideRows = analysis.rows
+                        canvas.bandGuideColumns = analysis.columns
+                        let window = NSWindow(contentRect: canvas.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                        window.contentView = canvas
+                        defer { window.orderOut(nil) }
+                        var cuts = 0
+                        canvas.onCut = { resolvedAxis, from, to in
+                            cuts += 1
+                            XCTAssertEqual(resolvedAxis, axis)
+                            XCTAssertEqual(from, guides[0])
+                            XCTAssertEqual(to, guides[1])
+                            XCTAssertTrue(doc.collapse(axis: resolvedAxis, from: from, to: to))
+                        }
+                        func mouse(_ type: NSEvent.EventType, coordinate: CGFloat) throws -> NSEvent {
+                            let point = axis == .horizontal
+                                ? CGPoint(x: 80 + doc.bounds.midX, y: 80 + coordinate)
+                                : CGPoint(x: 80 + coordinate, y: 80 + doc.bounds.midY)
+                            return try XCTUnwrap(NSEvent.mouseEvent(with: type, location: canvas.convert(point, to: nil),
+                                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                        }
+                        canvas.mouseDown(with: try mouse(.leftMouseDown, coordinate: guides[0] + 3))
+                        canvas.mouseDragged(with: try mouse(.leftMouseDragged, coordinate: guides[1] - 3))
+                        XCTAssertEqual(canvas.bandAxis, axis)
+                        XCTAssertEqual(canvas.bandGuideMatches, guides)
+                        XCTAssertEqual(doc.pieces.count, originalPieces.count, "The preview must preserve the source document")
+                        canvas.mouseUp(with: try mouse(.leftMouseUp, coordinate: guides[1] - 3))
+                        XCTAssertEqual(cuts, 1)
+                        XCTAssertTrue(doc.pieces.allSatisfy { piece in originalPieces.contains { $0.image === piece.image } })
                         let after = try XCTUnwrap(StitchRenderer.render(doc))
                         XCTAssertEqual(axis == .horizontal ? after.height : after.width,
                                        (axis == .horizontal ? before.height : before.width) - hi + lo)

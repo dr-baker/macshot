@@ -305,9 +305,8 @@ class ToolOptionsRowView: NSView {
         guard currentTool == .stitch, let editor = overlayView as? EditorView else { return }
         if let modes = subviews.first(where: { $0.identifier?.rawValue == "stitch.mode" }) as? NSSegmentedControl {
             switch editor.stitchMode {
-            case .rows: modes.selectedSegment = 0
-            case .columns: modes.selectedSegment = 1
-            case .move: modes.selectedSegment = 2
+            case .removeSpace: modes.selectedSegment = 0
+            case .move: modes.selectedSegment = 1
             }
         }
         if let placement = subviews.first(where: { $0.identifier?.rawValue == "stitch.placement" }) as? NSPopUpButton {
@@ -317,21 +316,19 @@ class ToolOptionsRowView: NSView {
 
     private func addStitchOptions(at x: CGFloat, editor: EditorView) -> CGFloat {
         var curX = x
-        let modes = NSSegmentedControl(labels: [L("Remove Rows"), L("Remove Columns"), L("Move")],
+        let modes = NSSegmentedControl(labels: [L("Remove Space"), L("Move")],
             trackingMode: .selectOne, target: self, action: #selector(stitchModeChanged(_:)))
         modes.identifier = NSUserInterfaceItemIdentifier("stitch.mode")
         switch editor.stitchMode {
-        case .rows: modes.selectedSegment = 0
-        case .columns: modes.selectedSegment = 1
-        case .move: modes.selectedSegment = 2
+        case .removeSpace: modes.selectedSegment = 0
+        case .move: modes.selectedSegment = 1
         }
         modes.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         (modes.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
         modes.sizeToFit()
         modes.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: modes.frame.width, height: 22)
-        modes.setToolTip(L("Drag a horizontal band to remove it. Hold ⌥ to ignore guides."), forSegment: 0)
-        modes.setToolTip(L("Drag a vertical band to remove it. Hold ⌥ to ignore guides."), forSegment: 1)
-        modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 2)
+        modes.setToolTip(L("Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides."), forSegment: 0)
+        modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 1)
         addSubview(modes)
         curX += modes.frame.width + 4
         curX = addSeparator(at: curX)
@@ -372,9 +369,8 @@ class ToolOptionsRowView: NSView {
     @objc private func stitchModeChanged(_ sender: NSSegmentedControl) {
         guard let editor = overlayView as? EditorView else { return }
         switch sender.selectedSegment {
-        case 0: editor.stitchMode = .rows
-        case 1: editor.stitchMode = .columns
-        case 2: editor.stitchMode = .move
+        case 0: editor.stitchMode = .removeSpace
+        case 1: editor.stitchMode = .move
         default: break
         }
     }

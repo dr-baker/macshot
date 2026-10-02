@@ -102,17 +102,35 @@ struct StitchDocument {
             && b.width * b.height <= Self.maximumPixels
     }
 
-    /// Remove a full-width row band or full-height column band, retaining original pixels.
-    @discardableResult
-    mutating func collapse(axis: StitchAxis, from: CGFloat, to: CGFloat) -> Bool {
-        guard canRender, from.isFinite, to.isFinite else { return false }
+    struct RemovalBand {
+        let range: ClosedRange<CGFloat>
+        let rect: CGRect
+        var length: CGFloat { range.upperBound - range.lowerBound }
+    }
+
+    /// Round the proposed endpoints before clipping, identically for preview and commit.
+    func removalBand(axis: StitchAxis, from: CGFloat, to: CGFloat) -> RemovalBand? {
+        guard canRender, from.isFinite, to.isFinite else { return nil }
         let b = bounds
         let horizontal = axis == .horizontal
         let lower = horizontal ? b.minY : b.minX
         let upper = horizontal ? b.maxY : b.maxX
         let lo = max(lower, min(from, to).rounded())
         let hi = min(upper, max(from, to).rounded())
-        guard hi - lo >= 2, upper - lower - (hi - lo) >= 2 else { return false }
+        guard hi - lo >= 2, upper - lower - (hi - lo) >= 2 else { return nil }
+        let rect = horizontal
+            ? CGRect(x: b.minX, y: lo, width: b.width, height: hi - lo)
+            : CGRect(x: lo, y: b.minY, width: hi - lo, height: b.height)
+        return RemovalBand(range: lo...hi, rect: rect)
+    }
+
+    /// Remove a full-width row band or full-height column band, retaining original pixels.
+    @discardableResult
+    mutating func collapse(axis: StitchAxis, from: CGFloat, to: CGFloat) -> Bool {
+        guard let band = removalBand(axis: axis, from: from, to: to) else { return false }
+        let b = bounds
+        let horizontal = axis == .horizontal
+        let lo = band.range.lowerBound, hi = band.range.upperBound
         var result: [StitchPiece] = []
         for piece in pieces {
             let f = piece.frame

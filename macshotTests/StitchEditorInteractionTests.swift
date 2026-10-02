@@ -26,29 +26,26 @@ final class StitchEditorInteractionTests: XCTestCase {
         XCTAssertEqual(pieces.map(\.id), [first.id, second.id, third.id])
     }
 
-    func testRowAndColumnModesCutDocumentCoordinates() {
+    func testAutomaticVerticalAndHorizontalDragsCutDocumentCoordinates() {
         let view = StitchCanvasView(frame: .zero)
         view.refresh(StitchDocument(pieces: [StitchPiece(image: image())]), preview: nil)
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
         defer { window.orderOut(nil) }
-        view.onMode = { view.mode = $0 }
         var cuts: [(StitchAxis, CGFloat, CGFloat)] = []
         view.onCut = { cuts.append(($0, $1, $2)) }
-        view.keyDown(with: TestKeyEvent.keyDown(characters: "r", keyCode: 15))
-        drag(view, from: CGPoint(x: 20, y: 25), to: CGPoint(x: 100, y: 65))
+        XCTAssertEqual(view.mode, .removeSpace)
+        drag(view, from: CGPoint(x: 20, y: 25), to: CGPoint(x: 23, y: 65))
         XCTAssertEqual(cuts.count, 1)
         if case .horizontal = cuts[0].0 {} else { XCTFail("Rows must collapse horizontally") }
         XCTAssertEqual(cuts[0].1, 25, accuracy: 0.01)
         XCTAssertEqual(cuts[0].2, 65, accuracy: 0.01)
 
-        view.keyDown(with: TestKeyEvent.keyDown(characters: "c", keyCode: 8))
-        drag(view, from: CGPoint(x: 80, y: 15), to: CGPoint(x: 30, y: 90))
+        drag(view, from: CGPoint(x: 80, y: 15), to: CGPoint(x: 30, y: 18))
         XCTAssertEqual(cuts.count, 2)
         if case .vertical = cuts[1].0 {} else { XCTFail("Columns must collapse vertically") }
         XCTAssertEqual(cuts[1].1, 80, accuracy: 0.01)
         XCTAssertEqual(cuts[1].2, 30, accuracy: 0.01)
-        view.onMode = nil
     }
 
     func testEscapeCancelsPendingBandWithoutCutting() {
@@ -57,7 +54,6 @@ final class StitchEditorInteractionTests: XCTestCase {
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
         defer { window.orderOut(nil) }
-        view.mode = .rows
         view.onCut = { _, _, _ in XCTFail("Cancelled band must not cut") }
         view.mouseDown(with: mouse(.leftMouseDown, view: view, point: CGPoint(x: 20, y: 20)))
         view.mouseDragged(with: mouse(.leftMouseDragged, view: view, point: CGPoint(x: 50, y: 60)))
@@ -68,6 +64,7 @@ final class StitchEditorInteractionTests: XCTestCase {
 
     func testPlainClickAndSubthresholdMovementDoNotCreateMoveUndo() {
         let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
         view.refresh(StitchDocument(pieces: [StitchPiece(image: image())]), preview: nil)
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
@@ -83,6 +80,7 @@ final class StitchEditorInteractionTests: XCTestCase {
         let first = StitchPiece(image: image())
         let second = StitchPiece(image: image(), origin: CGPoint(x: 200, y: 0))
         let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
         view.refresh(StitchDocument(pieces: [first, second]), preview: nil)
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
@@ -99,18 +97,45 @@ final class StitchEditorInteractionTests: XCTestCase {
         XCTAssertEqual(view.document.pieces[1].origin, CGPoint(x: 120, y: 0))
         XCTAssertTrue(view.alignmentGuides.contains(where: { $0.start.x == 120 && $0.end.x == 120 }))
         XCTAssertTrue(view.alignmentGuides.contains(where: { $0.start.y == 0 && $0.end.y == 0 }))
-        view.mouseDragged(with: mouse(.leftMouseDragged, view: view, point: CGPoint(x: 141, y: 20), modifiers: .option))
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
         XCTAssertEqual(view.document.pieces[1].origin, CGPoint(x: 121, y: 0))
         XCTAssertTrue(view.alignmentGuides.isEmpty)
-        view.mouseUp(with: mouse(.leftMouseUp, view: view, point: CGPoint(x: 141, y: 20)))
+        view.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertEqual(view.document.pieces[1].origin, CGPoint(x: 120, y: 0))
+        XCTAssertFalse(view.alignmentGuides.isEmpty)
+        view.mouseUp(with: mouse(.leftMouseUp, view: view, point: CGPoint(x: 141, y: 20), modifiers: .option))
+        XCTAssertEqual(view.document.pieces[1].origin, CGPoint(x: 121, y: 0))
         XCTAssertEqual(commits, 1)
         XCTAssertTrue(view.alignmentGuides.isEmpty)
+    }
+
+    func testMoveReleaseReenablesSnappingWithoutAnotherPointerEvent() {
+        let first = StitchPiece(image: image())
+        let second = StitchPiece(image: image(), origin: CGPoint(x: 200, y: 0))
+        let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
+        view.refresh(StitchDocument(pieces: [first, second]), preview: nil)
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = view
+        defer { window.orderOut(nil) }
+        var moves: [(CGPoint, Bool)] = []
+        view.onMove = { _, origin, final in moves.append((origin, final)) }
+        view.mouseDown(with: mouse(.leftMouseDown, view: view, point: CGPoint(x: 220, y: 20)))
+        view.mouseDragged(with: mouse(.leftMouseDragged, view: view, point: CGPoint(x: 141, y: 20), modifiers: .option))
+        XCTAssertEqual(moves.last?.0, CGPoint(x: 121, y: 0))
+        view.mouseUp(with: mouse(.leftMouseUp, view: view, point: CGPoint(x: 141, y: 20)))
+        XCTAssertEqual(moves.count, 2)
+        XCTAssertEqual(moves.last?.0, CGPoint(x: 120, y: 0))
+        XCTAssertEqual(moves.last?.1, true)
+        XCTAssertEqual(view.document.pieces.map(\.origin), [first.origin, second.origin])
+        XCTAssertTrue(view.document.pieces[1].image === second.image)
     }
 
     func testHoverUsesTopmostPieceAndEscapeOrModeChangeClearsFeedback() {
         let first = StitchPiece(image: image())
         let second = StitchPiece(image: image(), origin: CGPoint(x: 20, y: 10))
         let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
         view.refresh(StitchDocument(pieces: [first, second]), preview: nil)
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
@@ -121,7 +146,7 @@ final class StitchEditorInteractionTests: XCTestCase {
         view.keyDown(with: TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53))
         XCTAssertNil(view.hoveredID)
         view.mouseMoved(with: event)
-        view.mode = .rows
+        view.mode = .removeSpace
         XCTAssertNil(view.hoveredID)
         view.mouseMoved(with: event)
         XCTAssertNil(view.hoveredID)
@@ -133,6 +158,7 @@ final class StitchEditorInteractionTests: XCTestCase {
 
     func testModeSwitchCancelsDragAndClearsSnapGuidesWithoutCommitting() {
         let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
         view.refresh(StitchDocument(pieces: [StitchPiece(image: image()),
             StitchPiece(image: image(), origin: CGPoint(x: 200, y: 0))]), preview: nil)
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -144,7 +170,7 @@ final class StitchEditorInteractionTests: XCTestCase {
         view.mouseDown(with: mouse(.leftMouseDown, view: view, point: CGPoint(x: 220, y: 20)))
         view.mouseDragged(with: mouse(.leftMouseDragged, view: view, point: CGPoint(x: 141, y: 20)))
         XCTAssertFalse(view.alignmentGuides.isEmpty)
-        view.mode = .columns
+        view.mode = .removeSpace
         XCTAssertTrue(view.alignmentGuides.isEmpty)
         XCTAssertEqual(cancellations, 1)
         view.mouseUp(with: mouse(.leftMouseUp, view: view, point: CGPoint(x: 141, y: 20)))
@@ -170,6 +196,7 @@ final class StitchEditorInteractionTests: XCTestCase {
 
     func testPackedDropReportsProposedOriginWithoutMutatingDocumentDuringDrag() {
         let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
         let first = StitchPiece(image: image())
         let second = StitchPiece(image: image(), origin: CGPoint(x: 200, y: 0))
         view.refresh(StitchDocument(pieces: [first, second]), preview: nil)
@@ -191,6 +218,7 @@ final class StitchEditorInteractionTests: XCTestCase {
     func testEscapeCancelsPackedPreviewWithoutCommittingOrMovingSource() {
         let piece = StitchPiece(image: image())
         let view = StitchCanvasView(frame: .zero)
+        view.mode = .move
         view.refresh(StitchDocument(pieces: [piece]), preview: nil)
         view.packed = true
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -215,6 +243,7 @@ final class StitchEditorInteractionTests: XCTestCase {
             let first = StitchPiece(image: image())
             let second = StitchPiece(image: image(), origin: CGPoint(x: 120, y: 0))
             let view = StitchCanvasView(frame: .zero)
+            view.mode = .move
             view.refresh(StitchDocument(pieces: [first, second]), preview: nil)
             view.packed = true
             let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -237,7 +266,7 @@ final class StitchEditorInteractionTests: XCTestCase {
             switch exit {
             case 0: view.mouseUp(with: mouse(.leftMouseUp, view: view, point: CGPoint(x: 40, y: 20)))
             case 1: view.keyDown(with: TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53))
-            case 2: view.mode = .rows
+            case 2: view.mode = .removeSpace
             default: view.packed = false
             }
             XCTAssertNil(view.packedPreview)
