@@ -8,8 +8,8 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         didSet {
             setAccessibilityLabel(L(inlineEditor == nil ? "Stitch canvas" : "Stitch editing canvas"))
             setAccessibilityHelp(L(inlineEditor == nil
-                ? "Choose Remove Rows or Remove Columns and drag across a gap. Choose Move to reposition pieces."
-                : "Move captured pieces or drag a band to remove rows or columns. Other tool shortcuts use the image editor."))
+                ? "Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping."
+                : "Move captured pieces or drag a band to remove rows or columns. Hold Option to ignore guides or Free Move snapping. Other tool shortcuts use the image editor."))
             syncInlineGeometry()
         }
     }
@@ -86,7 +86,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         super.init(frame: frame)
         registerForDraggedTypes([.fileURL, .tiff, .png])
         setAccessibilityLabel(L("Stitch canvas"))
-        setAccessibilityHelp(L("Choose Remove Rows or Remove Columns and drag across a gap. Choose Move to reposition pieces."))
+        setAccessibilityHelp(L("Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping."))
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -258,7 +258,8 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             border.lineWidth = 1.5 / zoom
             border.stroke()
             let removed = Int(horizontal ? rect.height : rect.width)
-            let text = "−\(removed) px" as NSString
+            let hint = bandCandidates.isEmpty ? "" : "\n" + L(bandSnapBypassed ? "Guides ignored" : "⌥ Ignore guides")
+            let text = "−\(removed) px\(hint)" as NSString
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
             paragraph.lineBreakMode = .byTruncatingTail

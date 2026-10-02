@@ -40,6 +40,7 @@ final class StitchEditorController: NSObject {
     private let pieceCountLabel = NSTextField(labelWithString: "")
     private var sliders: [StitchSlider] = []
     private var values: [NSTextField] = []
+    private var seamLabels: [NSTextField] = []
     private let color = NSColorWell()
     private let seamToggle = NSButton(checkboxWithTitle: L("Show stitch seams"), target: nil, action: nil)
     private let renderQueue = DispatchQueue(label: "macshot.stitch-preview", qos: .userInitiated)
@@ -52,8 +53,6 @@ final class StitchEditorController: NSObject {
     private var cachedGuideLayout: StitchDocument?
     private var cachedBandGuides: StitchBandGuides.Result?
     private var pendingGuideLayout: StitchDocument?
-    private enum Options { case seams, pieces, canvas }
-    private var activeOptions: Options?
     private let canvasColor = NSColorWell()
     private let backgroundChoice = NSPopUpButton()
     private var pieceActions: [NSButton] = []
@@ -71,16 +70,15 @@ final class StitchEditorController: NSObject {
         canvas.inlineEditor = editor
         if canvas.superview !== editor { editor.addSubview(canvas) }
         canvas.mode = editor.stitchMode
-        if seamOptions == nil {
-            seamOptions = makeSeamOptions()
-            piecesStack.orientation = .vertical
-            piecesStack.alignment = .leading
-            piecesStack.spacing = 4
-            pieceScroll.hasVerticalScroller = true
-            pieceScroll.autohidesScrollers = true
-            pieceScroll.drawsBackground = false
-            pieceScroll.documentView = piecesStack
-        }
+        if seamOptions == nil { seamOptions = makeSeamOptions() }
+        piecesStack.orientation = .vertical
+        piecesStack.alignment = .leading
+        piecesStack.spacing = 4
+        pieceScroll.hasVerticalScroller = true
+        pieceScroll.autohidesScrollers = true
+        pieceScroll.drawsBackground = false
+        pieceScroll.documentView = piecesStack
+        editor.onStitchSeamColorPreview = { [weak self] color in self?.previewSeamColor(color) }
         canvas.onSelect = { [weak self] _ in self?.refreshPieces() }
         canvas.onCut = { [weak self] axis, from, to in
             guard let self else { return }
@@ -108,7 +106,6 @@ final class StitchEditorController: NSObject {
         canvas.onRedo = { [weak self] in self?.redoAction() }
         canvas.onSave = { [weak self] in self?.onAction?(.save, nil) }
         canvas.onMode = { [weak self] mode in self?.setMode(mode) }
-        canvas.selectedID = nil
         refresh()
     }
 
@@ -136,7 +133,6 @@ final class StitchEditorController: NSObject {
         canvas.cancelEditingGesture()
         dragSnapshot = nil
         document = value
-        canvas.selectedID = nil
         refresh()
         restoring = false
     }
@@ -147,6 +143,8 @@ final class StitchEditorController: NSObject {
         feedback.removeFromSuperview()
         canvas.removeFromSuperview()
         canvas.inlineEditor = nil
+        editorView?.onStitchSeamColorPreview = nil
+        editorView?.previewStitchSeamColor(nil)
         cancelPreview()
         guideGeneration = UUID()
         guideCancellation?.cancel()
@@ -162,7 +160,8 @@ final class StitchEditorController: NSObject {
         button.bezelStyle = .rounded; button.controlSize = .small
         return button
     }
-    private func makeSeamOptions() -> NSView {
+    func makeSeamOptions() -> NSView {
+        if let seamOptions { return seamOptions }
         let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 280, height: 242))
         seamToggle.target = self
         seamToggle.action = #selector(toggleSeams)
@@ -174,10 +173,12 @@ final class StitchEditorController: NSObject {
         colorLabel.textColor = ToolbarLayout.iconColor
         colorLabel.frame = NSRect(x: 12, y: 177, width: 170, height: 18)
         color.frame = NSRect(x: 220, y: 173, width: 46, height: 24)
+        color.setAccessibilityLabel(L("Seam line color"))
         color.target = self
         color.action = #selector(changeColor)
         view.addSubview(colorLabel)
         view.addSubview(color)
+        seamLabels.append(colorLabel)
         for (index, spec) in [("Blur", 0.0, 30.0), ("Fade width", 0.0, 100.0), ("Line width", 0.0, 8.0), ("Wave height", 0.0, 14.0)].enumerated() {
             let y = CGFloat(137 - index * 38)
             let label = NSTextField(labelWithString: L(spec.0))
@@ -202,21 +203,26 @@ final class StitchEditorController: NSObject {
             }
             slider.onEnd = { [weak self] in self?.adjustingStyle = false; self?.updateBandGuides(); self?.publish() }
             view.addSubview(label); view.addSubview(value); view.addSubview(slider)
-            sliders.append(slider); values.append(value)
+            sliders.append(slider); values.append(value); seamLabels.append(label)
         }
+        seamOptions = view
+        syncSeamControls()
         return view
     }
     private func showSeams(at anchor: NSView) {
         feedback.removeFromSuperview()
-        if activeOptions == .seams, PopoverHelper.toggleClosedIfOpen() { return }
-        activeOptions = .seams
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchor) { return }
         PopoverHelper.show(seamOptions, size: seamOptions.frame.size,
                            relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
     }
     private func showPieces(at anchor: NSView) {
         feedback.removeFromSuperview()
-        if activeOptions == .pieces, PopoverHelper.toggleClosedIfOpen() { return }
-        activeOptions = .pieces
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchor) { return }
+        let view = makePieceOptions()
+        PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+    }
+
+    func makePieceOptions() -> NSView {
         refreshPieces()
         let listHeight = min(CGFloat(288), max(36, CGFloat(document.pieces.count) * 36))
         let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 264, height: listHeight + 76))
@@ -227,30 +233,24 @@ final class StitchEditorController: NSObject {
         pieceScroll.frame = NSRect(x: 12, y: 42, width: 240, height: listHeight)
         view.addSubview(title)
         view.addSubview(pieceScroll)
-        let actions = [
-            button("arrow.up", title: "", action: #selector(movePieceUp)),
-            button("arrow.down", title: "", action: #selector(movePieceDown)),
-            button("square.3.layers.3d.top.filled", title: "", action: #selector(bringForward)),
-            button("trash", title: "", action: #selector(deletePiece)),
-        ]
-        let labels = [L("Move up"), L("Move down"), L("Bring Forward"), L("Delete piece")]
+        let selectors = [#selector(movePieceUp), #selector(movePieceDown), #selector(bringForward), #selector(deletePiece)]
+        let actions = zip(pieceActionPresentation, selectors).map { info, selector in
+            button(info.symbol, title: "", action: selector)
+        }
         pieceActions = actions
         for (index, button) in actions.enumerated() {
             button.frame = NSRect(x: 12 + index * 36, y: 8, width: 30, height: 26)
             button.bezelStyle = .recessed
             button.isBordered = false
             button.contentTintColor = ToolbarLayout.iconColor
-            button.toolTip = labels[index]
-            button.setAccessibilityLabel(labels[index])
             view.addSubview(button)
         }
         updatePieceActions()
-        PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        return view
     }
     private func showCanvasOptions(at anchor: NSView) {
         feedback.removeFromSuperview()
-        if activeOptions == .canvas, PopoverHelper.toggleClosedIfOpen() { return }
-        activeOptions = .canvas
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchor) { return }
         let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 264, height: 100))
         let title = NSTextField(labelWithString: L("Canvas background"))
         title.font = .systemFont(ofSize: 11, weight: .medium)
@@ -262,6 +262,7 @@ final class StitchEditorController: NSObject {
         backgroundChoice.target = self; backgroundChoice.action = #selector(changeBackground)
         backgroundChoice.setAccessibilityLabel(L("Canvas background"))
         canvasColor.frame = NSRect(x: 217, y: 39, width: 34, height: 24)
+        canvasColor.setAccessibilityLabel(L("Canvas background color"))
         canvasColor.target = self; canvasColor.action = #selector(changeCanvasColor)
         switch document.background {
         case .automatic: backgroundChoice.selectItem(at: 0)
@@ -274,7 +275,7 @@ final class StitchEditorController: NSObject {
         hint.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.55)
         hint.frame = NSRect(x: 12, y: 13, width: 240, height: 16)
         for child in [title, backgroundChoice, canvasColor, hint] { view.addSubview(child) }
-        PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
     }
     @objc private func changeBackground() {
         checkpoint(L("Change canvas background"))
@@ -310,16 +311,32 @@ final class StitchEditorController: NSObject {
         }
     }
     private func refresh() {
+        if !document.pieces.contains(where: { $0.id == canvas.selectedID }) { canvas.selectedID = nil }
         canvas.refresh(document, preview: nil)
         updateBandGuides()
         canvas.packed = document.placement == .packed
+        syncSeamControls()
+        editorView?.refreshStitchOptions()
+        refreshPieces(); scheduleRender()
+    }
+    private func syncSeamControls() {
         let s = document.style
         for (index, value) in [s.blur, s.feather, s.lineWidth, s.wave].enumerated() {
             sliders[index].doubleValue = Double(value); values[index].stringValue = String(format: "%.1f px", Double(value))
         }
         color.color = s.color; seamToggle.state = s.visible ? .on : .off
-        editorView?.refreshStitchOptions()
-        refreshPieces(); scheduleRender()
+        color.isEnabled = s.visible
+        color.alphaValue = s.visible ? 1 : 0.35
+        for slider in sliders { slider.isEnabled = s.visible; slider.alphaValue = s.visible ? 1 : 0.35 }
+        for label in seamLabels + values { label.alphaValue = s.visible ? 1 : 0.35 }
+    }
+    private func previewSeamColor(_ color: NSColor?) {
+        guard let style = editorView?.stitchDocument?.style else { return }
+        document.style = style
+        if let color { document.style.color = color }
+        adjustingStyle = color != nil
+        syncSeamControls()
+        scheduleRender(publishDocument: false)
     }
     private func sameGuideLayout(_ first: StitchDocument, _ second: StitchDocument) -> Bool {
         StitchBandGuides.contentPadding(document: first) == StitchBandGuides.contentPadding(document: second)
@@ -370,8 +387,8 @@ final class StitchEditorController: NSObject {
         pendingRender?.cancel()
         pendingRender = nil
     }
-    private func scheduleRender() {
-        if !adjustingStyle { publish() }
+    private func scheduleRender(publishDocument: Bool = true) {
+        if publishDocument && !adjustingStyle { publish() }
         canvas.syncInlineGeometry()
         cancelPreview()
         let snapshot = document
@@ -401,7 +418,10 @@ final class StitchEditorController: NSObject {
     private func refreshPieces() {
         pieceCountLabel.stringValue = "\(document.pieces.count) \(L("pieces"))"
         for view in piecesStack.arrangedSubviews { piecesStack.removeArrangedSubview(view); view.removeFromSuperview() }
-        for (index, piece) in document.pieces.enumerated().reversed() {
+        // Packed order matches the canvas reading direction; free placement shows frontmost layers first.
+        let indices = document.placement == .packed ? Array(document.pieces.indices) : Array(document.pieces.indices.reversed())
+        for index in indices {
+            let piece = document.pieces[index]
             let button = NSButton(title: "\(index + 1)   \(piece.label)", target: self, action: #selector(selectPiece(_:)))
             button.tag = index; button.bezelStyle = .recessed; button.setButtonType(.pushOnPushOff)
             button.state = canvas.selectedID == piece.id ? .on : .off
@@ -427,14 +447,34 @@ final class StitchEditorController: NSObject {
         piecesStack.frame = CGRect(x: 0, y: 0, width: 240, height: max(36, document.pieces.count * 36))
         updatePieceActions()
     }
+    private var pieceActionPresentation: [(symbol: String, label: String)] {
+        guard document.placement == .packed else {
+            return [("arrow.up", L("Bring forward one layer")), ("arrow.down", L("Send backward one layer")),
+                    ("square.3.layers.3d.top.filled", L("Bring to front")), ("trash", L("Delete piece"))]
+        }
+        let horizontal = document.savedPackingState.horizontal
+        return [(horizontal ? "arrow.left" : "arrow.up", L("Move earlier")),
+                (horizontal ? "arrow.right" : "arrow.down", L("Move later")),
+                (horizontal ? "arrow.right.to.line" : "arrow.down.to.line", L("Move to end")),
+                ("trash", L("Delete piece"))]
+    }
+
     private func updatePieceActions() {
         guard pieceActions.count == 4 else { return }
         let index = document.pieces.firstIndex(where: { $0.id == canvas.selectedID })
-        let enabled = [index.map { $0 < document.pieces.count - 1 } ?? false,
-                       index.map { $0 > 0 } ?? false,
+        let packed = document.placement == .packed
+        let enabled = [index.map { packed ? $0 > 0 : $0 < document.pieces.count - 1 } ?? false,
+                       index.map { packed ? $0 < document.pieces.count - 1 : $0 > 0 } ?? false,
                        index.map { $0 < document.pieces.count - 1 } ?? false,
                        index != nil && document.pieces.count > 1]
-        for (button, available) in zip(pieceActions, enabled) { button.isEnabled = available; button.alphaValue = available ? 1 : 0.35 }
+        for (index, button) in pieceActions.enumerated() {
+            let info = pieceActionPresentation[index]
+            button.image = NSImage(systemSymbolName: info.symbol, accessibilityDescription: info.label)
+            button.toolTip = info.label
+            button.setAccessibilityLabel(info.label)
+            button.isEnabled = enabled[index]
+            button.alphaValue = enabled[index] ? 1 : 0.35
+        }
     }
     private func move(id: UUID, origin: CGPoint, final: Bool) {
         guard let index = document.pieces.firstIndex(where: { $0.id == id }) else { return }
@@ -473,7 +513,7 @@ final class StitchEditorController: NSObject {
         scheduleRender()
     }
     @objc private func changeColor() { checkpoint(L("Change seam color")); document.style.color = color.color; scheduleRender() }
-    @objc private func toggleSeams() { checkpoint(L("Toggle seams")); document.style.visible = seamToggle.state == .on; updateBandGuides(); scheduleRender() }
+    @objc private func toggleSeams() { checkpoint(L("Toggle seams")); document.style.visible = seamToggle.state == .on; syncSeamControls(); updateBandGuides(); scheduleRender() }
     @objc private func selectPiece(_ sender: NSButton) {
         let piece = document.pieces[sender.tag]
         setMode(.move, focusCanvas: false); canvas.selectedID = piece.id
@@ -494,18 +534,18 @@ final class StitchEditorController: NSObject {
         var next = document
         guard StitchPieceOrder.move(id, in: &next.pieces, to: index) else { return }
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Canvas limit reached. Move pieces closer together.")); return }
-        checkpoint(L("Bring piece forward"))
+        checkpoint(L("Reorder pieces"))
         document = next
         refresh()
     }
     @objc private func bringForward() { reorderPiece(to: document.pieces.count - 1) }
     @objc private func movePieceUp() {
         guard let index = document.pieces.firstIndex(where: { $0.id == canvas.selectedID }) else { return }
-        reorderPiece(to: index + 1)
+        reorderPiece(to: index + (document.placement == .packed ? -1 : 1))
     }
     @objc private func movePieceDown() {
         guard let index = document.pieces.firstIndex(where: { $0.id == canvas.selectedID }) else { return }
-        reorderPiece(to: index - 1)
+        reorderPiece(to: index + (document.placement == .packed ? 1 : -1))
     }
     @objc private func undoAction() { onUndo?() }
     @objc private func redoAction() { onRedo?() }

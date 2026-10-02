@@ -303,6 +303,8 @@ class OverlayView: NSView {
             updateToolbarColorSwatch()
         }
     }
+    /// The active tool's color, displayed in the native toolbar swatch.
+    var toolbarColor: NSColor { currentColor }
     /// currentColor with opacity applied — used for all tools except marker, loupe, measure, pixelate, blur
     private var annotationColor: NSColor { currentColor.withAlphaComponent(currentColorOpacity) }
     var currentStrokeWidth: CGFloat = {
@@ -570,8 +572,7 @@ class OverlayView: NSView {
     var cachedEffectsScreenshot: NSImage?
 
     // Color picker target
-    enum ColorPickerTarget { case drawColor, textBg, textOutline, textGlyphStroke, annotationOutline, loupeOutline }
-    private var colorPickerTarget: ColorPickerTarget = .drawColor
+    enum ColorPickerTarget { case drawColor, stitchSeam, textBg, textOutline, textGlyphStroke, annotationOutline, loupeOutline }
 
     // Beautify toolbar animation
     private var beautifyToolbarAnimProgress: CGFloat = 1.0  // 0..1, 1 = fully settled
@@ -5206,10 +5207,11 @@ class OverlayView: NSView {
 
         let movableAnnotations = annotations.contains { $0.isMovable }
         bottomButtons = ToolbarLayout.bottomButtons(
-            selectedTool: currentTool, selectedColor: currentColor,
+            selectedTool: currentTool, selectedColor: toolbarColor,
             beautifyEnabled: beautifyEnabled, beautifyStyleIndex: beautifyStyleIndex,
             hasAnnotations: movableAnnotations, isRecording: isRecording,
-            effectsActive: effectsActive
+            effectsActive: effectsActive,
+            stitchSeamsVisible: (self as? EditorView)?.stitchDocument?.style.visible ?? true
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -8237,9 +8239,9 @@ class OverlayView: NSView {
     }
 
     /// Update the color swatch on the main toolbar's color button without a full rebuild.
-    private func updateToolbarColorSwatch() {
+    func updateToolbarColorSwatch() {
         if let idx = bottomButtons.firstIndex(where: { if case .color = $0.action { return true } else { return false } }) {
-            bottomButtons[idx].bgColor = currentColor
+            bottomButtons[idx].bgColor = toolbarColor
             bottomStripView?.updateState(from: bottomButtons)
             // Schedule button redraw on next run loop iteration so it happens after
             // the overlay's own draw pass (which can paint over button subviews).
@@ -8280,9 +8282,14 @@ class OverlayView: NSView {
             currentTool = .loupe
             needsDisplay = true
         case .color:
-            if PopoverHelper.toggleClosedIfOpen() { break }
             let colorBtn = bottomStripView?.buttonViews.first { if case .color = $0.action { return true }; return false }
-            showColorPickerPopover(target: .drawColor, anchorView: colorBtn)
+            if PopoverHelper.toggleClosedIfOpen(anchorView: colorBtn) { break }
+            if let editor = self as? EditorView, currentTool == .stitch, editor.stitchDocument?.style.visible == false {
+                let seamsAnchor = toolOptionsRowView?.subviews.first { $0.identifier?.rawValue == "stitch.seams" } ?? colorBtn
+                if let seamsAnchor { editor.onStitchOptions?(.seams, seamsAnchor) }
+            } else {
+                showColorPickerPopover(target: currentTool == .stitch ? .stitchSeam : .drawColor, anchorView: colorBtn)
+            }
         case .sizeDisplay:
             break
         case .adjustSelection:
@@ -10224,11 +10231,24 @@ class OverlayView: NSView {
     }
 
     func showColorPickerPopover(target: ColorPickerTarget, anchorView: NSView? = nil, anchorRect: NSRect = .zero) {
-        colorPickerTarget = target
+        let picker = makeColorPicker(target: target)
+        let size = picker.preferredSize
+        if let anchor = anchorView {
+            PopoverHelper.show(picker, size: size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        } else if anchorRect != .zero {
+            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: anchorRect.midX, y: anchorRect.midY), in: self, preferredEdge: .minY)
+        } else {
+            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: bounds.midX, y: bounds.midY), in: self, preferredEdge: .minY)
+        }
+    }
+
+    /// Build the native picker separately from its popover so every entry point shares color and undo behavior.
+    func makeColorPicker(target: ColorPickerTarget) -> ColorPickerView {
         let picker = ColorPickerView()
         let initialColor: NSColor
         switch target {
         case .drawColor: initialColor = currentColor
+        case .stitchSeam: initialColor = (self as? EditorView)?.stitchDocument?.style.color ?? currentColor
         case .textBg: initialColor = textEditor.bgColor
         case .textOutline: initialColor = textEditor.outlineColor
         case .textGlyphStroke: initialColor = textEditor.glyphStrokeColor
@@ -10244,20 +10264,56 @@ class OverlayView: NSView {
             initialColor = (editingLoupe ?? selectedAnnotations.first { $0.tool == .loupe })?.outlineColor
                 ?? currentLoupeOutlineColor
         }
-        picker.setColor(initialColor, opacity: currentColorOpacity)
+        picker.setColor(initialColor, opacity: target == .stitchSeam ? initialColor.alphaComponent : currentColorOpacity)
         picker.customColors = customColors
         picker.selectedColorSlot = selectedColorSlot
 
-        picker.onColorChanged = { [weak self] color in
-            guard let self = self else { return }
-            self.applyPickedColor(color)
+        var stitchUndoState: UUID?
+        var stitchGestureActive = false
+        let applySeamColor: (NSColor) -> Void = { [weak self] color in
+            guard let editor = self as? EditorView, var document = editor.stitchDocument,
+                  document.style.visible else { return }
+            if stitchGestureActive {
+                editor.previewStitchSeamColor(color)
+                return
+            }
+            guard document.style.color != color else { return }
+            if stitchUndoState != editor.undoStateIdentity {
+                editor.checkpointStitchDocument()
+                stitchUndoState = editor.undoStateIdentity
+            }
+            document.style.color = color
+            editor.applyStitchDocument(document, registerUndo: false)
+        }
+        if target == .stitchSeam {
+            picker.onGestureBegan = {
+                stitchGestureActive = true
+                stitchUndoState = nil
+            }
+            picker.onGestureEnded = { [weak self] in
+                stitchGestureActive = false
+                guard let editor = self as? EditorView else { return }
+                if let color = editor.stitchSeamColorPreview { applySeamColor(color) }
+                editor.previewStitchSeamColor(nil)
+            }
+        }
+        picker.onColorChanged = { [weak self, weak picker] color in
+            guard let self, let picker else { return }
+            if target == .stitchSeam { applySeamColor(color.withAlphaComponent(picker.opacity)) }
+            else { self.applyPickedColor(color, target: target) }
             picker.saveToSelectedSlot(color)
             // Update toolbar color swatches without rebuilding (which destroys the popover anchor)
             self.toolOptionsRowView?.updateSwatchColors()
             self.needsDisplay = true
         }
         picker.onOpacityChanged = { [weak self] opacity in
-            guard let self = self else { return }
+            guard let self else { return }
+            if target == .stitchSeam {
+                guard let editor = self as? EditorView,
+                      let color = editor.stitchSeamColorPreview ?? editor.stitchDocument?.style.color else { return }
+                applySeamColor(color.withAlphaComponent(opacity))
+                return
+            }
             self.currentColorOpacity = opacity
             OverlayView.lastUsedOpacity = opacity
             UserDefaults.standard.set(Double(opacity), forKey: "lastUsedColorOpacity")
@@ -10272,18 +10328,12 @@ class OverlayView: NSView {
             self?.saveCustomColors()
         }
 
-        let size = picker.preferredSize
-        if let anchor = anchorView {
-            PopoverHelper.show(picker, size: size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
-        } else if anchorRect != .zero {
-            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: anchorRect.midX, y: anchorRect.midY), in: self, preferredEdge: .minY)
-        } else {
-            PopoverHelper.showAtPoint(picker, size: size, at: NSPoint(x: bounds.midX, y: bounds.midY), in: self, preferredEdge: .minY)
-        }
+        return picker
     }
 
-    private func applyPickedColor(_ color: NSColor) {
-        switch colorPickerTarget {
+    private func applyPickedColor(_ color: NSColor, target: ColorPickerTarget) {
+        switch target {
+        case .stitchSeam: break // The native picker's shared edit gesture owns Stitch undo.
         case .drawColor:
             currentColor = color
             applyColorToTextIfEditing()

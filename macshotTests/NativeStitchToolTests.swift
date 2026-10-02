@@ -144,6 +144,7 @@ final class NativeStitchToolTests: XCTestCase {
         let modes = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.mode" } as? NSSegmentedControl)
         XCTAssertEqual(modes.selectedSegment, 0)
         XCTAssertEqual(modes.segmentCount, 3)
+        for index in 0..<3 { XCTAssertTrue(modes.toolTip(forSegment: index)?.contains("⌥") == true) }
         var modeChanges: [StitchCanvasView.Mode] = []
         view.onStitchModeChanged = { modeChanges.append($0) }
         modes.selectedSegment = 1
@@ -267,6 +268,242 @@ final class NativeStitchToolTests: XCTestCase {
         }
         XCTAssertTrue(changes.isEmpty)
         view.currentTool = .arrow
+    }
+
+    func testPopoverToggleBelongsToItsAnchorAcrossImmediateControlSwitches() {
+        let seams = NSView(), effects = NSView()
+        let now = Date()
+        var state = PopoverToggleState()
+        state.opened(from: seams)
+        XCTAssertTrue(state.shouldClose(from: seams, isVisible: true, at: now))
+        XCTAssertFalse(state.shouldClose(from: effects, isVisible: true, at: now))
+        // Outside-click dismissal happens before the next toolbar action.
+        state.dismissed(at: now)
+        XCTAssertTrue(state.shouldClose(from: seams, isVisible: false, at: now))
+        XCTAssertFalse(state.shouldClose(from: effects, isVisible: false, at: now))
+        state.opened(from: effects)
+        XCTAssertTrue(state.shouldClose(from: effects, isVisible: true, at: now))
+        XCTAssertFalse(state.shouldClose(from: seams, isVisible: true, at: now))
+        state.dismissed(at: now)
+        XCTAssertFalse(state.shouldClose(from: effects, isVisible: false, at: now.addingTimeInterval(0.3)))
+    }
+
+    func testNativeSeamPickerSharesDocumentColorOpacityAndUndoWithoutChangingDrawingColor() throws {
+        try withDefaults(["lastUsedColor": nil, "lastUsedColorOpacity": 0.42, "customColors": nil,
+            "rememberLastTool": false]) {
+            let view = editor()
+            let pixels = try XCTUnwrap(view.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            var document = StitchDocument(pieces: [StitchPiece(image: pixels)])
+            let original = NSColor(calibratedRed: 0.2, green: 0.3, blue: 0.6, alpha: 0.7)
+            document.style.color = original
+            view.installStitchDocument(document)
+            view.currentColor = .orange
+            view.currentTool = .stitch
+            view.rebuildToolbarLayout()
+            let strip = try XCTUnwrap(view.subviews.compactMap { $0 as? ToolbarStripView }.first {
+                $0.buttonViews.contains { $0.action == .color }
+            })
+            let anchor = try XCTUnwrap(strip.buttonViews.first { $0.action == .color })
+            let picker = view.makeColorPicker(target: .stitchSeam)
+            XCTAssertEqual(picker.selectedColor, original)
+            XCTAssertEqual(picker.opacity, 0.7, accuracy: 0.001)
+            XCTAssertTrue(view.undoStack.isEmpty, "Opening the picker is not an edit")
+            picker.onColorChanged?(.green)
+            picker.onColorChanged?(.blue)
+            picker.onOpacityChanged?(0.3)
+            XCTAssertEqual(view.undoStack.count, 1, "The picker groups a continuous color/opacity edit")
+            XCTAssertEqual(view.stitchDocument?.style.color, NSColor.blue.withAlphaComponent(0.3))
+            XCTAssertEqual(view.currentColor, .orange)
+            XCTAssertEqual(UserDefaults.standard.double(forKey: "lastUsedColorOpacity"), 0.42)
+            XCTAssertEqual(view.toolbarColor, NSColor.blue.withAlphaComponent(0.3))
+            XCTAssertEqual(view.bottomButtons.first { $0.action == .color }?.bgColor, view.toolbarColor)
+            XCTAssertTrue(strip.buttonViews.first { $0.action == .color } === anchor)
+            view.undo()
+            XCTAssertEqual(view.stitchDocument?.style.color, original)
+            view.redo()
+            XCTAssertEqual(view.stitchDocument?.style.color, NSColor.blue.withAlphaComponent(0.3))
+            view.undo()
+            picker.onColorChanged?(.purple)
+            XCTAssertEqual(view.undoStack.count, 1, "Picking after Undo starts a new edit branch")
+            XCTAssertTrue(view.redoStack.isEmpty)
+            view.undo()
+            XCTAssertEqual(view.stitchDocument?.style.color, original)
+        }
+    }
+
+    func testPackedPieceControlsFollowReadingOrderForBothAxes() throws {
+        let pixels = try XCTUnwrap(ImageProbe.quadrantImage(width: 60, height: 40)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        for horizontal in [false, true] {
+            var document = StitchDocument(pieces: (0..<3).map { index in
+                StitchPiece(image: pixels, origin: horizontal
+                    ? CGPoint(x: CGFloat(index * 60), y: 0) : CGPoint(x: 0, y: CGFloat(index * 40)), label: "Capture \(index + 1)")
+            })
+            XCTAssertTrue(document.pack())
+            XCTAssertEqual(document.savedPackingState.horizontal, horizontal)
+            let ids = document.pieces.map(\.id)
+            let view = editor()
+            view.installStitchDocument(document)
+            view.currentTool = .stitch
+            let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.contentView = view
+            let controller = StitchEditorController(document: document, window: window)
+            var latest = document
+            controller.onDocumentChanged = { latest = $0; return true }
+            controller.attach(to: view)
+            defer { controller.suspend(); window.orderOut(nil) }
+            let canvas = try XCTUnwrap(view.subviews.compactMap { $0 as? StitchCanvasView }.first)
+            canvas.selectedID = ids[1]
+            let options = controller.makePieceOptions()
+            let scroll = try XCTUnwrap(options.subviews.compactMap { $0 as? NSScrollView }.first)
+            let stack = try XCTUnwrap(scroll.documentView as? NSStackView)
+            XCTAssertEqual(stack.arrangedSubviews.compactMap { ($0 as? NSButton)?.tag }, [0, 1, 2])
+            let earlier = try XCTUnwrap(options.subviews.compactMap { $0 as? NSButton }.first {
+                $0.toolTip == L("Move earlier")
+            })
+            let later = try XCTUnwrap(options.subviews.compactMap { $0 as? NSButton }.first {
+                $0.toolTip == L("Move later")
+            })
+            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(earlier.action), to: earlier.target, from: earlier))
+            XCTAssertEqual(latest.pieces.map(\.id), [ids[1], ids[0], ids[2]])
+            let selected = try XCTUnwrap(latest.pieces.first { $0.id == ids[1] })
+            XCTAssertEqual(horizontal ? selected.origin.x : selected.origin.y, 0)
+            XCTAssertFalse(earlier.isEnabled)
+            XCTAssertTrue(later.isEnabled)
+            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(later.action), to: later.target, from: later))
+            XCTAssertEqual(latest.pieces.map(\.id), ids)
+            XCTAssertEqual(canvas.selectedID, ids[1])
+        }
+    }
+
+    private func stitchFixture() throws -> (EditorView, StitchEditorController, StitchCanvasView, NSWindow) {
+        let pixels = try XCTUnwrap(ImageProbe.quadrantImage(width: 80, height: 60)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let document = StitchDocument(pieces: [StitchPiece(image: pixels),
+            StitchPiece(image: pixels, origin: CGPoint(x: 80, y: 0))])
+        let view = EditorView(frame: CGRect(origin: .zero, size: document.bounds.size))
+        view.screenshotImage = NSImage(cgImage: try XCTUnwrap(StitchRenderer.render(document)), size: document.bounds.size)
+        view.applySelection(view.bounds)
+        view.installStitchDocument(document)
+        view.currentTool = .stitch
+        view.stitchMode = .move
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = view
+        let controller = StitchEditorController(document: document, window: window)
+        controller.onCheckpoint = { view.checkpointStitchDocument() }
+        controller.onDocumentChanged = { view.applyStitchDocument($0, registerUndo: false) }
+        view.onStitchDocumentChanged = { [weak controller, weak view] in
+            if let document = view?.stitchDocument { controller?.restore(document) }
+        }
+        controller.attach(to: view)
+        let canvas = try XCTUnwrap(view.subviews.compactMap { $0 as? StitchCanvasView }.first)
+        return (view, controller, canvas, window)
+    }
+
+    func testStyleRestoreAndNativeColorPreserveSelectionUntilPieceIsRemoved() throws {
+        try withDefaults(["customColors": nil, "rememberLastTool": false]) {
+            let (view, controller, canvas, window) = try stitchFixture()
+            defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
+            let selected = try XCTUnwrap(view.stitchDocument?.pieces.first?.id)
+            canvas.selectedID = selected
+            let picker = view.makeColorPicker(target: .stitchSeam)
+            picker.onColorChanged?(.blue)
+            XCTAssertEqual(canvas.selectedID, selected)
+            view.undo()
+            XCTAssertEqual(canvas.selectedID, selected)
+            view.redo()
+            XCTAssertEqual(canvas.selectedID, selected)
+            var styleChange = try XCTUnwrap(view.stitchDocument)
+            styleChange.style.blur += 1
+            controller.restore(styleChange)
+            XCTAssertEqual(canvas.selectedID, selected)
+            styleChange.pieces.removeAll { $0.id == selected }
+            controller.restore(styleChange)
+            XCTAssertNil(canvas.selectedID)
+        }
+    }
+
+    func testHiddenSeamsDisableInspectorControlsAndNativeColorOffersVisibilityChoice() throws {
+        let (view, controller, canvas, window) = try stitchFixture()
+        defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
+        canvas.selectedID = view.stitchDocument?.pieces.first?.id
+        let options = controller.makeSeamOptions()
+        let toggle = try XCTUnwrap(options.subviews.compactMap { $0 as? NSButton }.first)
+        let color = try XCTUnwrap(options.subviews.compactMap { $0 as? NSColorWell }.first)
+        let sliders = options.subviews.compactMap { $0 as? NSSlider }
+        XCTAssertEqual(sliders.count, 4)
+        toggle.state = .off
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(toggle.action), to: toggle.target, from: toggle))
+        XCTAssertFalse(try XCTUnwrap(view.stitchDocument).style.visible)
+        XCTAssertFalse(color.isEnabled)
+        XCTAssertTrue(sliders.allSatisfy { !$0.isEnabled && $0.alphaValue < 1 })
+        XCTAssertTrue(options.subviews.compactMap { $0 as? NSTextField }.allSatisfy { $0.alphaValue < 1 })
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertEqual(view.bottomButtons.first { $0.action == .color }?.tooltip, L("Show seams to edit color"))
+        var offeredVisibilityChoice = false
+        view.onStitchOptions = { action, anchor in
+            offeredVisibilityChoice = action == .seams && anchor.identifier?.rawValue == "stitch.seams"
+        }
+        PopoverHelper.dismiss()
+        view.handleToolbarAction(.color)
+        XCTAssertTrue(offeredVisibilityChoice)
+        view.undo()
+        XCTAssertTrue(try XCTUnwrap(view.stitchDocument).style.visible)
+        XCTAssertTrue(color.isEnabled)
+        XCTAssertTrue(sliders.allSatisfy { $0.isEnabled && $0.alphaValue == 1 })
+        XCTAssertEqual(view.bottomButtons.first { $0.action == .color }?.tooltip, L("Seam color"))
+        XCTAssertEqual(canvas.selectedID, view.stitchDocument?.pieces.first?.id)
+    }
+
+    func testNativeColorDragPreviewsWithoutPublishingAndCommitsExactlyOnceOnRelease() throws {
+        try withDefaults(["customColors": nil, "rememberLastTool": false]) {
+            let (view, controller, canvas, window) = try stitchFixture()
+            defer { controller.suspend(); view.onStitchDocumentChanged = nil; window.orderOut(nil) }
+            canvas.selectedID = view.stitchDocument?.pieces.first?.id
+            let selected = canvas.selectedID
+            let original = try XCTUnwrap(view.stitchDocument?.style.color)
+            let rawImage = view.screenshotImage
+            var published = 0
+            view.onStitchDocumentChanged = { [weak controller, weak view] in
+                published += 1
+                if let document = view?.stitchDocument { controller?.restore(document) }
+            }
+            let picker = view.makeColorPicker(target: .stitchSeam)
+            picker.beginEditingGesture()
+            for index in 1...20 {
+                picker.onColorChanged?(NSColor(calibratedRed: CGFloat(index) / 20, green: 0.3, blue: 0.2, alpha: 1))
+            }
+            picker.onOpacityChanged?(0.4)
+            XCTAssertEqual(published, 0, "Drag events must not invoke full image rendering/publishing")
+            XCTAssertTrue(view.screenshotImage === rawImage)
+            XCTAssertEqual(view.stitchDocument?.style.color, original)
+            XCTAssertTrue(view.undoStack.isEmpty)
+            XCTAssertEqual(view.toolbarColor, try XCTUnwrap(view.stitchSeamColorPreview))
+            let finalColor = try XCTUnwrap(view.stitchSeamColorPreview)
+            picker.mouseUp(with: try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: .zero,
+                modifierFlags: [], timestamp: 1, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 0)))
+            XCTAssertEqual(published, 1)
+            XCTAssertEqual(view.undoStack.count, 1)
+            XCTAssertEqual(view.stitchDocument?.style.color, finalColor)
+            XCTAssertNil(view.stitchSeamColorPreview)
+            XCTAssertEqual(canvas.selectedID, selected)
+            view.undo()
+            XCTAssertEqual(view.stitchDocument?.style.color, original)
+            XCTAssertEqual(canvas.selectedID, selected)
+        }
+    }
+
+    func testNativePickerSwatchClickHasOneCompleteGesture() throws {
+        let picker = ColorPickerView()
+        var callbacks: [String] = []
+        picker.onGestureBegan = { callbacks.append("begin") }
+        picker.onColorChanged = { _ in callbacks.append("color") }
+        picker.onGestureEnded = { callbacks.append("end") }
+        picker.mouseDown(with: try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown,
+            location: CGPoint(x: 10, y: picker.bounds.maxY - 10), modifierFlags: [], timestamp: 1,
+            windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)))
+        XCTAssertEqual(callbacks, ["begin", "color", "end"])
+        XCTAssertFalse(picker.isEditingGesture)
     }
 
     func testConfigurableNativeShortcutMapsToStitchWithoutChangingExistingDefaults() {

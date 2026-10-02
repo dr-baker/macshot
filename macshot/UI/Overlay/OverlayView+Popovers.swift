@@ -5,7 +5,7 @@ extension OverlayView {
 
     #if !OFFLINE
     func showUploadConfirmPopover(anchorRect: NSRect, anchorView: NSView? = nil) {
-        if PopoverHelper.toggleClosedIfOpen() { return }
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchorView) { return }
 
         let current = UserDefaults.standard.bool(forKey: "uploadConfirmEnabled")
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 32))
@@ -43,7 +43,7 @@ extension OverlayView {
     #endif
 
     func showRedactTypePopover(anchorRect: NSRect, anchorView: NSView? = nil) {
-        if PopoverHelper.toggleClosedIfOpen() { return }
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchorView) { return }
         let types = AutoRedactor.redactTypeNames
         let picker = ListPickerView()
         picker.items = types.map { item in
@@ -74,7 +74,7 @@ extension OverlayView {
     }
 
     func showTranslatePopover(anchorRect: NSRect, anchorView: NSView? = nil) {
-        if PopoverHelper.toggleClosedIfOpen() { return }
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchorView) { return }
         let languages = TranslationService.availableLanguages
         let currentCode = TranslationService.targetLanguage
 
@@ -238,7 +238,7 @@ extension OverlayView {
     // MARK: - Recording Settings Popover
 
     func showRecordingSettingsPopover(anchorView: NSView?) {
-        if PopoverHelper.toggleClosedIfOpen() { return }
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchorView) { return }
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 100))
         var y: CGFloat = 8
@@ -553,7 +553,7 @@ extension OverlayView {
     }
 
     func showEffectsPopover(anchorView: NSView? = nil, anchorRect: NSRect = .zero) {
-        if PopoverHelper.toggleClosedIfOpen() { return }
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchorView) { return }
         let picker = EffectsPickerView(config: effectsConfig)
         picker.onConfigChanged = { [weak self] config in
             guard let self = self else { return }

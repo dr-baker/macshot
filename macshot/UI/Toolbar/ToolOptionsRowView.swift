@@ -329,9 +329,9 @@ class ToolOptionsRowView: NSView {
         (modes.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
         modes.sizeToFit()
         modes.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: modes.frame.width, height: 22)
-        modes.setToolTip(L("Remove Rows"), forSegment: 0)
-        modes.setToolTip(L("Remove Columns"), forSegment: 1)
-        modes.setToolTip(L("Move"), forSegment: 2)
+        modes.setToolTip(L("Drag a horizontal band to remove it. Hold ⌥ to ignore guides."), forSegment: 0)
+        modes.setToolTip(L("Drag a vertical band to remove it. Hold ⌥ to ignore guides."), forSegment: 1)
+        modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 2)
         addSubview(modes)
         curX += modes.frame.width + 4
         curX = addSeparator(at: curX)
@@ -339,6 +339,9 @@ class ToolOptionsRowView: NSView {
         let placement = NSPopUpButton(frame: .zero, pullsDown: false)
         placement.identifier = NSUserInterfaceItemIdentifier("stitch.placement")
         placement.addItems(withTitles: [L("Free Move"), L("Packed")])
+        placement.toolTip = L("Free Move keeps overlaps. Packed closes gaps and snaps pieces into rows or columns.")
+        placement.item(at: 0)?.toolTip = L("Place pieces independently and keep precise overlaps.")
+        placement.item(at: 1)?.toolTip = L("Arrange pieces tightly and drag to reorder them.")
         placement.selectItem(at: editor.stitchDocument?.placement == .packed ? 1 : 0)
         placement.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         placement.target = self

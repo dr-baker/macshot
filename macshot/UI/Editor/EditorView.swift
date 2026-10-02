@@ -17,6 +17,20 @@ struct StitchAnnotationLayer {
 }
 
 class EditorView: OverlayView, NSMenuItemValidation {
+    override var toolbarColor: NSColor {
+        currentTool == .stitch ? stitchSeamColorPreview ?? stitchDocument?.style.color ?? currentColor : currentColor
+    }
+
+    private(set) var stitchSeamColorPreview: NSColor?
+    var onStitchSeamColorPreview: ((NSColor?) -> Void)?
+
+    func previewStitchSeamColor(_ color: NSColor?) {
+        guard stitchSeamColorPreview != color else { return }
+        stitchSeamColorPreview = color
+        updateToolbarColorSwatch()
+        onStitchSeamColorPreview?(color)
+    }
+
     var stitchMode: StitchCanvasView.Mode = .rows {
         didSet {
             guard stitchMode != oldValue else { return }
@@ -82,6 +96,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         didSet {
             guard !installingStitchImage else { return }
             stitchDocument = nil
+            previewStitchSeamColor(nil)
             onStitchDocumentChanged?()
         }
     }
@@ -136,6 +151,7 @@ class EditorView: OverlayView, NSMenuItemValidation {
         screenshotImage = snapshot.image
         installingStitchImage = false
         stitchDocument = snapshot.document
+        previewStitchSeamColor(nil)
         for saved in snapshot.annotations { saved.object.copyProperties(from: saved.properties) }
         annotations = snapshot.annotations.map(\.object)
         numberCounter = snapshot.numberCounter

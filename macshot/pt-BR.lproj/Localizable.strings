@@ -960,3 +960,26 @@
 /* Stitch capture feedback. English fallback pending translation. */
 "Release to capture · hold Space to navigate" = "Release to capture · hold Space to navigate";
 "capture" = "capture";
+
+/* Native Stitch interaction polish. English fallback pending translation. */
+"Arrange pieces tightly and drag to reorder them." = "Arrange pieces tightly and drag to reorder them.";
+"Bring forward one layer" = "Bring forward one layer";
+"Bring to front" = "Bring to front";
+"Canvas background color" = "Canvas background color";
+"Choose Remove Rows or Remove Columns and drag a band to remove it. Choose Move to reposition pieces. Hold Option to ignore guides or Free Move snapping." = "Arraste uma faixa para remover linhas ou colunas. Escolha Mover para reposicionar as partes. Segure Option para ignorar as guias ou o encaixe na movimentação livre.";
+"Drag a horizontal band to remove it. Hold ⌥ to ignore guides." = "Drag a horizontal band to remove it. Hold ⌥ to ignore guides.";
+"Drag a vertical band to remove it. Hold ⌥ to ignore guides." = "Drag a vertical band to remove it. Hold ⌥ to ignore guides.";
+"Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping." = "Arraste as partes para movê-las ou reordená-las. Segure ⌥ para ignorar o encaixe na movimentação livre.";
+"Free Move keeps overlaps. Packed closes gaps and snaps pieces into rows or columns." = "Movimentação livre mantém as sobreposições. Compacto elimina espaços e encaixa as partes em linhas ou colunas.";
+"Guides ignored" = "Guides ignored";
+"Move captured pieces or drag a band to remove rows or columns. Hold Option to ignore guides or Free Move snapping. Other tool shortcuts use the image editor." = "Mova as partes capturadas ou arraste uma faixa para remover linhas ou colunas. Segure Option para ignorar as guias ou o encaixe na movimentação livre. Os atalhos das outras ferramentas usam o editor de imagens.";
+"Move earlier" = "Mover para antes";
+"Move later" = "Mover para depois";
+"Move to end" = "Mover para o final";
+"Place pieces independently and keep precise overlaps." = "Place pieces independently and keep precise overlaps.";
+"Reorder pieces" = "Reorder pieces";
+"Seam color" = "Seam color";
+"Seam line color" = "Seam line color";
+"Send backward one layer" = "Send backward one layer";
+"Show seams to edit color" = "Show seams to edit color";
+"⌥ Ignore guides" = "⌥ Ignore guides";
