@@ -959,6 +959,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     @objc private func stitchCapture() {
         let session = StitchCaptureSession.shared
+        session.thumbnailWindowNumbers = { [weak self] in
+            self?.thumbnailControllers.compactMap(\.windowNumber) ?? []
+        }
         if session.isPresenting {
             session.trigger()
             return

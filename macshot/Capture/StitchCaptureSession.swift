@@ -8,6 +8,7 @@ final class StitchCaptureSession: NSObject {
     private var coordinator: StitchCaptureCoordinator?
     private var pickers: [StitchRegionSelection] = []
     private var hud: StitchCaptureHUD?
+    var thumbnailWindowNumbers: () -> [CGWindowID] = { [] }
     private var selectionCompletion: ((StitchCaptureFrame?) -> Void)?
     private var referenceScale: CGFloat?
     private var firstCaptureFailure: String?
@@ -79,10 +80,11 @@ final class StitchCaptureSession: NSObject {
         capturing = true
         generation = UUID()
         let token = generation, offset = scrollOffset
-        let excluded = hud?.windowNumbers ?? []
         hud?.show()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self, self.generation == token else { return }
+            let excluded = ScreenCaptureWindowExclusions.combining(
+                self.hud?.windowNumbers ?? [], self.thumbnailWindowNumbers())
             ScreenCaptureManager.captureAllScreens(excludingWindowNumbers: excluded) { [weak self] captures in
                 guard let self, self.generation == token else { return }
                 self.capturing = false

@@ -476,18 +476,9 @@ class ScreenCaptureManager {
                                     // windows, while removing the HUD and any other excluded panels.
                                     guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
                                         as? [[String: Any]] else { return nil }
-                                    let excluded = Set(excludingWindowNumbers)
-                                    var identifiers: [UnsafeRawPointer?] = []
-                                    for window in windows {
-                                        guard let number = window[kCGWindowNumber as String] as? NSNumber else { return nil }
-                                        let id = number.uint32Value
-                                        if !excluded.contains(id) {
-                                            identifiers.append(UnsafeRawPointer(bitPattern: UInt(id)))
-                                        }
-                                    }
-                                    guard !identifiers.isEmpty else { return nil }
-                                    // CoreGraphics expects raw CGWindowID values, not NSNumber objects.
-                                    guard let windowArray = CFArrayCreate(nil, &identifiers, identifiers.count, nil) else { return nil }
+                                    guard let included = ScreenCaptureWindowExclusions.includedWindowNumbers(
+                                        in: windows, excluding: excludingWindowNumbers),
+                                        let windowArray = ScreenCaptureWindowExclusions.windowArray(for: included) else { return nil }
                                     captured = CGImage(windowListFromArrayScreenBounds: cgRect, windowArray: windowArray, imageOption: .bestResolution)
                                 }
                                 guard let image = captured else {
