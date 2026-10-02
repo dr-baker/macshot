@@ -52,6 +52,26 @@ final class SelectionOnlyOverlayTests: XCTestCase {
         XCTAssertEqual(delegate.outputRequests, 0)
     }
 
+    func testStationaryModifierRefreshReleasesHoverOnASelectorThatIsNotKey() throws {
+        let screen = try XCTUnwrap(NSScreen.main ?? NSScreen.screens.first)
+        let controller = OverlayWindowController(screen: screen)
+        defer { controller.tearDown() }
+        let window = try XCTUnwrap(NSApp.windows.first { $0.windowNumber == Int(controller.windowNumber) })
+        let view = try XCTUnwrap(window.contentView?.subviews.compactMap { $0 as? OverlayView }.first)
+        controller.setStitchStartingGuides { _ in
+            .init(screenReferenceRect: CGRect(x: 50, y: 50, width: 200, height: 100),
+                  vertical: [.init(position: 50, isScreenReference: true), .init(position: 250, isScreenReference: true)],
+                  horizontal: [.init(position: 50, isScreenReference: true), .init(position: 150, isScreenReference: true)])
+        }
+        XCTAssertFalse(window.isKeyWindow)
+        view.updateStitchStartingHover(at: CGPoint(x: 53, y: 47), modifiers: [])
+        XCTAssertEqual(view.stitchStartingFeedback?.point, CGPoint(x: 50, y: 50))
+        controller.refreshStitchStartingModifiers(.option)
+        XCTAssertNil(view.stitchStartingFeedback)
+        controller.refreshStitchStartingModifiers([])
+        XCTAssertEqual(view.stitchStartingFeedback?.point, CGPoint(x: 50, y: 50))
+    }
+
     func testFullScreenSelectionKeepsToolbarsHidden() {
         let view = OverlayView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         let delegate = SelectionOnlyDelegate()

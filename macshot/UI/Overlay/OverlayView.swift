@@ -767,6 +767,7 @@ class OverlayView: NSView {
     var selectionOnlyMode: Bool = false
     var stitchCaptureSelection = false
     private var selectionRawPoint: NSPoint?
+    private var stitchSelectionInitialPoint: NSPoint?
     // Keep whole-rectangle snapping at the stationary Space-release point.
     // The next pointer movement resumes ordinary corner resizing.
     private var selectionUsesRepositionGeometry = false
@@ -774,6 +775,21 @@ class OverlayView: NSView {
     var stitchSizeRecommendations: ((CGRect, CGSize) -> StitchSelectionRecommendations.Result)?
     var stitchReferencePixelsPerPoint: CGFloat = 1
     var stitchDimensionGuides: [StitchDimensionGuide] = []
+    var stitchStartingGuideProvider: ((CGPoint?) -> StitchSelectionGuideGeometry.Result)? {
+        didSet {
+            stitchStartingGuides = stitchStartingGuideProvider?(nil) ?? .empty
+            stitchStartingFeedback = nil
+            stitchSelectionHoverPoint = nil
+            needsDisplay = true
+        }
+    }
+    var stitchStartingGuides: StitchSelectionGuideGeometry.Result = .empty
+    var stitchStartingFeedback: StitchStartingFeedback?
+    var stitchSelectionHoverPoint: CGPoint?
+    var stitchAllowsStartingCornerSnap: Bool {
+        if case .resolution = activePreSelectionPreset { return false }
+        return true
+    }
     var autoConfirmMode: Bool = false  // set by "Add Capture" — auto-confirms selection (no toolbars, no save)
 
     // Recording session overrides (popover settings — nil means use UserDefaults default)
@@ -1130,7 +1146,7 @@ class OverlayView: NSView {
         window?.makeFirstResponder(self)
         window?.acceptsMouseMovedEvents = true
         let area = NSTrackingArea(
-            rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self, userInfo: nil)
         addTrackingArea(area)
 
@@ -1188,6 +1204,7 @@ class OverlayView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        updateStitchStartingHover(at: point, modifiers: event.modifierFlags)
 
         // Anchored selection (right-click in idle → track cursor without
         // holding a button). Shares all modifier behaviour with drag-based
@@ -1365,6 +1382,18 @@ class OverlayView: NSView {
         // Intentionally empty — cursor management is handled imperatively in mouseMoved
         // via updateCursorForPoint(). Overriding prevents AppKit's default cursorUpdate
         // from resetting our custom cursors.
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateStitchStartingHover(at: convert(event.locationInWindow, from: nil), modifiers: event.modifierFlags)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard state == .idle, stitchStartingGuideProvider != nil else { return }
+        stitchSelectionHoverPoint = nil
+        stitchStartingFeedback = nil
+        stitchStartingGuides = stitchStartingGuideProvider?(nil) ?? .empty
+        needsDisplay = true
     }
 
     override func resetCursorRects() {
@@ -1770,6 +1799,7 @@ class OverlayView: NSView {
 
         // Snap-target highlight (drawn before helper text so text appears on top)
         drawSnapHighlight()
+        if state == .idle { drawStitchStartingGuides() }
 
         // Helper text (capture instructions). Suppressed when the user has
         // enabled "Hide capture instructions" in Settings (issue #226).
@@ -2160,6 +2190,7 @@ class OverlayView: NSView {
             // Boundary-snap guide line(s) — while resizing or drawing a new
             // selection with an active snap.
             if isResizingSelection || state == .selecting {
+                if state == .selecting { drawStitchStartingGuides() }
                 drawBoundarySnapGuides()
                 drawStitchDimensionGuides()
             }
@@ -2326,18 +2357,29 @@ class OverlayView: NSView {
     private static let helperSmallBoldFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
     private static let helperDimColor = NSColor.white.withAlphaComponent(0.7)
 
+    var idleHelperText: String {
+        if stitchAllowsStartingCornerSnap && !stitchStartingGuides.isEmpty {
+            return L("Start near a guide · Option to ignore snapping")
+        }
+        switch snapMode {
+        case .window:
+            return L("Click a window  ·  Drag for custom area  ·  F for full screen")
+        case .element:
+            return L("Click an element  ·  Drag for custom area  ·  F for full screen")
+        case .off:
+            return L("Drag to select  ·  Click for full screen")
+        }
+    }
+
     private func drawIdleHelperText() {
-        let line1: String
+        let line1 = idleHelperText
         let line3state: String
         switch snapMode {
         case .window:
-            line1 = L("Click a window  ·  Drag for custom area  ·  F for full screen")
             line3state = L("WINDOW")
         case .element:
-            line1 = L("Click an element  ·  Drag for custom area  ·  F for full screen")
             line3state = L("ELEMENT")
         case .off:
-            line1 = L("Drag to select  ·  Click for full screen")
             line3state = L("OFF")
         }
         let line3prefix = L("Snap mode: ")
@@ -5854,10 +5896,12 @@ class OverlayView: NSView {
                 return
             }
             // Always start a drag — snap is resolved in mouseUp if no real drag occurred
-            selectionStart = point
+            selectionStart = stitchSnappedStartingPoint(raw: point,
+                enabled: stitchAllowsStartingCornerSnap && !event.modifierFlags.contains(.option))
+            stitchSelectionInitialPoint = stitchStartingGuideProvider == nil ? nil : point
             selectionRawPoint = point
             selectionUsesRepositionGeometry = false
-            selectionRect = NSRect(origin: point, size: .zero)
+            selectionRect = NSRect(origin: selectionStart, size: .zero)
             state = .selecting
             overlayDelegate?.overlayViewDidBeginSelection()
             needsDisplay = true
@@ -6841,8 +6885,20 @@ class OverlayView: NSView {
         return true
     }
 
+    private static let selectionDragThresholdPoints: CGFloat = 5
+
+    private var selectionHasRealDrag: Bool {
+        if stitchAllowsStartingCornerSnap, !selectionUsesRepositionGeometry,
+           let initial = stitchSelectionInitialPoint, let point = selectionRawPoint {
+            return abs(point.x - initial.x) > Self.selectionDragThresholdPoints
+                || abs(point.y - initial.y) > Self.selectionDragThresholdPoints
+        }
+        return selectionRect.width > Self.selectionDragThresholdPoints
+            || selectionRect.height > Self.selectionDragThresholdPoints
+    }
+
     private func finishSelection() {
-        if selectionRect.width > 5 || selectionRect.height > 5 {
+        if selectionHasRealDrag {
             // Real drag — use drawn rect as-is
             state = .selected
             applyPreSelectionLockAfterSelection()
@@ -6958,6 +7014,20 @@ class OverlayView: NSView {
             return
         }
 
+        // The magnetic offset must not turn pointer jitter into a capture.
+        // Measure the drag threshold from the physical click on either axis.
+        if !repositionGeometry, let initial = stitchSelectionInitialPoint,
+           abs(point.x - initial.x) <= Self.selectionDragThresholdPoints,
+           abs(point.y - initial.y) <= Self.selectionDragThresholdPoints {
+            stitchDimensionGuides = []
+            boundarySnapGuideX = nil
+            boundarySnapGuideY = nil
+            selectionRect = NSRect(origin: selectionStart, size: .zero)
+            overlayDelegate?.overlayViewSelectionDidChange(selectionRect)
+            needsDisplay = true
+            return
+        }
+
         let unsnappedPoint = point
         // Boundary snap the MOVING corner (the cursor) to nearby image edges.
         // Skipped for freeform-constrained drags (aspect/shift) so the constraint
@@ -7043,7 +7113,7 @@ class OverlayView: NSView {
     /// tiny (no-move) rectangle.
     private func commitAnchoredSelection() {
         isAnchoredSelecting = false
-        if selectionRect.width > 5 || selectionRect.height > 5 {
+        if selectionHasRealDrag {
             state = .selected
             applyPreSelectionLockAfterSelection()
             if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode && !selectionOnlyMode {
@@ -7114,10 +7184,12 @@ class OverlayView: NSView {
             return
         }
         if state == .idle && shouldAllowNewSelection() {
-            selectionStart = point
+            selectionStart = stitchSnappedStartingPoint(raw: point,
+                enabled: stitchAllowsStartingCornerSnap && !event.modifierFlags.contains(.option))
+            stitchSelectionInitialPoint = stitchStartingGuideProvider == nil ? nil : point
             selectionRawPoint = point
             selectionUsesRepositionGeometry = false
-            selectionRect = NSRect(origin: point, size: .zero)
+            selectionRect = NSRect(origin: selectionStart, size: .zero)
             state = .selecting
             isAnchoredSelecting = true
             overlayDelegate?.overlayViewDidBeginSelection()
@@ -9201,6 +9273,7 @@ class OverlayView: NSView {
     // MARK: - Keyboard
 
     override func flagsChanged(with event: NSEvent) {
+        refreshStitchStartingModifiers(event.modifierFlags)
         if state == .selecting, let point = selectionRawPoint {
             updateSelectionRect(to: point, shiftHeld: event.modifierFlags.contains(.shift),
                                 modifiers: event.modifierFlags)
@@ -10204,6 +10277,10 @@ class OverlayView: NSView {
         selectionRect = .zero
         remoteSelectionRect = .zero
         remoteSelectionFullRect = .zero
+        stitchStartingFeedback = nil
+        stitchSelectionHoverPoint = nil
+        stitchSelectionInitialPoint = nil
+        stitchStartingGuides = stitchStartingGuideProvider?(nil) ?? .empty
         showToolbars = false
         updateResolutionBox()  // remove the box (no selection)
         needsDisplay = true
@@ -10515,9 +10592,12 @@ class OverlayView: NSView {
         autoScrollCaptureMode = false
         autoConfirmMode = false
         selectionOnlyMode = false
+        stitchCaptureSelection = false
         stitchSizeRecommendations = nil
         stitchReferencePixelsPerPoint = 1
         stitchDimensionGuides = []
+        stitchStartingGuideProvider = nil
+        stitchSelectionInitialPoint = nil
         needsDisplay = true
     }
 }

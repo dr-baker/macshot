@@ -249,6 +249,10 @@ class OverlayWindowController {
         timingMark?("after makeKeyAndOrderFront isVisible=\(window.isVisible) isKey=\(window.isKeyWindow)")
         if let view = overlayView {
             window.makeFirstResponder(view)
+            if view.stitchStartingGuideProvider != nil {
+                view.updateStitchStartingHover(at: view.convert(window.mouseLocationOutsideOfEventStream, from: nil),
+                                              modifiers: NSEvent.modifierFlags)
+            }
         }
         timingMark?("after makeFirstResponder")
         // Window is now key — resetCursorRects (called by AppKit on key change)
@@ -390,6 +394,14 @@ class OverlayWindowController {
         provider: @escaping (CGRect, CGSize) -> StitchSelectionRecommendations.Result) {
         overlayView?.stitchReferencePixelsPerPoint = referencePixelsPerPoint
         overlayView?.stitchSizeRecommendations = provider
+    }
+
+    func setStitchStartingGuides(provider: @escaping (CGPoint?) -> StitchSelectionGuideGeometry.Result) {
+        overlayView?.stitchStartingGuideProvider = provider
+    }
+
+    func refreshStitchStartingModifiers(_ modifiers: NSEvent.ModifierFlags) {
+        overlayView?.refreshStitchStartingModifiers(modifiers)
     }
 
     private func finishRawSelection(_ rect: NSRect) {

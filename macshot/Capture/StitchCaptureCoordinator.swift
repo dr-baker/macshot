@@ -4,11 +4,13 @@ import AppKit
 struct StitchCaptureFrame {
     let image: CGImage
     var position: CGPoint = .zero
+    /// Frames without a desktop source still participate in content matching.
+    let source: StitchCaptureSource?
 
-    static func estimatedPosition(screenFrame: CGRect, pixelRect: CGRect, pixelScale: CGFloat,
-                                  referenceScale: CGFloat, scrollOffset: CGPoint) -> CGPoint {
-        CGPoint(x: ((screenFrame.minX + pixelRect.minX / pixelScale + scrollOffset.x) * referenceScale).rounded(),
-                y: ((-screenFrame.maxY + pixelRect.minY / pixelScale + scrollOffset.y) * referenceScale).rounded())
+    init(image: CGImage, position: CGPoint = .zero, source: StitchCaptureSource? = nil) {
+        self.image = image
+        self.position = position
+        self.source = source
     }
 }
 
@@ -55,6 +57,13 @@ final class StitchCaptureCoordinator {
                              y: previous.origin.y + position.y - previousFrame.position.y)
         return StitchSelectionRecommendations.recommendations(frames: document.pieces.map(\.frame),
                                                               proposedOrigin: origin, maximumSize: maximumSize)
+    }
+
+    func selectionStartingGuides(screenFrame: CGRect, scrollOffset: CGPoint,
+                                 pointer: CGPoint? = nil) -> StitchSelectionGuideGeometry.Result {
+        guard let source = previousFrame.source, let previous = document.pieces.last else { return .empty }
+        return StitchSelectionGuideGeometry.guides(frames: document.pieces.map(\.frame), anchor: previous.frame,
+            source: source, screenFrame: screenFrame, scrollOffset: scrollOffset, pointer: pointer)
     }
 
     func requestCapture() {
