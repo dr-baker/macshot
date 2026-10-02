@@ -13,11 +13,13 @@
 		2FAA000E2F00000100AA0001 /* WebP in Frameworks */ = {isa = PBXBuildFile; productRef = 2FAA000C2F00000100AA0001 /* WebP */; };
 		BB0000012F61B60100B71643 /* PermissionFlow in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000032F61B60100B71643 /* PermissionFlow */; };
 		BB0000022F61B60100B71643 /* PermissionFlow in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000042F61B60100B71643 /* PermissionFlow */; };
+		BB0000062F61B60100B71643 /* PermissionFlow-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BB0000052F61B60100B71643 /* PermissionFlow-LICENSE */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2F4EB1222F61B60100B71643 /* macshot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = macshot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAA00012F00000100AA0001 /* macshotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = macshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB0000052F61B60100B71643 /* PermissionFlow-LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThirdPartyLicenses/PermissionFlow-LICENSE"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -84,6 +86,7 @@
 			children = (
 				2F4EB1242F61B60100B71643 /* macshot */,
 				2FAA00022F00000100AA0001 /* macshotTests */,
+				BB0000052F61B60100B71643 /* PermissionFlow-LICENSE */,
 				2F4EB1232F61B60100B71643 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -238,6 +241,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB0000062F61B60100B71643 /* PermissionFlow-LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
