@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.4.0-beta.5] - 2026-10-01
+
+### Upgrade notice
+
+- **Upgrading from 4.3.x or 4.4.0-beta.1/beta.2?** macshot has a new developer signature, introduced in beta.3. macOS may ask you to grant permissions again. If Screen Recording already looks enabled but capture fails, remove macshot with the minus button (−) in System Settings, then add it back from Applications with the plus button (+). Re-enable Accessibility or Input Monitoring if prompted. Your settings, history and recordings are preserved. Users who already restored permissions in beta.3 or beta.4 should not need to repeat this.
+
+### Fixed
+
+- **OCR on macOS 27**: text recognition could hang or return no text. Recognition now has a timeout and a fast fallback, shared by OCR, screenshot translation, auto-redaction and the smart marker. (#439)
+- **Microphone recording failed even while its level meter reacted**: older builds could save a temporary default microphone ID that stopped working after restarting macshot. These stale selections now resolve to the current default microphone. Explicitly selected microphones are preserved, including when disconnected.
+- **Microphone level meter** now listens to the selected recording microphone instead of always using the system default.
+
 ## [4.4.0-beta.4] - 2026-09-27
 
 ### Added

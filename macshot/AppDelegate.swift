@@ -275,6 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Clear image-effect state written by a pre-June-2026 build, which
         // otherwise leaves Vivid silently applied to every capture (#345).
         EffectsMigration.runIfNeeded()
+        MicrophoneDeviceSelection.repairLegacyPreference()
 
         // Surface save failures — otherwise a capture that can't be written
         // (full disk, unmounted volume) disappears without a word.
