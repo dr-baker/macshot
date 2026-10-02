@@ -19,7 +19,7 @@ struct StitchAnnotationLayer {
 
 class EditorView: OverlayView, NSMenuItemValidation {
     override var toolbarColor: NSColor {
-        currentTool == .stitch ? stitchSeamColorPreview ?? stitchDocument?.style.color ?? currentColor : currentColor
+        currentTool == .stitch ? stitchSeamColorPreview ?? stitchDocument?.style.editableColor ?? currentColor : currentColor
     }
 
     private(set) var stitchSeamColorPreview: NSColor?

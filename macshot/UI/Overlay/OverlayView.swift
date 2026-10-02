@@ -5275,7 +5275,7 @@ class OverlayView: NSView {
             hasAnnotations: movableAnnotations, isRecording: isRecording,
             effectsActive: effectsActive,
             stitchSeamsVisible: (self as? EditorView)?.stitchDocument?.style.visible ?? true,
-            stitchSeamUsesLine: (self as? EditorView)?.stitchDocument?.style.transition != .blend
+            stitchTransition: (self as? EditorView)?.stitchDocument?.style.transition ?? .wave
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -8338,8 +8338,8 @@ class OverlayView: NSView {
     func updateToolbarColorSwatch() {
         if let idx = bottomButtons.firstIndex(where: { if case .color = $0.action { return true } else { return false } }) {
             let style = (self as? EditorView)?.stitchDocument?.style
-            let blend = currentTool == .stitch && style?.visible == true && style?.transition == .blend
-            bottomButtons[idx].bgColor = blend ? toolbarColor.withAlphaComponent(toolbarColor.alphaComponent * 0.3) : toolbarColor
+            let appearanceOnly = currentTool == .stitch && style?.visible == true && style?.transition.hasEditableColor == false
+            bottomButtons[idx].bgColor = appearanceOnly ? toolbarColor.withAlphaComponent(toolbarColor.alphaComponent * 0.3) : toolbarColor
             bottomStripView?.updateState(from: bottomButtons)
             // Schedule button redraw on next run loop iteration so it happens after
             // the overlay's own draw pass (which can paint over button subviews).
@@ -8383,7 +8383,7 @@ class OverlayView: NSView {
             let colorBtn = bottomStripView?.buttonViews.first { if case .color = $0.action { return true }; return false }
             if PopoverHelper.toggleClosedIfOpen(anchorView: colorBtn) { break }
             if let editor = self as? EditorView, currentTool == .stitch,
-                editor.stitchDocument?.style.visible == false || editor.stitchDocument?.style.transition == .blend {
+                editor.stitchDocument?.style.visible == false || editor.stitchDocument?.style.transition.hasEditableColor == false {
                 let seamsAnchor = toolOptionsRowView?.subviews.first { $0.identifier?.rawValue == "stitch.seams" } ?? colorBtn
                 if let seamsAnchor { editor.onStitchOptions?(.seams, seamsAnchor) }
             } else {
@@ -10372,7 +10372,7 @@ class OverlayView: NSView {
         let initialColor: NSColor
         switch target {
         case .drawColor: initialColor = currentColor
-        case .stitchSeam: initialColor = (self as? EditorView)?.stitchDocument?.style.color ?? currentColor
+        case .stitchSeam: initialColor = (self as? EditorView)?.stitchDocument?.style.editableColor ?? currentColor
         case .textBg: initialColor = textEditor.bgColor
         case .textOutline: initialColor = textEditor.outlineColor
         case .textGlyphStroke: initialColor = textEditor.glyphStrokeColor
@@ -10396,17 +10396,17 @@ class OverlayView: NSView {
         var stitchGestureActive = false
         let applySeamColor: (NSColor) -> Void = { [weak self] color in
             guard let editor = self as? EditorView, var document = editor.stitchDocument,
-                  document.style.visible else { return }
+                  document.style.visible, document.style.transition.hasEditableColor else { return }
             if stitchGestureActive {
                 editor.previewStitchSeamColor(color)
                 return
             }
-            guard document.style.color != color else { return }
+            guard document.style.editableColor != color else { return }
             if stitchUndoState != editor.undoStateIdentity {
                 editor.checkpointStitchDocument()
                 stitchUndoState = editor.undoStateIdentity
             }
-            document.style.color = color
+            document.style.editableColor = color
             editor.applyStitchDocument(document, registerUndo: false)
         }
         if target == .stitchSeam {
@@ -10434,7 +10434,7 @@ class OverlayView: NSView {
             guard let self else { return }
             if target == .stitchSeam {
                 guard let editor = self as? EditorView,
-                      let color = editor.stitchSeamColorPreview ?? editor.stitchDocument?.style.color else { return }
+                      let color = editor.stitchSeamColorPreview ?? editor.stitchDocument?.style.editableColor else { return }
                 applySeamColor(color.withAlphaComponent(opacity))
                 return
             }

@@ -13,11 +13,11 @@ Touching edges get a soft, wavy seam by default. Open **Seams** in the Stitch op
 
 - **Wave:** a fine, wavy line in a fading blur.
 - **Blend:** a soft blur without a line.
-- **Torn:** an irregular edge with a small paper highlight and shadow.
-- **Fold:** a straight crease with fading light and shade.
+- **Torn:** an exposed paper strip with ragged edges, fibers, and a small cast shadow. Adjust paper color, paper width, and roughness.
+- **Fold:** two shaded paper facets meeting at a crisp crease, with beveled ends. Adjust fold depth and strength.
 - **Break:** a fine line interrupted by two cut marks.
 
-Adjust blur, fade width, line color, and line width in the same panel. The shape control changes wave height, torn-edge roughness, fold depth, or break size. Blend dims the unused line controls. The native **Color** swatch edits line color, or opens **Seams** when the current treatment has no line. The blur is strongest at the join and fades to untouched pixels across the selected width. Toggle **Show stitch seams** to hide the effect. These settings apply to all joins in the current stitch. Undo and redo cover cuts, movement, and treatment changes. Crop, flip, previews, copied images, and saved files use the same treatment renderer; magnifiers refresh to show the current seam while censor bakes stay intact.
+The panel shows only the controls for the current treatment. Wave and Break have line color, blur, fade width, line width, and shape controls. Blend has blur and fade width. Torn and Fold keep captured content crisp and do not use blur. Each treatment retains its shape settings when you switch. The native **Color** swatch edits line color for Wave and Break, paper color for Torn, and opens **Seams** for Blend and Fold. Blur is strongest at the join and fades to untouched pixels across the selected width. Toggle **Show stitch seams** to hide the effect. These settings apply to all joins in the current stitch. Undo and redo cover cuts, movement, and treatment changes. Crop, flip, previews, copied images, and saved files use the same treatment renderer; magnifiers refresh to show the current seam while censor bakes stay intact.
 
 Use **Add Capture** to capture another region into the current Stitch document. While drawing a region, dashed guides suggest matching widths and heights from nearby pieces and continuous rows or columns. A guide turns purple when the selection snaps to that size. Nearby alternatives appear as you approach them; hold **Option** for an arbitrary size. In Stitch Capture, faint guides are visible before you start the next selection. They show the previous capture's screen edges and nearby layout references, so you can line up the starting corner as well as the final size. You can also paste or drag image files onto the canvas. Open **Pieces** in the Stitch options row to select a thumbnail, change its stacking order, or remove it.
 

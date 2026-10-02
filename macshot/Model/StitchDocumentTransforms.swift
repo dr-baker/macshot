@@ -10,7 +10,10 @@ extension StitchDocument {
             style.transition == other.style.transition,
             style.color == other.style.color, style.lineWidth == other.style.lineWidth,
             style.wave == other.style.wave, style.blur == other.style.blur,
-            style.feather == other.style.feather, style.visible == other.style.visible else { return false }
+            style.feather == other.style.feather, style.tearWidth == other.style.tearWidth,
+            style.tearRoughness == other.style.tearRoughness, style.breakSize == other.style.breakSize,
+            style.paperColor == other.style.paperColor, style.foldDepth == other.style.foldDepth,
+            style.foldStrength == other.style.foldStrength, style.visible == other.style.visible else { return false }
         switch (background, other.background) {
         case (.automatic, .automatic), (.transparent, .transparent): break
         case (.color(let a), .color(let b)): guard a == b else { return false }

@@ -34,12 +34,11 @@ enum StitchBandGuides {
     static func contentPadding(document: StitchDocument) -> CGFloat {
         let style = document.style
         guard style.visible else { return 16 }
-        let blur = style.blur > 0 && style.feather.isFinite ? style.feather / 2 : 0
+        let blur = style.transition.usesBlur && style.blur > 0 && style.feather.isFinite ? style.feather / 2 : 0
         // Preserve the established Wave guide spacing. Other treatments reserve
         // their complete decoration so a recommended cut cannot cover nearby text.
         if style.transition == .wave { return max(16, blur + 4) }
-        let pathOffset = style.transition == .torn ? style.wave : 0
-        return max(16, max(blur + pathOffset, StitchSeamDrawing.decorationExtent(style: style)) + 4)
+        return max(16, max(blur, StitchSeamDrawing.decorationExtent(style: style)) + 4)
     }
 
     static func analyze(document: StitchDocument, isCancelled: () -> Bool = { false }) -> Result {

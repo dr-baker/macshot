@@ -1003,3 +1003,9 @@
 "Fold depth" = "Fold depth";
 "Break size" = "Break size";
 "Blend has no line" = "Blend has no line";
+
+// Stitch paper treatments
+"Paper color" = "Paper color";
+"Paper width" = "Paper width";
+"Strength" = "Strength";
+"Seam appearance" = "Seam appearance";

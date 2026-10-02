@@ -327,7 +327,7 @@ enum StitchRenderer {
         guard style.visible && !joins.isEmpty else { return original }
         guard let final = makeContext() else { return original }
         final.draw(original, in: CGRect(x: 0, y: 0, width: width, height: height))
-        if style.blur > 0 && style.feather > 0,
+        if style.transition.usesBlur && style.blur > 0 && style.feather > 0,
            let blurredPixels = makeContext(), let destination = final.data {
             let source = CIImage(cgImage: original)
             let blurred = source.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [

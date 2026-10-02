@@ -132,6 +132,20 @@ enum PopoverHelper {
 
     static var isVisible: Bool { activePopover?.isShown == true }
 
+    /// Resize cached content without reopening its popover or replacing its responder chain.
+    static func resize(_ contentView: NSView, to size: NSSize) {
+        guard let popover = activePopover else { return }
+        resize(contentView, to: size, in: popover)
+    }
+
+    static func resize(_ contentView: NSView, to size: NSSize, in popover: NSPopover) {
+        guard let wrapper = popover.contentViewController?.view,
+              contentView.superview === wrapper else { return }
+        contentView.setFrameSize(size)
+        wrapper.setFrameSize(size)
+        popover.contentSize = size
+    }
+
     static var isMouseInsidePopover: Bool {
         guard let popover = activePopover, popover.isShown,
               let popoverWindow = popover.contentViewController?.view.window else { return false }

@@ -86,6 +86,131 @@ final class StitchSeamTransitionTests: XCTestCase {
         XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), try pixels(original))
     }
 
+    func testPaperTreatmentsIgnoreBlurAndUnrelatedLineSettings() throws {
+        for transition in [StitchTransition.torn, .fold] {
+            for axis in [StitchAxis.horizontal, .vertical] {
+                var document = try fixture(transition, axis: axis, dark: true)
+                let original = try pixels(XCTUnwrap(StitchRenderer.render(document)))
+                document.style.blur = 80
+                document.style.feather = 200
+                document.style.lineWidth = 0
+                document.style.color = .red
+                document.style.wave = 14
+                document.style.breakSize = 14
+                if transition == .fold { document.style.wave = 14; document.style.paperColor = .green }
+                XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), original,
+                    "\(transition) must use its own paper controls and leave content crisp")
+            }
+        }
+    }
+
+    func testTornHasAnExposedPaperStripWithIrregularEdgesOnBothAxes() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let document = try fixture(.torn, axis: axis, dark: true, flat: true)
+            let image = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+            var firstPaperPixels = Set<Int>()
+            for along in stride(from: 30, through: 220, by: 5) {
+                var exposed: [Int] = []
+                for normal in 104..<136 {
+                    let color = try XCTUnwrap(image.colorAt(x: axis == .horizontal ? along : normal,
+                        y: axis == .horizontal ? normal : along)).usingColorSpace(.sRGB)!
+                    if color.redComponent > 0.9 && color.greenComponent > 0.9 && color.blueComponent > 0.9 {
+                        exposed.append(normal)
+                    }
+                }
+                XCTAssertGreaterThanOrEqual(exposed.count, 4, "A tear needs exposed paper, not a thin ink line")
+                XCTAssertLessThanOrEqual(exposed.count, 12)
+                firstPaperPixels.insert(try XCTUnwrap(exposed.first))
+            }
+            XCTAssertGreaterThan(firstPaperPixels.count, 2, "Paper edges should have visibly unequal teeth")
+        }
+    }
+
+    func testTransparentPaperColorHidesTheWholeTearIncludingFibersAndShadow() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var document = try fixture(.torn, axis: axis, dark: true)
+            document.style.paperColor = document.style.paperColor.withAlphaComponent(0)
+            let cleared = try pixels(XCTUnwrap(StitchRenderer.render(document)))
+            document.style.visible = false
+            XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), cleared)
+        }
+    }
+
+    func testFoldShowsOppositeFacetsAndStrengthZeroPreservesPixels() throws {
+        for dark in [false, true] {
+            for axis in [StitchAxis.horizontal, .vertical] {
+                var document = try fixture(.fold, axis: axis, dark: dark, flat: true)
+                let folded = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+                document.style.foldStrength = 0
+                let untouched = try pixels(XCTUnwrap(StitchRenderer.render(document)))
+                document.style.visible = false
+                XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), untouched)
+                func luminance(_ normal: Int) throws -> CGFloat {
+                    let color = try XCTUnwrap(folded.colorAt(x: axis == .horizontal ? 128 : normal,
+                        y: axis == .horizontal ? normal : 128)).usingColorSpace(.sRGB)!
+                    return (color.redComponent + color.greenComponent + color.blueComponent) / 3
+                }
+                XCTAssertGreaterThan(try luminance(118) - luminance(121), 0.1,
+                    "Fold faces must meet in a sharp light-to-shadow crease")
+                XCTAssertGreaterThan(try luminance(129), try luminance(121),
+                    "The shaded face should recover toward its outer crease")
+            }
+        }
+    }
+
+    func testPaperControlsPersistAndEachProducesAnUndoableRasterEdit() throws {
+        for transition in [StitchTransition.torn, .fold] {
+            let document = try fixture(transition)
+            let editor = try makeEditor(document)
+            var next = document
+            if transition == .torn {
+                next.style.tearWidth = 18
+                next.style.tearRoughness = 10
+                next.style.paperColor = NSColor(srgbRed: 0.92, green: 0.84, blue: 0.69, alpha: 0.9)
+            } else {
+                next.style.foldDepth = 28
+                next.style.foldStrength = 0.8
+            }
+            XCTAssertFalse(next.isIdentical(to: document))
+            let restored = try XCTUnwrap(JSONDecoder().decode(SavedStitchDocument.self,
+                from: JSONEncoder().encode(XCTUnwrap(SavedStitchDocument(next)))).restore())
+            XCTAssertEqual(restored.style.tearWidth, next.style.tearWidth)
+            XCTAssertEqual(restored.style.tearRoughness, next.style.tearRoughness)
+            XCTAssertEqual(restored.style.foldDepth, next.style.foldDepth)
+            XCTAssertEqual(restored.style.foldStrength, next.style.foldStrength)
+            XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(restored))),
+                try pixels(XCTUnwrap(StitchRenderer.render(next))))
+            XCTAssertTrue(editor.applyStitchDocument(next))
+            XCTAssertEqual(editor.undoStack.count, 1)
+            editor.undo()
+            XCTAssertEqual(editor.stitchDocument?.style.tearWidth, document.style.tearWidth)
+            XCTAssertEqual(editor.stitchDocument?.style.foldDepth, document.style.foldDepth)
+            editor.redo()
+            XCTAssertEqual(try pixels(XCTUnwrap(editor.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil))),
+                try pixels(XCTUnwrap(StitchRenderer.render(next))))
+        }
+    }
+
+    func testAbsentPaperSettingsUseDefaultsAndInvalidSavedSettingsRejectRestore() throws {
+        let saved = try XCTUnwrap(SavedStitchDocument(fixture(.torn)))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        object["wave"] = 7
+        for key in ["tearWidth", "tearRoughness", "paperColor", "foldDepth", "foldStrength", "breakSize"] { object.removeValue(forKey: key) }
+        let restored = try XCTUnwrap(JSONDecoder().decode(SavedStitchDocument.self,
+            from: JSONSerialization.data(withJSONObject: object)).restore())
+        XCTAssertEqual(restored.style.tearWidth, StitchStyle().tearWidth)
+        XCTAssertEqual(restored.style.foldDepth, StitchStyle().foldDepth)
+        XCTAssertEqual(restored.style.foldStrength, StitchStyle().foldStrength)
+        XCTAssertEqual(restored.style.tearRoughness, 7)
+        XCTAssertEqual(restored.style.breakSize, 7)
+        for (key, invalid) in [("tearWidth", -1.0), ("tearRoughness", 101.0), ("foldDepth", 101.0), ("foldStrength", 1.1), ("breakSize", -1.0)] {
+            var broken = object
+            broken[key] = invalid
+            XCTAssertNil(try JSONDecoder().decode(SavedStitchDocument.self,
+                from: JSONSerialization.data(withJSONObject: broken)).restore())
+        }
+    }
+
     func testHiddenSeamsHaveNoEffectForAnyTreatment() throws {
         var document = try fixture()
         document.style.visible = false
@@ -105,6 +230,10 @@ final class StitchSeamTransitionTests: XCTestCase {
                 StitchPiece(image: image, origin: CGPoint(x: 2, y: 20))], background: .transparent)
             document.style.transition = transition
             document.style.wave = 14
+            document.style.tearRoughness = 14
+            document.style.tearWidth = 32
+            document.style.foldDepth = 40
+            document.style.breakSize = 14
             let rendered = try XCTUnwrap(StitchRenderer.render(document, maximumPreviewDimension: 20))
             XCTAssertEqual(rendered.width, 20)
             XCTAssertEqual(rendered.height, 20)
@@ -127,6 +256,10 @@ final class StitchSeamTransitionTests: XCTestCase {
                 document.style.visible = true
                 document.style.wave = 14
                 document.style.lineWidth = 8
+                document.style.tearRoughness = 14
+                document.style.tearWidth = 32
+                document.style.foldDepth = 40
+                document.style.breakSize = 14
                 for transition in StitchTransition.allCases {
                     document.style.transition = transition
                     for blur in [CGFloat(0), 8] {
@@ -383,6 +516,17 @@ final class StitchSeamTransitionTests: XCTestCase {
                     let url = URL(fileURLWithPath: directory).appendingPathComponent("\(transition.rawValue)-\(dark ? "dark" : "light").png")
                     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try XCTUnwrap(NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:])).write(to: url)
+                    if transition == .torn || transition == .fold {
+                        for axis in [StitchAxis.horizontal, .vertical] {
+                            for dimension in [CGFloat(256), 128] {
+                                let paper = try fixture(transition, axis: axis, dark: dark, flat: true)
+                                let preview = try XCTUnwrap(StitchRenderer.render(paper, maximumPreviewDimension: dimension))
+                                let name = "\(transition.rawValue)-\(dark ? "dark" : "light")-\(axis)-\(Int(dimension)).png"
+                                try XCTUnwrap(NSBitmapImageRep(cgImage: preview).representation(using: .png, properties: [:]))
+                                    .write(to: URL(fileURLWithPath: directory).appendingPathComponent(name))
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -100,6 +100,8 @@ final class StitchSeamStylePicker: NSView {
             style.color = NSColor(white: 0.24, alpha: 0.9)
             style.lineWidth = 2
             style.wave = 5
+            style.tearRoughness = 5
+            style.breakSize = 5
             style.blur = 3
             style.feather = 20
             guard let rendered = StitchRenderer.render(StitchDocument(pieces: pieces, style: style)) else { return nil }

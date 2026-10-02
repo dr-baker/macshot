@@ -51,6 +51,9 @@ enum StitchPlacement { case free, packed }
 
 enum StitchTransition: String, CaseIterable, Codable {
     case wave, blend, torn, fold, breakLine
+
+    var usesBlur: Bool { self == .wave || self == .blend || self == .breakLine }
+    var hasEditableColor: Bool { self == .wave || self == .torn || self == .breakLine }
 }
 
 struct StitchStyle {
@@ -61,7 +64,21 @@ struct StitchStyle {
     var blur: CGFloat = 12
     /// Total width of the blur band, centered on the join, in source pixels.
     var feather: CGFloat = 64
+    var tearWidth: CGFloat = 8
+    var tearRoughness: CGFloat = 3
+    var paperColor = NSColor(white: 0.97, alpha: 1)
+    var foldDepth: CGFloat = 12
+    var foldStrength: CGFloat = 0.5
+    var breakSize: CGFloat = 3
     var visible = true
+
+    var editableColor: NSColor {
+        get { transition == .torn ? paperColor : color }
+        set {
+            if transition == .torn { paperColor = newValue }
+            else { color = newValue }
+        }
+    }
 }
 
 struct StitchJoin {
