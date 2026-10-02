@@ -211,6 +211,74 @@ final class StitchSeamTransitionTests: XCTestCase {
         }
     }
 
+    func testEditableHistoryRebuildsPaperPixelsAndRetainsCensorBakesWhenCachedRenderingIsOlder() async throws {
+        for transition in [StitchTransition.torn, .fold] {
+            let document = try fixture(transition)
+            var cachedDocument = document
+            cachedDocument.style.visible = false
+            let cachedPixels = try XCTUnwrap(StitchRenderer.render(cachedDocument))
+            let cachedImage = NSImage(cgImage: cachedPixels, size: CGSize(width: cachedPixels.width, height: cachedPixels.height))
+            let sealedImage = ImageProbe.solidImage(width: 20, height: 20,
+                color: CGColor(srgbRed: 0, green: 0.5, blue: 0, alpha: 1))
+            let censor = Annotation(tool: .pixelate, startPoint: CGPoint(x: 20, y: 20),
+                endPoint: CGPoint(x: 40, y: 40), color: .black, strokeWidth: 1)
+            censor.bakedBlurNSImage = sealedImage
+            let loupe = Annotation(tool: .loupe, startPoint: CGPoint(x: 180, y: 160),
+                endPoint: CGPoint(x: 220, y: 200), color: .white, strokeWidth: 1)
+            loupe.loupeSourceRect = CGRect(x: 110, y: 110, width: 20, height: 20)
+            loupe.bakedBlurNSImage = sealedImage
+            var state = CaptureEditState()
+            state.stitchDocument = try XCTUnwrap(SavedStitchDocument(document))
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let history = ScreenshotHistory(directory: directory)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            withDefaults(["historySize": 10, "historyUnlimited": false]) {
+                history.add(image: cachedImage, rawImage: cachedImage, annotations: [censor, loupe], editState: state)
+            }
+            await history.waitUntilIdle()
+            let entry = try XCTUnwrap(history.entries.first)
+            let editable = try XCTUnwrap(history.loadEditableCapture(for: entry))
+            let expected = try pixels(XCTUnwrap(StitchRenderer.render(document)))
+            XCTAssertEqual(try pixels(XCTUnwrap(editable.rawImage.cgImage(forProposedRect: nil, context: nil, hints: nil))), expected)
+            XCTAssertEqual(editable.rawImage.size, history.loadRawImage(for: entry)?.size)
+            let restoredCensor = try XCTUnwrap(editable.annotations.first { $0.tool == .pixelate })
+            XCTAssertEqual(try pixels(XCTUnwrap(restoredCensor.bakedBlurNSImage?.cgImage(forProposedRect: nil, context: nil, hints: nil))),
+                try pixels(XCTUnwrap(sealedImage.cgImage(forProposedRect: nil, context: nil, hints: nil))))
+            XCTAssertNil(editable.annotations.first { $0.tool == .loupe }?.bakedBlurNSImage,
+                "Magnifiers must refresh from the current paper rendering when the editor attaches them")
+            let editor = EditorView(frame: CGRect(origin: .zero, size: editable.rawImage.size))
+            editor.screenshotImage = editable.rawImage
+            editor.applySelection(editor.bounds)
+            editor.setAnnotations(editable.annotations)
+            let undoCount = editor.undoStack.count
+            let undoIdentity = editor.undoStateIdentity
+            editor.applyCaptureEditState(try XCTUnwrap(editable.editState))
+            XCTAssertEqual(editor.undoStack.count, undoCount, "Restoring the Stitch must not add an edit")
+            XCTAssertEqual(editor.undoStateIdentity, undoIdentity)
+            XCTAssertEqual(try pixels(XCTUnwrap(editor.captureSelectedRegionRaw()?.cgImage(forProposedRect: nil, context: nil, hints: nil))), expected)
+            XCTAssertEqual(editor.stitchDocument?.style.transition, transition)
+        }
+    }
+
+    func testEditableHistoryKeepsFlattenedFallbackWhenSavedStitchDimensionsDoNotMatch() async throws {
+        let document = try fixture(.fold)
+        var state = CaptureEditState()
+        state.stitchDocument = try XCTUnwrap(SavedStitchDocument(document))
+        let cachedImage = ImageProbe.solidImage(width: 64, height: 48)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let history = ScreenshotHistory(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        withDefaults(["historySize": 10, "historyUnlimited": false]) {
+            history.add(image: cachedImage, rawImage: cachedImage, annotations: [], editState: state)
+        }
+        await history.waitUntilIdle()
+        let entry = try XCTUnwrap(history.entries.first)
+        XCTAssertNil(history.loadEditableCapture(for: entry))
+        let flattened = try XCTUnwrap(history.loadImage(for: entry))
+        XCTAssertEqual(try pixels(XCTUnwrap(flattened.cgImage(forProposedRect: nil, context: nil, hints: nil))),
+            try pixels(XCTUnwrap(cachedImage.cgImage(forProposedRect: nil, context: nil, hints: nil))))
+    }
+
     func testHiddenSeamsHaveNoEffectForAnyTreatment() throws {
         var document = try fixture()
         document.style.visible = false
