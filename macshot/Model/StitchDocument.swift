@@ -67,7 +67,7 @@ struct StitchStyle {
     var tearWidth: CGFloat = 8
     var tearRoughness: CGFloat = 3
     var paperColor = NSColor(white: 0.97, alpha: 1)
-    var foldDepth: CGFloat = 12
+    var foldDepth: CGFloat = 18
     var foldStrength: CGFloat = 0.5
     var breakSize: CGFloat = 3
     var visible = true

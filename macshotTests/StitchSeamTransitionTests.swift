@@ -136,7 +136,7 @@ final class StitchSeamTransitionTests: XCTestCase {
         }
     }
 
-    func testFoldShowsOppositeFacetsAndStrengthZeroPreservesPixels() throws {
+    func testFoldHasMatteFrontTuckedReturnAndPaperLipOnBothBackgroundsAndAxes() throws {
         for dark in [false, true] {
             for axis in [StitchAxis.horizontal, .vertical] {
                 var document = try fixture(.fold, axis: axis, dark: dark, flat: true)
@@ -150,10 +150,84 @@ final class StitchSeamTransitionTests: XCTestCase {
                         y: axis == .horizontal ? normal : 128)).usingColorSpace(.sRGB)!
                     return (color.redComponent + color.greenComponent + color.blueComponent) / 3
                 }
-                XCTAssertGreaterThan(try luminance(118) - luminance(121), 0.1,
-                    "Fold faces must meet in a sharp light-to-shadow crease")
-                XCTAssertGreaterThan(try luminance(129), try luminance(121),
-                    "The shaded face should recover toward its outer crease")
+                XCTAssertGreaterThan(try luminance(115) - luminance(121), 0.06,
+                    "The tucked return should be darker than the broad paper face")
+                XCTAssertGreaterThan(try luminance(122) - luminance(121), 0.035,
+                    "An exposed paper lip should follow the tucked return")
+                XCTAssertEqual(try luminance(114), try luminance(117), accuracy: 0.025,
+                    "The broad face should be matte without a bright ridge gradient")
+                if dark {
+                    XCTAssertLessThan(try luminance(115), 0.3, "Dark captures should retain dark paper")
+                } else {
+                    XCTAssertGreaterThan(try luminance(115), 0.85)
+                }
+            }
+        }
+    }
+
+    func testOpaqueFoldOccludesTextInsteadOfShowingItThroughThePaper() throws {
+        for dark in [false, true] {
+            for axis in [StitchAxis.horizontal, .vertical] {
+                var printed = try fixture(.fold, axis: axis, dark: dark)
+                var blank = try fixture(.fold, axis: axis, dark: dark, flat: true)
+                printed.style.foldStrength = 1
+                blank.style.foldStrength = 1
+                let a = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(printed)))
+                let b = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(blank)))
+                for along in [32, 128, 224] {
+                    for normal in [110, 116, 121, 122] {
+                        let x = axis == .horizontal ? along : normal
+                        let y = axis == .horizontal ? normal : along
+                        let first = try XCTUnwrap(a.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                        let second = try XCTUnwrap(b.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                        XCTAssertEqual(first.redComponent, second.redComponent, accuracy: 2 / 255)
+                        XCTAssertEqual(first.greenComponent, second.greenComponent, accuracy: 2 / 255)
+                        XCTAssertEqual(first.blueComponent, second.blueComponent, accuracy: 2 / 255)
+                    }
+                }
+            }
+        }
+    }
+
+    func testFoldPaperFollowsLocalBackgroundsAtExportAndPreviewSizes() throws {
+        let source = try XCTUnwrap(ImageProbe.makeImage(width: 512, height: 256) { context in
+            context.setFillColor(CGColor(gray: 0.12, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+            context.setFillColor(CGColor(gray: 0.94, alpha: 1))
+            context.fill(CGRect(x: 256, y: 0, width: 256, height: 256))
+        }.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: source)], background: .transparent)
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 120, to: 136))
+        document.style.transition = .fold
+        for dimension in [CGFloat(512), 256] {
+            let image = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document,
+                maximumPreviewDimension: dimension)))
+            let scale = dimension / 512
+            let dark = try XCTUnwrap(image.colorAt(x: Int(64 * scale), y: Int(115 * scale))?.usingColorSpace(.sRGB))
+            let light = try XCTUnwrap(image.colorAt(x: Int(448 * scale), y: Int(115 * scale))?.usingColorSpace(.sRGB))
+            XCTAssertLessThan(dark.redComponent, 0.35)
+            XCTAssertGreaterThan(light.redComponent, 0.85)
+        }
+    }
+
+    func testShortFoldLimitsItsDepthAndLeavesSurroundingCapturedPixelsIntact() throws {
+        let image = try XCTUnwrap(ImageProbe.solidImage(width: 20, height: 20)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let origin = axis == .horizontal ? CGPoint(x: 0, y: 20) : CGPoint(x: 20, y: 0)
+            var document = StitchDocument(pieces: [StitchPiece(image: image), StitchPiece(image: image, origin: origin)])
+            document.style.transition = .fold
+            document.style.foldDepth = 40
+            let folded = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+            document.style.visible = false
+            let original = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+            for normal in [5, 10, 15, 25, 30, 35] {
+                for along in 0..<20 {
+                    let x = axis == .horizontal ? along : normal
+                    let y = axis == .horizontal ? normal : along
+                    XCTAssertEqual(folded.colorAt(x: x, y: y), original.colorAt(x: x, y: y),
+                        "A short fold must not spread its decoration over the whole capture")
+                }
             }
         }
     }
