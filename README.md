@@ -1,5 +1,15 @@
 # macshot
 
+## Daniel's fork
+
+This fork adds guided Accessibility setup with PermissionFlow and a native
+[Stitch editor](docs/stitch-capture.md) for combining captures, removing space,
+and choosing seam treatments. It targets macOS 13 or later.
+
+Use the [local development workflow](docs/local-development.md) to build,
+sign, install, and launch `macshot Dev` on this Mac. Verified changes land on
+`main` in [dr-baker/macshot](https://github.com/dr-baker/macshot).
+
 > [!IMPORTANT]
 > **Upgrading to a 4.4.0 beta from 4.3.x or beta.1/beta.2?** macshot's developer signature changed in beta.3, so macOS may require you to grant permissions again. If Screen Recording looks enabled but capture fails, remove macshot with the minus button (−) in System Settings, then add it back from Applications with the plus button (+). Re-enable Accessibility or Input Monitoring if prompted. Your settings, history and recordings are preserved. If you already restored permissions in beta.3 or later, you should not need to repeat this.
 

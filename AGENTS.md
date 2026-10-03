@@ -5,7 +5,7 @@
 macshot is a native macOS screenshot and recording app. This checkout is also
 Daniel's working copy: edits should reach the signed `macshot Dev` app on this
 Mac, where the real capture and menu bar behavior can be checked. Keep that
-local workflow reliable without changing the normal or offline release builds.
+local workflow reliable and publish verified work to Daniel's GitHub fork.
 
 ## Where to go
 
@@ -21,7 +21,7 @@ local workflow reliable without changing the normal or offline release builds.
 - After changing app code, run `macshot-deploy` and verify that `/Applications/macshot Dev.app` is signed and running. A successful `xcodebuild` alone does not complete a local app change. Use `--build-only` only when installation is outside the task's scope.
 - Keep the `LOCAL_DEV` build separate from the normal and offline variants. Preserve its stable bundle ID and signing identity so macOS permissions survive redeploys. Do not enable Sparkle updates in the local build.
 - Run `scripts/run-tests.sh` for logic changes. When changing compilation flags, signing, or variant behavior, also check the affected Release builds described in `CLAUDE.md` and the CI workflow.
-- Keep this personal branch local. Do not merge with fast-forward unless Daniel specifically asks for it.
+- Publish to `origin` (`dr-baker/macshot`); fetch upstream changes from `upstream` (`sw33tLie/macshot`). Keep completed work on the fork's `main`. Do not merge with fast-forward unless Daniel specifically asks for it.
 
 ## Vocabulary
 

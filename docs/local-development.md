@@ -32,13 +32,25 @@ If the certificate changes, set `MACSHOT_SIGNING_IDENTITY` to the full name of
 the identity you want to use. Keep using the same identity for later deploys to
 avoid another macOS permission prompt.
 
+## Publish and sync the fork
+
+This checkout uses `origin` for [Daniel's fork](https://github.com/dr-baker/macshot)
+and `upstream` for [the original project](https://github.com/sw33tLie/macshot).
+Commit your edits, verify them with tests and `macshot-deploy`, then publish the
+completed work on `main`:
+
+```sh
+git push origin main
+```
+
 To bring in upstream changes:
 
 ```sh
-git fetch origin
-git merge --no-ff origin/main
-scripts/deploy-local.sh
+git fetch upstream
+git merge --no-ff upstream/main
+macshot-deploy
 ```
 
 Resolve any merge conflicts in the local development guards and script before
-deploying. Keep this personal branch local.
+deploying. Merge feature branches with `--no-ff` so each feature has a clear
+entry in the history.
