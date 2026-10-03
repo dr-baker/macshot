@@ -96,11 +96,7 @@ enum AutoRedactor {
         let censorMode = CensorMode(rawValue: UserDefaults.standard.integer(forKey: "censorMode")) ?? .pixelate
 
         DispatchQueue.global(qos: .userInitiated).async {
-            VisionOCR.performTextRecognition(cgImage: cgImage) { request, _ in
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    DispatchQueue.main.async { completion([]) }
-                    return
-                }
+            VisionOCR.performTextRecognition(cgImage: cgImage) { observations, _ in
                 let annotations = buildPIIRedactions(
                     observations: observations, selectionRect: selectionRect,
                     redactTool: redactTool, color: color,
@@ -128,8 +124,7 @@ enum AutoRedactor {
         guard let cgImage = cgImage else { completion([]); return }
 
         DispatchQueue.global(qos: .userInitiated).async {
-            VisionOCR.performTextRecognition(cgImage: cgImage) { request, _ in
-                guard let observations = request.results as? [VNRecognizedTextObservation] else { completion([]); return }
+            VisionOCR.performTextRecognition(cgImage: cgImage) { observations, _ in
                 let groupID = UUID()
                 let padding: CGFloat = 2
                 var annotations: [Annotation] = []
@@ -272,7 +267,7 @@ enum AutoRedactor {
     }
 
     private static func buildPIIRedactions(
-        observations: [VNRecognizedTextObservation],
+        observations: [OCRTextObservation],
         selectionRect: NSRect,
         redactTool: AnnotationTool,
         color: NSColor,
@@ -302,21 +297,17 @@ enum AutoRedactor {
             annotations.append(ann)
         }
 
-        let recognized = observations.compactMap { observation -> (VNRecognizedTextObservation, VNRecognizedText)? in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            return (observation, candidate)
-        }
-        let lines = recognized.map { observation, candidate in
+        let lines = observations.map { observation in
             let box = observation.boundingBox
-            return PIIRedactionPlanner.Line(text: candidate.string,
+            return PIIRedactionPlanner.Line(text: observation.text,
                 bounds: CGRect(x: box.minX * selectionRect.width, y: box.minY * selectionRect.height,
                                width: box.width * selectionRect.width, height: box.height * selectionRect.height))
         }
         for match in PIIRedactionPlanner.matches(in: lines, enabledTypes: enabledTypes) {
-            let (observation, candidate) = recognized[match.lineIndex]
+            let observation = observations[match.lineIndex]
             // If Vision can't return a substring box, cover the recognized line
             // rather than silently leaving detected sensitive text exposed.
-            let box = (try? candidate.boundingBox(for: match.range))?.boundingBox ?? observation.boundingBox
+            let box = observation.boundingBox(for: match.range) ?? observation.boundingBox
             addRedaction(box: box)
         }
 

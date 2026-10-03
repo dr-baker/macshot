@@ -46,6 +46,12 @@ class CenteringClipView: NSClipView {
         return result
     }
 
+    override func mouseDown(with event: NSEvent) {
+        if let editor = documentView as? EditorView,
+           editor.handleStitchMoveMouseDown(with: event) { return }
+        super.mouseDown(with: event)
+    }
+
     override func scrollWheel(with event: NSEvent) {
         let isTrackpad = event.phase != [] || event.momentumPhase != []
 

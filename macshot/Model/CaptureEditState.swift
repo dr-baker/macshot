@@ -17,6 +17,7 @@ struct CaptureEditState: Codable, Equatable {
     var beautifyBackgroundBlur: Double = 0
     var beautifyIsWindowSnap: Bool = false
     var customBeautifyBackgroundPNG: Data?
+    var stitchDocument: SavedStitchDocument?
 
     var effectsPreset: ImageEffectPreset {
         ImageEffectPreset(rawValue: effectsPresetRaw) ?? .none
@@ -34,6 +35,7 @@ struct CaptureEditState: Codable, Equatable {
 
     var hasEffects: Bool { !effectsConfig.isIdentity }
     var hasPostProcessing: Bool { hasEffects || beautifyEnabled }
+    var hasEditableContent: Bool { hasPostProcessing || stitchDocument != nil }
 
     var beautifyMode: BeautifyMode {
         BeautifyMode(rawValue: beautifyModeRaw) ?? .window
@@ -86,6 +88,9 @@ extension CaptureEditState {
         beautifyBackgroundBlur = c.decode(.beautifyBackgroundBlur, or: 0)
         beautifyIsWindowSnap = c.decode(.beautifyIsWindowSnap, or: false)
         customBeautifyBackgroundPNG = c.decodeOptional(.customBeautifyBackgroundPNG)
+        // A malformed present Stitch payload must make history use its saved
+        // composite, rather than silently reopening incomplete editable data.
+        stitchDocument = try c.decodeIfPresent(SavedStitchDocument.self, forKey: .stitchDocument)
         normalizeValues()
     }
 
@@ -127,7 +132,8 @@ extension OverlayView {
             beautifyShadowRadius: Double(beautifyShadowRadius),
             beautifyBackgroundBlur: Double(beautifyBackgroundBlur),
             beautifyIsWindowSnap: selectionIsWindowSnap,
-            customBeautifyBackgroundPNG: customBackgroundData
+            customBeautifyBackgroundPNG: customBackgroundData,
+            stitchDocument: (self as? EditorView)?.savedStitchDocument
         )
     }
 
@@ -159,6 +165,9 @@ extension OverlayView {
             ensureCustomBeautifyBackgroundLoaded()
         }
 
+        if let document = state.stitchDocument?.restore() {
+            (self as? EditorView)?.installStitchDocument(document)
+        }
         cachedCompositedImage = nil
         rebuildToolbarLayout()
         needsDisplay = true

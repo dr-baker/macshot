@@ -46,9 +46,9 @@ comparing every stored property of a value at once.
 
 ## Guidelines
 
-- **Pure AppKit.** No SwiftUI (except `BeautifyRenderer` which requires it for mesh gradients). No Electron, no web views.
+- **AppKit UI.** App windows use AppKit. SwiftUI is limited to `BeautifyRenderer` for mesh gradients and PermissionFlow's packaged Accessibility guide. No Electron, no web views.
 - **No new dependencies** unless absolutely necessary. Prefer Apple frameworks.
-- **Minimum target is macOS 12.3.** Use `@available` guards for newer APIs.
+- **Minimum target is macOS 13.0.** Use `@available` guards for newer APIs.
 - **Test on single and multi-monitor setups** if your change touches coordinates, overlays, or screen capture.
 - **Don't add features to the PR beyond what it claims to fix/add.** Keep PRs focused.
 - **Match existing code style.** No SwiftLint, no formatter — just follow what's already there.

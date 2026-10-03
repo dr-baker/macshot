@@ -1,5 +1,5 @@
 {
-  "originHash" : "64db855399237b1bcd26e2e4f22b74a187a97d70e989f36c71b365c62f5b52ce",
+  "originHash" : "04078ccff47f2795425fb7d8edd99aa58d9ad72aefc2ee12c857839ffbb8e034",
   "pins" : [
     {
       "identity" : "libwebp-xcode",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "0d60654eeefd5d7d2bef3835804892c40225e8b2",
         "version" : "1.5.0"
+      }
+    },
+    {
+      "identity" : "permissionflow",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jaywcjlove/PermissionFlow",
+      "state" : {
+        "revision" : "2f2a4b76b1eb2ff7ab815b977be8229853f10bf8",
+        "version" : "2.11.2"
       }
     },
     {

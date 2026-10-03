@@ -456,7 +456,7 @@ class ScreenCaptureManager {
                                 timing?("SCScreenshotManager capture end display=\(index) pixels=\(image.width)x\(image.height)")
                                 return ScreenCapture(screen: screen, image: image)
                             } else {
-                                // macOS 12.3–13.x: use CGWindowListCreateImage which returns
+                                // macOS 13.x: use CGWindowListCreateImage which returns
                                 // a CGImage directly — no pixel buffer format ambiguity.
                                 // Convert the AppKit screen frame (bottom-left origin) to the
                                 // CGDisplay coordinate space (top-left origin) for the capture rect.
@@ -468,11 +468,20 @@ class ScreenCaptureManager {
                                     width: screen.frame.width,
                                     height: screen.frame.height)
                                 timing?("fallback CGWindowListCreateImage begin display=\(index)")
-                                guard
-                                    let image = CGWindowListCreateImage(
-                                        cgRect, .optionAll, kCGNullWindowID, .bestResolution
-                                    )
-                                else {
+                                let captured: CGImage?
+                                if excludingWindowNumbers.isEmpty {
+                                    captured = CGWindowListCreateImage(cgRect, .optionAll, kCGNullWindowID, .bestResolution)
+                                } else {
+                                    // Keep WindowServer's front-to-back ordering, including desktop
+                                    // windows, while removing the HUD and any other excluded panels.
+                                    guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
+                                        as? [[String: Any]] else { return nil }
+                                    guard let included = ScreenCaptureWindowExclusions.includedWindowNumbers(
+                                        in: windows, excluding: excludingWindowNumbers),
+                                        let windowArray = ScreenCaptureWindowExclusions.windowArray(for: included) else { return nil }
+                                    captured = CGImage(windowListFromArrayScreenBounds: cgRect, windowArray: windowArray, imageOption: .bestResolution)
+                                }
+                                guard let image = captured else {
                                     timing?("fallback CGWindowListCreateImage failed display=\(index)")
                                     return nil
                                 }
@@ -551,7 +560,7 @@ class ScreenCaptureManager {
             else { return captureViaWindowList() }
             return image
         } else {
-            // macOS 12.3–13.x: CGWindowListCreateImage targeting the specific window
+            // macOS 13.x: CGWindowListCreateImage targeting the specific window
             return captureViaWindowList()
         }
     }

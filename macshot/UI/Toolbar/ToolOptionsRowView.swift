@@ -119,6 +119,13 @@ class ToolOptionsRowView: NSView {
             return
         }
 
+        if tool == .stitch, let editor = ov as? EditorView {
+            curX = addStitchOptions(at: curX, editor: editor)
+            contentWidth = max(curX + padding, 200)
+            frame.size = NSSize(width: contentWidth, height: rowHeight)
+            return
+        }
+
         // ── Stroke width slider (most drawing tools) ──
         let hasStroke = [.pencil, .line, .arrow, .rectangle, .ellipse, .marker, .number, .loupe].contains(tool)
         if hasStroke {
@@ -291,6 +298,96 @@ class ToolOptionsRowView: NSView {
         sep.layer?.backgroundColor = ToolbarLayout.iconColor.withAlphaComponent(0.1).cgColor
         addSubview(sep)
         return x + 13
+    }
+
+    /// Keep popover anchors alive while document changes refresh native chrome.
+    func refreshStitchState() {
+        guard currentTool == .stitch, let editor = overlayView as? EditorView else { return }
+        if let modes = subviews.first(where: { $0.identifier?.rawValue == "stitch.mode" }) as? NSSegmentedControl {
+            switch editor.stitchMode {
+            case .removeSpace: modes.selectedSegment = 0
+            case .move: modes.selectedSegment = 1
+            }
+        }
+        if let placement = subviews.first(where: { $0.identifier?.rawValue == "stitch.placement" }) as? NSPopUpButton {
+            placement.selectItem(at: editor.stitchDocument?.placement == .packed ? 1 : 0)
+        }
+    }
+
+    private func addStitchOptions(at x: CGFloat, editor: EditorView) -> CGFloat {
+        var curX = x
+        let modes = NSSegmentedControl(labels: [L("Remove Space"), L("Move")],
+            trackingMode: .selectOne, target: self, action: #selector(stitchModeChanged(_:)))
+        modes.identifier = NSUserInterfaceItemIdentifier("stitch.mode")
+        switch editor.stitchMode {
+        case .removeSpace: modes.selectedSegment = 0
+        case .move: modes.selectedSegment = 1
+        }
+        modes.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        (modes.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
+        modes.sizeToFit()
+        modes.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: modes.frame.width, height: 22)
+        modes.setToolTip(L("Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides."), forSegment: 0)
+        modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 1)
+        addSubview(modes)
+        curX += modes.frame.width + 4
+        curX = addSeparator(at: curX)
+
+        let placement = NSPopUpButton(frame: .zero, pullsDown: false)
+        placement.identifier = NSUserInterfaceItemIdentifier("stitch.placement")
+        placement.addItems(withTitles: [L("Free Move"), L("Packed")])
+        placement.toolTip = L("Free Move keeps overlaps. Packed closes gaps and snaps pieces into rows or columns.")
+        placement.item(at: 0)?.toolTip = L("Place pieces independently and keep precise overlaps.")
+        placement.item(at: 1)?.toolTip = L("Arrange pieces tightly and drag to reorder them.")
+        placement.selectItem(at: editor.stitchDocument?.placement == .packed ? 1 : 0)
+        placement.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        placement.target = self
+        placement.action = #selector(stitchPlacementChanged(_:))
+        placement.sizeToFit()
+        placement.frame = NSRect(x: curX, y: (rowHeight - 22) / 2,
+            width: max(placement.frame.width, 96), height: 22)
+        addSubview(placement)
+        curX += placement.frame.width + 4
+        curX = addSeparator(at: curX)
+
+        for (label, identifier, tag) in [(L("Seams"), "stitch.seams", 0),
+            (L("Pieces"), "stitch.pieces", 1), (L("Canvas"), "stitch.canvas", 2)] {
+            let button = NSButton(title: label, target: self, action: #selector(stitchOptionsClicked(_:)))
+            button.identifier = NSUserInterfaceItemIdentifier(identifier)
+            button.tag = tag
+            button.bezelStyle = .rounded
+            button.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+            button.sizeToFit()
+            button.frame = NSRect(x: curX, y: (rowHeight - 22) / 2,
+                width: max(46, button.frame.width), height: 22)
+            addSubview(button)
+            curX += button.frame.width + 4
+        }
+        return curX
+    }
+
+    @objc private func stitchModeChanged(_ sender: NSSegmentedControl) {
+        guard let editor = overlayView as? EditorView else { return }
+        switch sender.selectedSegment {
+        case 0: editor.stitchMode = .removeSpace
+        case 1: editor.stitchMode = .move
+        default: break
+        }
+    }
+
+    @objc private func stitchPlacementChanged(_ sender: NSPopUpButton) {
+        (overlayView as? EditorView)?.onStitchPlacementChanged?(sender.indexOfSelectedItem == 1 ? .packed : .free)
+    }
+
+    @objc private func stitchOptionsClicked(_ sender: NSButton) {
+        guard let editor = overlayView as? EditorView else { return }
+        let option: StitchOptionsAction
+        switch sender.tag {
+        case 0: option = .seams
+        case 1: option = .pieces
+        default: option = .canvas
+        }
+        editor.onStitchOptions?(option, sender)
     }
 
     private func addStrokeSlider(at x: CGFloat, tool: AnnotationTool, ov: OverlayView) -> CGFloat {

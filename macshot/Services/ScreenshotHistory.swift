@@ -268,7 +268,7 @@ final class ScreenshotHistory {
     /// supported, but a present unreadable sidecar must fall back to the saved
     /// composited image instead of silently removing its effects/annotations.
     func loadEditableCapture(for entry: HistoryEntry) -> EditableCapture? {
-        guard let rawImage = loadRawImage(for: entry) else { return nil }
+        guard var rawImage = loadRawImage(for: entry) else { return nil }
         let annotationsURL = sidecarURL(for: entry, suffix: "_annotations.json")
         let editURL = sidecarURL(for: entry, suffix: "_edit.json")
         let hasAnnotations = FileManager.default.fileExists(atPath: annotationsURL.path)
@@ -284,6 +284,19 @@ final class ScreenshotHistory {
         if hasEditState {
             guard let restored = loadEditState(for: entry) else { return nil }
             if restored.customBeautifyBackgroundPNG != nil && restored.customBeautifyBackground == nil { return nil }
+            if let saved = restored.stitchDocument {
+                for annotation in annotations {
+                    guard let attachment = annotation.stitchAttachment, let id = attachment.pieceID else { continue }
+                    guard saved.pieces.contains(where: { $0.id == id && $0.lineageID == attachment.lineageID }) else { return nil }
+                }
+                // Editable pieces define the current pixels. A cached raw composite
+                // can contain a seam drawn by an earlier version of the renderer.
+                guard let document = saved.restore(), let canonical = StitchRenderer.render(document),
+                      let cached = rawImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                      canonical.width == cached.width, canonical.height == cached.height else { return nil }
+                rawImage = NSImage(cgImage: canonical, size: rawImage.size)
+                for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
+            }
             editState = restored
         } else { editState = nil }
         return EditableCapture(rawImage: rawImage, annotations: annotations, editState: editState)

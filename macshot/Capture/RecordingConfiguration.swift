@@ -49,7 +49,7 @@ struct RecordingConfiguration {
         self.frameRate = frameRate
         self.microphone = microphone
         self.systemAudio = systemAudio
-        self.microphoneDeviceID = microphoneDeviceID?.isEmpty == false ? microphoneDeviceID : nil
+        self.microphoneDeviceID = MicrophoneDeviceSelection.persistentDeviceID(microphoneDeviceID)
         self.excludedWindows = excludedWindows
         self.filename = filename
     }

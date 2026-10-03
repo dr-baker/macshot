@@ -48,7 +48,7 @@ final class MicrophoneCapture: @unchecked Sendable {
                            onSample: @escaping (CMSampleBuffer) -> Void) throws {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw CaptureError.unavailable }
         // A missing saved device must not silently select a different mic.
-        let device = deviceID.map { AVCaptureDevice(uniqueID: $0) } ?? AVCaptureDevice.default(for: .audio)
+        let device = MicrophoneDeviceSelection.captureDevice(savedID: deviceID)
         guard let device = device else { throw CaptureError.unavailable }
         let input = try AVCaptureDeviceInput(device: device)
         session.beginConfiguration()

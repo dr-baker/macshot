@@ -10,6 +10,29 @@ class ColorPickerView: NSView {
     var onColorChanged: ((NSColor) -> Void)?
     /// Called whenever opacity changes.
     var onOpacityChanged: ((CGFloat) -> Void)?
+    /// Continuous color/opacity gestures preview until the matching end callback.
+    var onGestureBegan: (() -> Void)?
+    var onGestureEnded: (() -> Void)?
+    private(set) var isEditingGesture = false
+
+    func beginEditingGesture() {
+        guard !isEditingGesture else { return }
+        isEditingGesture = true
+        onGestureBegan?()
+    }
+    func endEditingGesture() {
+        guard isEditingGesture else { return }
+        isEditingGesture = false
+        isDraggingOpacity = false
+        isDraggingGradient = false
+        isDraggingBrightness = false
+        onGestureEnded?()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { endEditingGesture() }
+    }
 
     private(set) var selectedColor: NSColor = .systemRed
     private(set) var opacity: CGFloat = 1.0
@@ -328,9 +351,11 @@ class ColorPickerView: NSView {
             let x = padding + CGFloat(col) * (swatchSize + padding)
             let y = bounds.maxY - padding - swatchSize - CGFloat(row) * (swatchSize + padding)
             if NSRect(x: x, y: y, width: swatchSize, height: swatchSize).contains(point) {
+                beginEditingGesture()
                 selectedColor = color
                 syncHSBFromColor(color)
                 onColorChanged?(color)
+                endEditingGesture()
                 needsDisplay = true
                 return
             }
@@ -341,9 +366,11 @@ class ColorPickerView: NSView {
             if r.contains(point) {
                 selectedColorSlot = i
                 if let saved = customColors[i] {
+                    beginEditingGesture()
                     selectedColor = saved
                     syncHSBFromColor(saved)
                     onColorChanged?(saved)
+                    endEditingGesture()
                 }
                 onCustomSlotSelected?(i)
                 needsDisplay = true
@@ -353,6 +380,7 @@ class ColorPickerView: NSView {
 
         // Opacity
         if opacitySliderRect.contains(point) {
+            beginEditingGesture()
             isDraggingOpacity = true
             updateOpacity(at: point)
             return
@@ -360,6 +388,7 @@ class ColorPickerView: NSView {
 
         // Gradient
         if gradientRect.contains(point) {
+            beginEditingGesture()
             isDraggingGradient = true
             updateGradient(at: point)
             return
@@ -367,6 +396,7 @@ class ColorPickerView: NSView {
 
         // Brightness
         if brightnessSliderRect.contains(point) {
+            beginEditingGesture()
             isDraggingBrightness = true
             updateBrightness(at: point)
             return
@@ -381,9 +411,14 @@ class ColorPickerView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if isDraggingOpacity { updateOpacity(at: point) }
+        if isDraggingGradient { updateGradient(at: point) }
+        if isDraggingBrightness { updateBrightness(at: point) }
         isDraggingOpacity = false
         isDraggingGradient = false
         isDraggingBrightness = false
+        endEditingGesture()
     }
 
     // MARK: - Update helpers
