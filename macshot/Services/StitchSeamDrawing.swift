@@ -38,7 +38,7 @@ enum StitchSeamDrawing {
         }
     }
 
-    static func draw(_ join: StitchJoin, style: StitchStyle, in context: CGContext) {
+    static func draw(_ join: StitchJoin, style: StitchStyle, foldPaper: [NSColor] = [], in context: CGContext) {
         guard join.end > join.start, style.transition != .blend else { return }
         context.saveGState()
         defer { context.restoreGState() }
@@ -55,7 +55,7 @@ enum StitchSeamDrawing {
         case .torn:
             drawTear(join, style: style, in: context)
         case .fold:
-            drawFold(join, style: style, in: context)
+            drawFold(join, style: style, paper: foldPaper, in: context)
         case .breakLine:
             guard style.lineWidth > 0 else { return }
             drawBreak(join, style: style, in: context)
@@ -157,58 +157,101 @@ enum StitchSeamDrawing {
         context.restoreGState()
     }
 
-    private static func drawFold(_ join: StitchJoin, style: StitchStyle, in context: CGContext) {
-        let depth = style.foldDepth
+    private static func drawFold(_ join: StitchJoin, style: StitchStyle, paper: [NSColor], in context: CGContext) {
+        let length = join.end - join.start
+        let depth = min(style.foldDepth, length / 6)
         let strength = style.foldStrength
         guard depth > 0, strength > 0 else { return }
-        let length = join.end - join.start
-        let bevel = min(depth * 1.25, length / 3)
-        func face(_ normal: CGFloat) -> CGPath {
+        let inset = depth * 0.6
+        let valley = -depth * 0.72, tuck = depth * 0.12, lip = depth * 0.17
+        func ends(_ normal: CGFloat, inset: CGFloat) -> [CGPoint] {
+            [point(join, along: join.start + inset, normal: normal),
+             point(join, along: join.end - inset, normal: normal)]
+        }
+        let anchors = ends(0, inset: 0)
+        let a = ends(valley, inset: inset), b = ends(0, inset: inset * 1.25)
+        let c = ends(tuck, inset: inset * 0.85), d = ends(lip, inset: inset * 0.6)
+        func polygon(_ points: [CGPoint]) -> CGPath {
             let result = CGMutablePath()
-            result.addLines(between: [point(join, along: join.start, normal: 0),
-                point(join, along: join.start + bevel, normal: normal),
-                point(join, along: join.end - bevel, normal: normal),
-                point(join, along: join.end, normal: 0)])
+            result.addLines(between: points)
             result.closeSubpath()
             return result
         }
-        func shade(_ path: CGPath, from: CGFloat, to: CGFloat, colors: [NSColor], locations: [CGFloat]) {
+        let colors = paper.count >= 2 ? paper : [NSColor(white: 0.95, alpha: 1), NSColor(white: 0.95, alpha: 1)]
+        func tint(_ color: NSColor, light: CGFloat = 0, shade: CGFloat = 0) -> NSColor {
+            let rgb = color.usingColorSpace(.sRGB) ?? color
+            func channel(_ value: CGFloat) -> CGFloat { (value + (1 - value) * light) * (1 - shade) }
+            return NSColor(srgbRed: channel(rgb.redComponent), green: channel(rgb.greenComponent),
+                           blue: channel(rgb.blueComponent), alpha: 1)
+        }
+        let front = colors.map { color -> NSColor in
+            let rgb = color.usingColorSpace(.sRGB) ?? color
+            let luminance = rgb.redComponent * 0.2126 + rgb.greenComponent * 0.7152 + rgb.blueComponent * 0.0722
+            return tint(rgb, light: max(0, 0.6 - luminance) * 0.11, shade: max(0, luminance - 0.5) * 0.1)
+        }
+        func fill(_ path: CGPath, light: CGFloat = 0, shade: CGFloat = 0, material: [NSColor]? = nil) {
             guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
-                colors: colors.map(\.cgColor) as CFArray, locations: locations) else { return }
+                colors: (material ?? colors).map { tint($0, light: light, shade: shade).cgColor } as CFArray,
+                locations: nil) else { return }
             context.saveGState()
             context.addPath(path)
             context.clip()
-            context.drawLinearGradient(gradient, start: point(join, along: join.start, normal: from),
-                end: point(join, along: join.start, normal: to), options: [])
+            context.drawLinearGradient(gradient, start: point(join, along: join.start, normal: 0),
+                end: point(join, along: join.end, normal: 0), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
             context.restoreGState()
         }
-        // Two planar facets meet at a sharp ridge. Beveled ends and outer
-        // creases make the pleat readable even against a flat background.
-        shade(face(-depth), from: -depth, to: 0,
-            colors: [NSColor(white: 0, alpha: 0.14 * strength),
-                     NSColor(white: 1, alpha: 0.1 * strength),
-                     NSColor(white: 1, alpha: 0.66 * strength)], locations: [0, 0.12, 1])
-        shade(face(depth), from: 0, to: depth,
-            colors: [NSColor(white: 0, alpha: 0.56 * strength),
-                     NSColor(white: 0, alpha: 0.12 * strength),
-                     NSColor(white: 1, alpha: 0.12 * strength)], locations: [0, 0.85, 1])
-        context.saveGState()
-        context.addPath(face(-depth)); context.addPath(face(depth)); context.clip()
-        let ridge = CGMutablePath()
-        ridge.move(to: point(join, along: join.start, normal: -0.5))
-        ridge.addLine(to: point(join, along: join.end, normal: -0.5))
-        context.setLineWidth(0.75)
-        stroke(ridge, color: NSColor(white: 1, alpha: 0.7 * strength), in: context)
-        for normal in [-depth, depth] {
-            let crease = CGMutablePath()
-            crease.move(to: point(join, along: join.start, normal: 0))
-            crease.addLine(to: point(join, along: join.start + bevel, normal: normal))
-            crease.addLine(to: point(join, along: join.end - bevel, normal: normal))
-            crease.addLine(to: point(join, along: join.end, normal: 0))
-            context.setLineWidth(0.65)
-            stroke(crease, color: NSColor(white: 0, alpha: 0.18 * strength), in: context)
+        func line(_ points: [CGPoint]) -> CGPath {
+            let path = CGMutablePath()
+            path.addLines(between: points)
+            return path
         }
-        context.restoreGState()
+
+        func face(_ upper: [CGPoint], _ lower: [CGPoint]) -> CGPath {
+            polygon([anchors[0], upper[0], upper[1], anchors[1], lower[1], lower[0]])
+        }
+        // A shallow accordion fold has a broad front, a tucked return, and a
+        // narrow paper lip. Its crease fans meet the original sheet at each end.
+        let silhouette = face(a, d)
+        let opacity = 1 - pow(1 - strength, 4)
+        let hairline = min(0.6, depth * 0.2)
+        let shadowDepth = min(4, depth * 0.2)
+        if let shadow = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: [NSColor(white: 0, alpha: 0.22 * opacity).cgColor, NSColor.clear.cgColor] as CFArray,
+            locations: [0, 1]) {
+            context.saveGState()
+            context.addPath(face(d, ends(lip + shadowDepth, inset: inset * 0.6)))
+            context.clip()
+            context.drawLinearGradient(shadow, start: point(join, along: join.start, normal: lip),
+                end: point(join, along: join.start, normal: lip + shadowDepth), options: [])
+            context.restoreGState()
+        }
+
+        // Composite the paper once. Filling its silhouette first prevents cracks
+        // between antialiased facets from exposing text through the crease.
+        context.setAlpha(opacity)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        fill(silhouette)
+        fill(face(a, b), material: front)
+        // A restrained ambient shade describes the broad plane's slope. It
+        // never lifts the crease to white or puts a glossy highlight on it.
+        if let shade = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: [NSColor(white: 0, alpha: 0.07).cgColor, NSColor.clear.cgColor] as CFArray, locations: [0, 1]) {
+            context.saveGState()
+            context.addPath(face(a, b))
+            context.clip()
+            context.drawLinearGradient(shade, start: point(join, along: join.start, normal: valley),
+                end: point(join, along: join.start, normal: 0), options: [])
+            context.restoreGState()
+        }
+        fill(face(b, c), shade: 0.3)
+        fill(face(c, d), light: 0.035)
+        for end in 0...1 {
+            fill(polygon([anchors[end], a[end], b[end]]), shade: 0.035, material: front)
+        }
+        context.setLineWidth(hairline)
+        stroke(line([anchors[0], b[0], b[1], anchors[1]]), color: NSColor(white: 0, alpha: 0.2), in: context)
+        stroke(line([anchors[0], c[0], c[1], anchors[1]]), color: NSColor(white: 0, alpha: 0.23), in: context)
+        context.endTransparencyLayer()
     }
 
     private static func drawBreak(_ join: StitchJoin, style: StitchStyle, in context: CGContext) {

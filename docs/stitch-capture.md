@@ -14,7 +14,7 @@ Touching edges get a soft, wavy seam by default. Open **Seams** in the Stitch op
 - **Wave:** a fine, wavy line in a fading blur.
 - **Blend:** a soft blur without a line.
 - **Torn:** an exposed paper strip with ragged edges, fibers, and a small cast shadow. Adjust paper color, paper width, and roughness.
-- **Fold:** two shaded paper facets meeting at a crisp crease, with beveled ends. Adjust fold depth and strength.
+- **Fold:** a matte accordion pleat with a broad face, a tucked return, a narrow paper lip, and a small fading shadow. The paper follows nearby background colors, and the creases converge into the image at each end. Adjust fold depth and strength.
 - **Break:** a fine line interrupted by two cut marks.
 
 The panel shows only the controls for the current treatment. Wave and Break have line color, blur, fade width, line width, and shape controls. Blend has blur and fade width. Torn and Fold keep captured content crisp and do not use blur. Each treatment retains its shape settings when you switch. The native **Color** swatch edits line color for Wave and Break, paper color for Torn, and opens **Seams** for Blend and Fold. Blur is strongest at the join and fades to untouched pixels across the selected width. Toggle **Show stitch seams** to hide the effect. These settings apply to all joins in the current stitch. Undo and redo cover cuts, movement, and treatment changes. Crop, flip, previews, copied images, and saved files use the same treatment renderer; magnifiers refresh to show the current seam while censor bakes stay intact.

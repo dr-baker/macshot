@@ -243,6 +243,27 @@ enum StitchRenderer {
         return samples
     }
 
+    /// Paper follows nearby captured backgrounds. Source-space sampling keeps
+    /// the material stable in the picker, editor preview, and full-size export.
+    private static func foldPaperColors(_ join: StitchJoin, samples: [BackgroundSample]) -> [NSColor] {
+        let steps = max(1, min(32, Int(ceil((join.end - join.start) / 128))))
+        return (0...steps).map { index in
+            let along = join.start + (join.end - join.start) * CGFloat(index) / CGFloat(steps)
+            let point = join.axis == .horizontal ? CGPoint(x: along, y: join.position)
+                : CGPoint(x: join.position, y: along)
+            var sum = SIMD4<Double>.zero, weight = 0.0
+            for sample in samples {
+                let dx = Double(point.x - sample.point.x), dy = Double(point.y - sample.point.y)
+                let distance = dx * dx + dy * dy + 1024
+                let w = 1 / (distance * distance)
+                sum += sample.color * w; weight += w
+            }
+            guard weight > 0, sum.w > 0 else { return NSColor(white: 0.95, alpha: 1) }
+            return NSColor(srgbRed: CGFloat(sum.x / sum.w), green: CGFloat(sum.y / sum.w),
+                           blue: CGFloat(sum.z / sum.w), alpha: 1)
+        }
+    }
+
     /// Interpolate a bounded, low-frequency field of dominant neighboring colors. A coarse
     /// field deliberately cannot reproduce a text baseline or a one-pixel border as a stripe.
     /// Only uncovered pixels are written; captured pixels (including alpha) stay untouched.
@@ -364,7 +385,12 @@ enum StitchRenderer {
         final.beginPath()
         final.addRects(document.pieces.map(\.frame))
         final.clip()
-        for join in joins { StitchSeamDrawing.draw(join, style: style, in: final) }
+        let paperSamples = style.transition == .fold && style.foldDepth > 0 && style.foldStrength > 0
+            ? backgroundSamples(document.pieces) : []
+        for join in joins {
+            let paper = style.transition == .fold ? foldPaperColors(join, samples: paperSamples) : []
+            StitchSeamDrawing.draw(join, style: style, foldPaper: paper, in: final)
+        }
         return final.makeImage()
     }
 }
