@@ -244,67 +244,53 @@ class ToolbarLayout {
     static let defaultIconColor = NSColor.white
     static let defaultBgColor = NSColor(white: 0.12, alpha: 1.0)
 
-    // User-customizable colors — read from UserDefaults with defaults matching the original look
-    static var accentColor: NSColor {
-        if let data = UserDefaults.standard.data(forKey: "toolbarAccentColor"),
-           let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
-            return color
-        }
-        return defaultAccentColor
+    typealias ColorMode = ToolbarThemeColorMode
+
+    static var colorMode: ColorMode {
+        get { ColorMode(rawValue: UserDefaults.standard.string(forKey: "toolbarColorMode") ?? "system") ?? .system }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "toolbarColorMode") }
     }
-    static var iconColor: NSColor {
-        if let data = UserDefaults.standard.data(forKey: "toolbarIconColor"),
-           let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
-            return color
-        }
-        return defaultIconColor
+
+    static var usesSystemAccent: Bool {
+        get { UserDefaults.standard.bool(forKey: "toolbarUsesSystemAccent") }
+        set { UserDefaults.standard.set(newValue, forKey: "toolbarUsesSystemAccent") }
     }
-    static var bgColor: NSColor {
-        if let data = UserDefaults.standard.data(forKey: "toolbarBgColor"),
-           let color = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
-            return color
-        }
-        return defaultBgColor
+
+    /// Material appearance follows the chosen app mode, independently of panel
+    /// foreground overrides and the brightness of explicitly customized colors.
+    static var appearance: NSAppearance? { resolvedAppearance }
+    private static var resolvedAppearance: NSAppearance { colorMode.appearance(system: NSApp?.effectiveAppearance) }
+
+    static func palette(for appearance: NSAppearance) -> ToolbarThemePreset.Palette {
+        ToolbarThemePreferences.shared.palette(for: appearance, usesSystemAccent: usesSystemAccent)
     }
+
+    private static var currentPalette: ToolbarThemePreset.Palette { palette(for: resolvedAppearance) }
+    static var accentColor: NSColor { currentPalette.accent }
+    static var iconColor: NSColor { currentPalette.icon }
+    static var bgColor: NSColor { currentPalette.bg }
     static var handleColor: NSColor { accentColor }
     static let cornerRadius: CGFloat = 6
 
-    /// Save accent color to UserDefaults.
-    static func saveAccentColor(_ color: NSColor) {
-        if let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: false) {
-            UserDefaults.standard.set(data, forKey: "toolbarAccentColor")
+    static var selectedThemePreset: ToolbarThemePreset? { ToolbarThemePreferences.shared.selectedPreset }
+    static func applyThemePreset(_ preset: ToolbarThemePreset) { ToolbarThemePreferences.shared.apply(preset) }
+
+    /// Editing any color freezes the displayed palette and leaves system-accent
+    /// mode. Later Light/Dark changes preserve those explicit color choices.
+    static func saveAccentColor(_ color: NSColor) { saveCustomColors(accent: color) }
+    static func saveIconColor(_ color: NSColor) { saveCustomColors(icon: color) }
+    static func saveBgColor(_ color: NSColor) { saveCustomColors(background: color) }
+
+    private static func saveCustomColors(accent: NSColor? = nil, icon: NSColor? = nil, background: NSColor? = nil) {
+        let palette = currentPalette
+        var colors = [accent ?? palette.accent, icon ?? palette.icon, background ?? palette.bg]
+        resolvedAppearance.performAsCurrentDrawingAppearance {
+            colors = colors.map { $0.usingColorSpace(.sRGB) ?? $0 }
         }
+        ToolbarThemePreferences.shared.saveCustom(.init(accent: colors[0], icon: colors[1], bg: colors[2]))
     }
 
-    /// Save icon color to UserDefaults.
-    static func saveIconColor(_ color: NSColor) {
-        if let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: false) {
-            UserDefaults.standard.set(data, forKey: "toolbarIconColor")
-        }
-    }
-
-    /// Appearance matching the toolbar background brightness.
-    /// Dark background → `.darkAqua`, light background → `.aqua`.
-    static var appearance: NSAppearance? {
-        let color = bgColor.usingColorSpace(.deviceRGB) ?? bgColor
-        var brightness: CGFloat = 0
-        color.getHue(nil, saturation: nil, brightness: &brightness, alpha: nil)
-        return NSAppearance(named: brightness > 0.5 ? .aqua : .darkAqua)
-    }
-
-    /// Save background color to UserDefaults.
-    static func saveBgColor(_ color: NSColor) {
-        if let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: false) {
-            UserDefaults.standard.set(data, forKey: "toolbarBgColor")
-        }
-    }
-
-    /// Reset all colors to defaults.
-    static func resetColors() {
-        UserDefaults.standard.removeObject(forKey: "toolbarAccentColor")
-        UserDefaults.standard.removeObject(forKey: "toolbarIconColor")
-        UserDefaults.standard.removeObject(forKey: "toolbarBgColor")
-    }
+    static func resetColors() { ToolbarThemePreferences.shared.reset() }
 
     // Bottom toolbar items (drawing tools + colors + undo/redo + processing actions)
     static func bottomButtons(
@@ -380,13 +366,10 @@ class ToolbarLayout {
         // Color button
         let colorTooltip: String
         if selectedTool == .stitch {
-            if !stitchSeamsVisible { colorTooltip = L("Show seams to edit color") }
-            else {
-                switch stitchTransition {
-                case .wave, .breakLine: colorTooltip = L("Seam color")
-                case .torn: colorTooltip = L("Paper color")
-                case .blend, .fold: colorTooltip = L("Seam appearance")
-                }
+            if !stitchSeamsVisible {
+                colorTooltip = stitchTransition.hasEditableColor ? L("Show seams to edit color") : L("Show seams to edit appearance")
+            } else {
+                colorTooltip = stitchTransition.hasEditableColor ? L("Seam color") : L("Seam appearance")
             }
         } else { colorTooltip = L("Color") }
         var colorBtn = ToolbarButton(action: .color, sfSymbol: nil, tooltip: colorTooltip)

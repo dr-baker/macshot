@@ -134,7 +134,7 @@ enum StitchRenderer {
         }
     }
 
-    private struct CoverageSlab {
+    struct CoverageSlab {
         let columns: Range<Int>
         let rows: [Range<Int>]
 
@@ -243,27 +243,6 @@ enum StitchRenderer {
         return samples
     }
 
-    /// Paper follows nearby captured backgrounds. Source-space sampling keeps
-    /// the material stable in the picker, editor preview, and full-size export.
-    private static func foldPaperColors(_ join: StitchJoin, samples: [BackgroundSample]) -> [NSColor] {
-        let steps = max(1, min(32, Int(ceil((join.end - join.start) / 128))))
-        return (0...steps).map { index in
-            let along = join.start + (join.end - join.start) * CGFloat(index) / CGFloat(steps)
-            let point = join.axis == .horizontal ? CGPoint(x: along, y: join.position)
-                : CGPoint(x: join.position, y: along)
-            var sum = SIMD4<Double>.zero, weight = 0.0
-            for sample in samples {
-                let dx = Double(point.x - sample.point.x), dy = Double(point.y - sample.point.y)
-                let distance = dx * dx + dy * dy + 1024
-                let w = 1 / (distance * distance)
-                sum += sample.color * w; weight += w
-            }
-            guard weight > 0, sum.w > 0 else { return NSColor(white: 0.95, alpha: 1) }
-            return NSColor(srgbRed: CGFloat(sum.x / sum.w), green: CGFloat(sum.y / sum.w),
-                           blue: CGFloat(sum.z / sum.w), alpha: 1)
-        }
-    }
-
     /// Interpolate a bounded, low-frequency field of dominant neighboring colors. A coarse
     /// field deliberately cannot reproduce a text baseline or a one-pixel border as a stripe.
     /// Only uncovered pixels are written; captured pixels (including alpha) stay untouched.
@@ -323,7 +302,8 @@ enum StitchRenderer {
         }
     }
 
-    static func render(_ document: StitchDocument, maximumPreviewDimension: CGFloat? = nil) -> CGImage? {
+    static func render(_ document: StitchDocument, maximumPreviewDimension: CGFloat? = nil,
+                       protectedRegions: [CGRect] = []) -> CGImage? {
         guard document.canRender else { return nil }
         let bounds = document.bounds.integral
         if let dimension = maximumPreviewDimension, (!dimension.isFinite || dimension <= 0) { return nil }
@@ -381,15 +361,27 @@ enum StitchRenderer {
                 }
             }
         }
+        let usesPaper = (style.transition == .torn && style.tearWidth > 0)
+            || (style.transition == .fold && style.foldDepth > 0 && style.foldStrength > 0)
+        if usesPaper && style.transition == .fold {
+            StitchFoldWarp.apply(joins: joins, style: style, source: base, destination: final,
+                bounds: bounds, scale: scale, protectedRegions: protectedRegions,
+                coverage: coverage(document.pieces, bounds: bounds, scale: scale, width: width, height: height))
+        }
+        if usesPaper && style.transition == .torn {
+            // Source alpha prevents paper, fibers, and shadows from inventing
+            // pixels in transparent parts of an otherwise covered rectangle.
+            // Use actual raster dimensions so rounded previews align exactly.
+            final.clip(to: CGRect(x: 0, y: 0, width: width, height: height), mask: original)
+        }
         applyCoordinates(final)
         final.beginPath()
         final.addRects(document.pieces.map(\.frame))
         final.clip()
-        let paperSamples = style.transition == .fold && style.foldDepth > 0 && style.foldStrength > 0
-            ? backgroundSamples(document.pieces) : []
-        for join in joins {
-            let paper = style.transition == .fold ? foldPaperColors(join, samples: paperSamples) : []
-            StitchSeamDrawing.draw(join, style: style, foldPaper: paper, in: final)
+        let palettes = usesPaper ? document.paperPaletteCache.snapshot(for: joins, pieces: document.pieces).palettes : []
+        for (index, join) in joins.enumerated() {
+            let paper = usesPaper ? palettes[index] : .neutral
+            StitchSeamDrawing.draw(join, style: style, paper: paper, in: final)
         }
         return final.makeImage()
     }

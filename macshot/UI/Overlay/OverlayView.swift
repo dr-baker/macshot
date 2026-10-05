@@ -124,7 +124,7 @@ class OverlayView: NSView {
             if captureSourceImage != nil {
                 captureSourceImage = screenshotImage
             }
-            if usesExternalScreenshotPreview {
+            if usesExternalScreenshotPreview && captureDrawRect == bounds {
                 let cgImage = screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 externalScreenshotPreviewUpdater?(cgImage)
             }
@@ -143,11 +143,12 @@ class OverlayView: NSView {
             boundarySnapGuideX = nil
             boundarySnapGuideY = nil
             pendingAutoAdjustSelection = false
-            if boundarySnapEnabled, !isEditorMode {
+            if boundarySnapEnabled, !isEditorMode, captureDrawRect == bounds {
                 scheduleBoundarySnapIndexBuild()
             }
         }
     }
+    var overlayBackgroundImage: NSImage? { screenshotImage }
     var captureSourceImage: NSImage?
     var externalScreenshotPreviewUpdater: ((CGImage?) -> Void)?
     var usesExternalScreenshotPreview = false {
@@ -240,6 +241,9 @@ class OverlayView: NSView {
     private var currentAnnotation: Annotation?
     /// Whether the user is actively drawing/dragging a new annotation.
     var isActivelyDrawing: Bool { currentAnnotation != nil }
+    var isManipulatingAnnotation: Bool {
+        isActivelyDrawing || isDraggingAnnotation || isResizingAnnotation || isRotatingAnnotation
+    }
 
     // MARK: - Tool handlers
     private lazy var toolHandlers: [AnnotationTool: AnnotationToolHandler] = {
@@ -461,6 +465,7 @@ class OverlayView: NSView {
     /// Overlay-space frame of the resolution box (for chrome hit-test / cursor /
     /// zoom-badge anchoring). .zero when not shown.
     private var resolutionBoxRect: NSRect = .zero
+    private var captureInstructionsView: ScreenshotTextPanelView?
     private var preSelectionPresetButton: PreSelectionPresetButton?
     private var preSelectionPresetButtonRect: NSRect = .zero
 
@@ -719,7 +724,7 @@ class OverlayView: NSView {
         guard let windowPoint = window?.mouseLocationOutsideOfEventStream else { return nil }
         return viewToCanvas(convert(windowPoint, from: nil))
     }
-    private var editorTooltipView: NSView?
+    private var toolbarTooltipView: NSView?
     private var overlayErrorTimer: Timer? = nil
 
     // Recording state
@@ -846,6 +851,21 @@ class OverlayView: NSView {
         }
     }
 
+    /// Return finishes the scroll session before normal screenshot shortcuts can run.
+    @discardableResult
+    func handleScrollCaptureKey(_ event: NSEvent) -> Bool {
+        guard isScrollCapturing else { return false }
+        switch event.keyCode {
+        case 36, 76: // Return / numpad Enter
+            overlayDelegate?.overlayViewDidRequestStopScrollCapture()
+        case 53: // Escape
+            overlayDelegate?.overlayViewDidRequestCancelScrollCapture()
+        default:
+            return false
+        }
+        return true
+    }
+
     func startScrollCaptureMode() {
         isScrollCapturing = true
         updateResolutionBox()  // hide the box during scroll capture
@@ -876,20 +896,13 @@ class OverlayView: NSView {
             }
         }
 
-        // Escape key monitor — global catches when another app has focus; local when macshot has focus.
-        let handleScrollKey: (NSEvent) -> Void = { [weak self] event in
-            guard let self = self, self.isScrollCapturing else { return }
-            if event.keyCode == 53 {  // Escape
-                self.overlayDelegate?.overlayViewDidRequestCancelScrollCapture()
-            }
+        // Global handles keys while the target app has focus. Local consumes them
+        // before a stop callback can clear scroll mode and enable normal shortcuts.
+        scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleScrollCaptureKey(event)
         }
-        scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            handleScrollKey(event)
-        }
-        scrollCaptureLocalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            handleScrollKey(event)
-            if event.keyCode == 53 { return nil }  // consume
-            return event
+        scrollCaptureLocalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleScrollCaptureKey(event) == true ? nil : event
         }
 
         // Show real NSPanel-based HUD (receives clicks independently of overlay window)
@@ -1177,10 +1190,7 @@ class OverlayView: NSView {
 
     @objc private func handleToolbarColorsChanged() {
         // Rebuild toolbars and options row with new colors.
-        if let row = toolOptionsRowView {
-            row.layer?.backgroundColor = ToolbarLayout.bgColor.cgColor
-        }
-        toolOptionsRowView?.appearance = ToolbarLayout.appearance
+        toolOptionsRowView?.refreshPanelAppearance()
         rebuildToolbarLayout()
         if let tool = toolOptionsRowView?.currentTool {
             toolOptionsRowView?.rebuild(for: tool)
@@ -1455,8 +1465,14 @@ class OverlayView: NSView {
             return
         }
 
+        if currentTool == .stitch,
+           let canvas = subviews.compactMap({ $0 as? StitchCanvasView }).first(where: { !$0.isHidden }) {
+            canvas.cursor(at: canvas.convert(point, from: self)).set()
+            return
+        }
+
         // Selection resize handles (overlay only, not during scroll capture)
-        if !isEditorMode && !isScrollCapturing, let handleCursor = resizeHandleCursor(at: point) {
+        if shouldAllowSelectionResize(), let handleCursor = resizeHandleCursor(at: point) {
             handleCursor.set()
             return
         }
@@ -1579,6 +1595,8 @@ class OverlayView: NSView {
     // MARK: - Hit Testing
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        let localPoint = convert(point, from: superview)
+        if let submenu = PopoverHelper.hitTestInline(at: localPoint, in: self) { return submenu }
         // Let real NSView subviews (toolbar strips, options row) handle their own events.
         // This prevents our mouseDown override from intercepting slider drags etc.
         // In editor mode the strips live in chromeParentView (a sibling container), not in
@@ -1636,6 +1654,7 @@ class OverlayView: NSView {
 
     /// Returns true if the point is over any chrome element (toolbars, options row, popovers, labels).
     private func isPointOnChrome(_ point: NSPoint) -> Bool {
+        if PopoverHelper.containsInline(point: point, in: self) { return true }
         // In editor mode, strips are in chromeParentView — different coordinate space.
         // Don't check them here; they handle their own hit testing as container subviews.
         if showToolbars && !isEditorMode {
@@ -1781,7 +1800,7 @@ class OverlayView: NSView {
             // live screen content everywhere (not just inside the selection).
             context.cgContext.clear(bounds)
         } else if !isRecording {
-            if let image = screenshotImage {
+            if let image = overlayBackgroundImage {
                 // Screenshot ready — draw it with dark overlay
                 if !usesExternalScreenshotPreview {
                     image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1.0)
@@ -1801,23 +1820,16 @@ class OverlayView: NSView {
         drawSnapHighlight()
         if state == .idle { drawStitchStartingGuides() }
 
-        // Helper text (capture instructions). Suppressed when the user has
-        // enabled "Hide capture instructions" in Settings (issue #226).
-        if UserDefaults.standard.bool(forKey: "hideCaptureInstructions") {
-            hidePreSelectionPresetButton()
-        } else {
+        if shouldShowCaptureInstructions {
             if state == .idle {
-                if screenshotImage != nil {
-                    drawIdleHelperText()
-                } else {
-                    hidePreSelectionPresetButton()
-                }
+                drawIdleHelperText()
             } else if state == .selecting {
                 hidePreSelectionPresetButton()
                 drawSelectingHelperText()
-            } else {
-                hidePreSelectionPresetButton()
             }
+        } else {
+            if captureInstructionsView?.isHidden == false { captureInstructionsView?.isHidden = true }
+            hidePreSelectionPresetButton()
         }
 
         // Draw remote selection region (cross-screen drag from another overlay)
@@ -1858,12 +1870,12 @@ class OverlayView: NSView {
             if shouldClipSelectionImage() {
                 context.saveGraphicsState()
                 NSBezierPath(rect: selectionRect).setClip()
-                if !isScrollCapturing, !isRecording, usesExternalScreenshotPreview, zoomLevel == 1 {
+                if !isScrollCapturing, !isRecording, usesExternalScreenshotPreview, captureDrawRect == bounds, zoomLevel == 1 {
                     context.cgContext.setBlendMode(.clear)
                     NSBezierPath(rect: selectionRect).fill()
                 } else if !isScrollCapturing, !isRecording, let image = screenshotImage {
                     applyZoomTransform(to: context)
-                    image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1.0)
+                    image.draw(in: captureDrawRect, from: .zero, operation: .copy, fraction: 1.0)
                 }
                 context.restoreGraphicsState()
             }
@@ -2183,7 +2195,7 @@ class OverlayView: NSView {
             // called from layout/selection changes — not drawn here.
 
             // Resize handles (drawn even in recording setup mode, but not during scroll capture)
-            if state == .selected && !isEditorMode && !isScrollCapturing {
+            if state == .selected && shouldAllowSelectionResize() {
                 drawResizeHandles()
             }
 
@@ -2357,6 +2369,14 @@ class OverlayView: NSView {
     private static let helperSmallBoldFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
     private static let helperDimColor = NSColor.white.withAlphaComponent(0.7)
 
+    var shouldShowCaptureInstructions: Bool {
+        guard !UserDefaults.standard.bool(forKey: "hideCaptureInstructions"),
+              !(remoteSelectionRect.width >= 1 && remoteSelectionRect.height >= 1) else { return false }
+        if state == .idle { return screenshotImage != nil }
+        if state == .selecting { return selectionRect.width >= 1 && selectionRect.height >= 1 }
+        return false
+    }
+
     var idleHelperText: String {
         if stitchAllowsStartingCornerSnap && !stitchStartingGuides.isEmpty {
             return L("Start near a guide · Option to ignore snapping")
@@ -2420,9 +2440,6 @@ class OverlayView: NSView {
         let bgY = bounds.midY - bgHeight / 2
         let bgRect = NSRect(x: bgX, y: bgY, width: bgWidth, height: bgHeight)
 
-        NSColor.black.withAlphaComponent(0.65).setFill()
-        NSBezierPath(roundedRect: bgRect, xRadius: 8, yRadius: 8).fill()
-
         if showPresetButton {
             let buttonFrame = NSRect(
                 x: bounds.midX - buttonSize.width / 2,
@@ -2437,19 +2454,37 @@ class OverlayView: NSView {
         let textY2 = bgY + padding + buttonBlockHeight
         let textY1 = textY2 + size2total.height + lineSpacing
 
-        (line1 as NSString).draw(
-            at: NSPoint(x: bounds.midX - size1.width / 2, y: textY1), withAttributes: attrs1)
-
-        // Draw snap line as three segments with different colors
         let line2startX = bounds.midX - size2total.width / 2
         let line2Y = textY2 + (size2total.height - size2pre.height) / 2
-        (line3prefix as NSString).draw(
-            at: NSPoint(x: line2startX, y: line2Y), withAttributes: attrs2prefix)
-        (line3state as NSString).draw(
-            at: NSPoint(x: line2startX + size2pre.width, y: line2Y), withAttributes: attrs2state)
-        (line3suffix as NSString).draw(
-            at: NSPoint(x: line2startX + size2pre.width + size2state.width, y: line2Y),
-            withAttributes: attrs2suffix)
+        showCaptureInstructions(frame: bgRect, cornerRadius: 8, runs: [
+            .init(text: line1, origin: NSPoint(x: bounds.midX - size1.width / 2 - bgX, y: textY1 - bgY),
+                font: Self.helperFont),
+            .init(text: line3prefix, origin: NSPoint(x: line2startX - bgX, y: line2Y - bgY),
+                font: Self.helperSmallFont, alpha: 0.7),
+            .init(text: line3state, origin: NSPoint(x: line2startX + size2pre.width - bgX, y: line2Y - bgY),
+                font: Self.helperSmallBoldFont, color: snapColor),
+            .init(text: line3suffix, origin: NSPoint(x: line2startX + size2pre.width + size2state.width - bgX, y: line2Y - bgY),
+                font: Self.helperSmallFont, alpha: 0.7),
+        ])
+    }
+
+    private func showCaptureInstructions(frame: NSRect, cornerRadius: CGFloat,
+                                         runs: [ScreenshotTextPanelView.TextRun]) {
+        let view: ScreenshotTextPanelView
+        if let existing = captureInstructionsView { view = existing }
+        else {
+            view = ScreenshotTextPanelView(frame: frame)
+            addSubview(view, positioned: .below, relativeTo: preSelectionPresetButton)
+            captureInstructionsView = view
+            view.onForegroundChange = { [weak self] color in
+                self?.preSelectionPresetButton?.displayForegroundColor = color
+            }
+        }
+        view.panelCornerRadius = cornerRadius
+        if view.frame != frame { view.frame = frame }
+        view.textRuns = runs
+        preSelectionPresetButton?.displayForegroundColor = view.panelForegroundColor
+        if view.isHidden { view.isHidden = false }
     }
 
     private static let helperTextAttrs: [NSAttributedString.Key: Any] = [
@@ -2492,12 +2527,10 @@ class OverlayView: NSView {
         labelX = max(bounds.minX + 4, min(labelX, bounds.maxX - bgWidth - 4))
 
         let bgRect = NSRect(x: labelX, y: labelY, width: bgWidth, height: bgHeight)
-        NSColor.black.withAlphaComponent(0.65).setFill()
-        NSBezierPath(roundedRect: bgRect, xRadius: 6, yRadius: 6).fill()
-
-        (text as NSString).draw(
-            at: NSPoint(x: bgRect.minX + padding, y: bgRect.minY + padding / 2),
-            withAttributes: attrs)
+        showCaptureInstructions(frame: bgRect, cornerRadius: 6, runs: [
+            .init(text: text, origin: NSPoint(x: padding, y: padding / 2),
+                font: NSFont.systemFont(ofSize: 12, weight: .medium)),
+        ])
     }
 
     private static let sizeLabelFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
@@ -2685,6 +2718,7 @@ class OverlayView: NSView {
         resolutionBoxRect = frame  // overlay-space rect (for chrome/cursor/zoom anchor)
         let px = selectionDisplaySize
         box.setDimensions(w: px.w, h: px.h)
+        box.setEditable((self as? ImageEditingView)?.stitchCaptureBackdrop == nil)
         box.setActivePresetLabel(preSelectionPresetDisplayLabel)
 
         // Inline: a solid-bg overlay subview at the overlay-space frame.
@@ -3060,6 +3094,10 @@ class OverlayView: NSView {
 
     /// Current selection size in device pixels (rounded, not truncated).
     var selectionPixelSize: (w: Int, h: Int) {
+        if let editor = self as? ImageEditingView, editor.stitchCaptureBackdrop != nil,
+           let pixels = screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return (pixels.width, pixels.height)
+        }
         let scale = window?.backingScaleFactor ?? 2.0
         return (Int((selectionRect.width * scale).rounded()),
                 Int((selectionRect.height * scale).rounded()))
@@ -3111,7 +3149,7 @@ class OverlayView: NSView {
     /// fields and resolution presets. Returns true if it fit exactly (no clamp).
     @discardableResult
     func applyPixelSize(w pxW: Int, h pxH: Int) -> Bool {
-        guard pxW > 0, pxH > 0 else { return false }
+        guard (self as? ImageEditingView)?.stitchCaptureBackdrop == nil, pxW > 0, pxH > 0 else { return false }
         let scale = window?.backingScaleFactor ?? 2.0
         var newW = CGFloat(pxW) / scale
         var newH = CGFloat(pxH) / scale
@@ -3156,6 +3194,7 @@ class OverlayView: NSView {
     /// Lock (or clear, when nil) the selection's aspect ratio and immediately
     /// reshape the current selection to match (center-anchored, clamped).
     func applyLockedAspect(_ aspect: CGFloat?) {
+        guard (self as? ImageEditingView)?.stitchCaptureBackdrop == nil else { return }
         lockedAspect = aspect
         selectionIsWindowSnap = false
         guard let aspect, aspect > 0, selectionRect.width > 1 else {
@@ -3209,6 +3248,7 @@ class OverlayView: NSView {
 
     private func drawBeautifyPreview(context: NSGraphicsContext) {
         let config = beautifyConfig
+        let sourceRect = selectionRect.offsetBy(dx: -captureDrawRect.minX, dy: -captureDrawRect.minY)
         let pad = config.padding
         let cornerRadius = config.isWindowSnap ? 10 : config.cornerRadius  // native macOS corner radius for snapped windows
         let shadowRadius = config.shadowRadius
@@ -3242,7 +3282,7 @@ class OverlayView: NSView {
             // then draw the dark overlay back so we have a clean base for the gradient.
             context.cgContext.saveGState()
             NSBezierPath(rect: expandedRect).addClip()
-            if let image = screenshotImage {
+            if let image = overlayBackgroundImage {
                 image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1.0)
             }
             NSColor.black.withAlphaComponent(0.45).setFill()
@@ -3361,7 +3401,7 @@ class OverlayView: NSView {
                 // Fallback: crop from screenshot (before window capture completes)
                 let drawImage = effectsActive ? effectsProcessedScreenshot(image) : image
                 drawImage.draw(
-                    in: imageRect, from: selectionRect, operation: .sourceOver, fraction: 1.0)
+                    in: imageRect, from: sourceRect, operation: .sourceOver, fraction: 1.0)
             }
 
             // Draw annotations shifted to the preview position
@@ -3446,7 +3486,7 @@ class OverlayView: NSView {
             if let image = screenshotImage {
                 let drawImage = effectsActive ? effectsProcessedScreenshot(image) : image
                 drawImage.draw(
-                    in: imageRect, from: selectionRect, operation: .sourceOver, fraction: 1.0)
+                    in: imageRect, from: sourceRect, operation: .sourceOver, fraction: 1.0)
             }
 
             // Draw annotations shifted to the preview position (including current live annotation)
@@ -3476,7 +3516,7 @@ class OverlayView: NSView {
 
             if let image = screenshotImage {
                 let drawImage = effectsActive ? effectsProcessedScreenshot(image) : image
-                drawImage.draw(in: imageRect, from: selectionRect, operation: .copy, fraction: 1.0)
+                drawImage.draw(in: imageRect, from: sourceRect, operation: .copy, fraction: 1.0)
             }
 
             // Draw annotations shifted to preview position (including current live annotation)
@@ -3675,19 +3715,31 @@ class OverlayView: NSView {
     // MARK: - Editor Image Transforms
 
     func flipImageHorizontally() {
+        guard (self as? ImageEditingView)?.refreshFoldProtection() != false else { return }
         guard let original = screenshotImage,
             let cgImage = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
 
-        let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: true)
-        let stitchPixels = transformedStitch.flatMap { StitchRenderer.render($0) }
+        let previousStitch = (self as? ImageEditingView)?.stitchDocument
+        let transformedStitch = previousStitch?.flipped(horizontal: true)
+        let stitchPixels = transformedStitch.flatMap { document -> CGImage? in
+            guard let previousStitch else { return nil }
+            let bounds = previousStitch.bounds.integral
+            let protection = StitchAnnotationTransforms.protectedRegions(annotations, in: previousStitch,
+                scale: CGFloat(cgImage.width) / original.size.width).map { rect -> CGRect in
+                    var mirrored = rect
+                    mirrored.origin.x = bounds.minX + bounds.maxX - rect.maxX
+                    return mirrored
+                }
+            return StitchRenderer.render(document, protectedRegions: protection)
+        }
         guard transformedStitch == nil || stitchPixels != nil else { return }
         if let stitchPixels, stitchPixels.width != cgImage.width || stitchPixels.height != cgImage.height { return }
 
         // Save state for undo
         let prevImage = original.copy() as! NSImage
         undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
-            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
@@ -3737,7 +3789,7 @@ class OverlayView: NSView {
 
         if let transformedStitch {
             for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
-            (self as? EditorView)?.installStitchDocument(transformedStitch)
+            (self as? ImageEditingView)?.installStitchDocument(transformedStitch)
         }
         updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
@@ -3745,18 +3797,30 @@ class OverlayView: NSView {
     }
 
     func flipImageVertically() {
+        guard (self as? ImageEditingView)?.refreshFoldProtection() != false else { return }
         guard let original = screenshotImage,
             let cgImage = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
 
-        let transformedStitch = (self as? EditorView)?.stitchDocument?.flipped(horizontal: false)
-        let stitchPixels = transformedStitch.flatMap { StitchRenderer.render($0) }
+        let previousStitch = (self as? ImageEditingView)?.stitchDocument
+        let transformedStitch = previousStitch?.flipped(horizontal: false)
+        let stitchPixels = transformedStitch.flatMap { document -> CGImage? in
+            guard let previousStitch else { return nil }
+            let bounds = previousStitch.bounds.integral
+            let protection = StitchAnnotationTransforms.protectedRegions(annotations, in: previousStitch,
+                scale: CGFloat(cgImage.width) / original.size.width).map { rect -> CGRect in
+                    var mirrored = rect
+                    mirrored.origin.y = bounds.minY + bounds.maxY - rect.maxY
+                    return mirrored
+                }
+            return StitchRenderer.render(document, protectedRegions: protection)
+        }
         guard transformedStitch == nil || stitchPixels != nil else { return }
         if let stitchPixels, stitchPixels.width != cgImage.width || stitchPixels.height != cgImage.height { return }
 
         let prevImage = original.copy() as! NSImage
         undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
-            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
@@ -3804,7 +3868,7 @@ class OverlayView: NSView {
 
         if let transformedStitch {
             for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
-            (self as? EditorView)?.installStitchDocument(transformedStitch)
+            (self as? ImageEditingView)?.installStitchDocument(transformedStitch)
         }
         updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
@@ -3921,7 +3985,7 @@ class OverlayView: NSView {
         let shiftDy = -targetRect.origin.y
         let offsets = annotations.map { ($0, shiftDx, shiftDy) }
         undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: offsets,
-            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
@@ -4023,7 +4087,7 @@ class OverlayView: NSView {
             previousImage: original.copy() as? NSImage ?? original,
             previousSnappedWindowImage: previousSnapped,
             annotationOffsets: [],
-            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
@@ -4516,6 +4580,7 @@ class OverlayView: NSView {
     /// Crop the screenshot to `viewRect` (view-space, within selectionRect),
     /// translate all annotations accordingly, and reset zoom.
     private func commitCrop(viewRect: NSRect) {
+        guard (self as? ImageEditingView)?.refreshFoldProtection() != false else { return }
         guard let originalImage = screenshotImage,
             let cgOriginal = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
@@ -4551,17 +4616,24 @@ class OverlayView: NSView {
             let croppedCG = cgOriginal.cropping(to: cgPixelRect)
         else { return }
 
-        let transformedStitch = (self as? EditorView)?.stitchDocument.flatMap { document in
+        let previousStitch = (self as? ImageEditingView)?.stitchDocument
+        let transformedStitch = previousStitch.flatMap { document in
             document.cropped(to: cgPixelRect.offsetBy(dx: document.bounds.minX, dy: document.bounds.minY))
         }
-        let stitchPixels = transformedStitch.flatMap { StitchRenderer.render($0) }
+        let stitchPixels = transformedStitch.flatMap { document -> CGImage? in
+            guard let previousStitch else { return nil }
+            let crop = cgPixelRect.offsetBy(dx: previousStitch.bounds.minX, dy: previousStitch.bounds.minY)
+            let protection = StitchAnnotationTransforms.protectedRegions(annotations, in: previousStitch,
+                scale: pixScale).map { $0.offsetBy(dx: -crop.minX, dy: -crop.minY) }
+            return StitchRenderer.render(document, protectedRegions: protection)
+        }
         guard transformedStitch == nil || stitchPixels != nil else { return }
         if let stitchPixels, stitchPixels.width != croppedCG.width || stitchPixels.height != croppedCG.height { return }
 
         // Save state for undo before modifying
         let prevImage = originalImage.copy() as! NSImage
         undoStack.append(.imageTransform(previousImage: prevImage, previousSnappedWindowImage: nil, annotationOffsets: [],
-            previousStitchDocument: (self as? EditorView)?.stitchDocument,
+            previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
             previousAnnotations: annotations.map { ($0, $0.clone()) }))
         redoStack.removeAll()
 
@@ -4580,7 +4652,7 @@ class OverlayView: NSView {
 
         if let transformedStitch {
             for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }
-            (self as? EditorView)?.installStitchDocument(transformedStitch)
+            (self as? ImageEditingView)?.installStitchDocument(transformedStitch)
         }
         updateAnnotationSourceImages(annotations)
         cachedCompositedImage = nil
@@ -5274,8 +5346,8 @@ class OverlayView: NSView {
             beautifyEnabled: beautifyEnabled, beautifyStyleIndex: beautifyStyleIndex,
             hasAnnotations: movableAnnotations, isRecording: isRecording,
             effectsActive: effectsActive,
-            stitchSeamsVisible: (self as? EditorView)?.stitchDocument?.style.visible ?? true,
-            stitchTransition: (self as? EditorView)?.stitchDocument?.style.transition ?? .wave
+            stitchSeamsVisible: (self as? ImageEditingView)?.stitchDocument?.style.visible ?? true,
+            stitchTransition: (self as? ImageEditingView)?.stitchDocument?.style.transition ?? .wave
         )
         if showBeautifyInOptionsRow {
             for i in bottomButtons.indices {
@@ -5291,6 +5363,9 @@ class OverlayView: NSView {
             hasAnnotations: movableAnnotations, translateEnabled: translateEnabled,
             isRecording: isRecording,
             isEditorMode: isEditorMode)
+        if (self as? ImageEditingView)?.stitchCaptureBackdrop != nil {
+            rightButtons.removeAll { $0.action == .moveSelection || $0.action == .adjustSelection }
+        }
 
         // Create strip views if needed — add to chrome parent (window content) when in scroll view
         let parent = chromeParentView ?? self
@@ -5607,11 +5682,6 @@ class OverlayView: NSView {
         }
     }
 
-    /// Liquid Glass: lift each toolbar surface (bottom strip, right strip, tool
-    /// options row) into a floating child panel above the overlay window,
-    /// positioned at its screen rect, so its glass refracts the overlay
-    /// (screenshot + dim) beneath. `repositionToolbars` has just set the intended
-    /// OVERLAY-space frames; we use those (not the live panel-local frames).
     /// Dismiss the resolution box. It is recreated on demand by
     /// updateResolutionBox(), so it's fully disposed (not just hidden) on
     /// deselect to avoid leaving a stray box behind.
@@ -7552,7 +7622,7 @@ class OverlayView: NSView {
     /// This deliberately does not consult `boundarySnapEnabled` and does not
     /// alter the drag-time snap radius or behavior.
     private func autoAdjustSelection() {
-        guard state == .selected, !isEditorMode, selectionRect.width >= 4,
+        guard state == .selected, !isEditorMode, shouldAllowSelectionResize(), selectionRect.width >= 4,
               selectionRect.height >= 4 else { return }
 
         guard let index = boundarySnapIndex else {
@@ -7801,6 +7871,7 @@ class OverlayView: NSView {
     func canStartKeyboardMoveSelection() -> Bool {
         state == .selected
             && !isEditorMode
+            && shouldAllowSelectionResize()
             && textEditView == nil
             && !isScrollCapturing
             && !isAnchoredSelecting
@@ -7886,8 +7957,7 @@ class OverlayView: NSView {
         rightStripView?.suppressesHover = suppressed
     }
 
-    /// True if `btn` belongs to `strip` (direct subview or via the strip's view
-    /// tree — covers both in-overlay and glass-chrome-panel hosting).
+    /// True if `btn` belongs to `strip` in the current control hierarchy.
     private func isButton(_ btn: NSView, inStrip strip: ToolbarStripView?) -> Bool {
         guard let strip else { return false }
         var v: NSView? = btn
@@ -7899,121 +7969,44 @@ class OverlayView: NSView {
     }
 
     private func drawHoveredTooltip() {
-        // In editor mode, tooltips are drawn via a floating NSView in the chrome parent
-        if isEditorMode {
-            updateEditorTooltipView()
+        // Editors host chrome outside the scrollable image; captures host it here.
+        let parent = isEditorMode ? chromeParentView : self
+        guard let parent, let tooltip = hoveredTooltip, !tooltip.isEmpty,
+              let button = hoveredTooltipButtonView, !PopoverHelper.isVisible else {
+            toolbarTooltipView?.removeFromSuperview()
+            toolbarTooltipView = nil
             return
         }
 
-        guard let tooltip = hoveredTooltip, !tooltip.isEmpty,
-              let btn = hoveredTooltipButtonView,
-              !PopoverHelper.isVisible else { return }
-
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: ToolbarLayout.iconColor,
-        ]
-        let str = tooltip as NSString
-        let textSize = str.size(withAttributes: attrs)
-        let pad: CGFloat = 6
-        let tipW = textSize.width + pad * 2
-        let tipH = textSize.height + pad
-
-        // Convert the button's rect to OverlayView coordinates. The button may
-        // live in a separate glass chrome panel (different window), so go through
-        // screen coordinates rather than a same-window convert (which would
-        // misplace the tooltip far off, e.g. screen-left).
-        let btnFrame: NSRect
-        if let btnWindow = btn.window, let selfWindow = window, btnWindow !== selfWindow {
-            let inBtnWindow = btn.convert(btn.bounds, to: nil)
-            let screenRect = btnWindow.convertToScreen(inBtnWindow)
-            let inSelfWindow = selfWindow.convertFromScreen(screenRect)
-            btnFrame = convert(inSelfWindow, from: nil)
-        } else {
-            btnFrame = btn.convert(btn.bounds, to: self)
-        }
-        // The button is hosted in a strip; find which strip via the panel chain.
-        let isBottomBar = isButton(btn, inStrip: bottomStripView)
-        let tipRect: NSRect
-
-        if isBottomBar {
-            // Above bottom bar, or below if no room
-            var tipY = bottomBarRect.maxY + 4
-            if tipY + tipH > bounds.maxY - 2 { tipY = bottomBarRect.minY - tipH - 4 }
-            tipRect = NSRect(x: btnFrame.midX - tipW / 2, y: tipY, width: tipW, height: tipH)
-        } else {
-            // Left of right bar
-            tipRect = NSRect(x: btnFrame.minX - tipW - 6, y: btnFrame.midY - tipH / 2, width: tipW, height: tipH)
-        }
-
-        // Clamp to bounds
-        let clamped = NSRect(
-            x: max(bounds.minX + 2, min(tipRect.minX, bounds.maxX - tipW - 2)),
-            y: max(bounds.minY + 2, min(tipRect.minY, bounds.maxY - tipH - 2)),
-            width: tipW, height: tipH)
-
-        ToolbarLayout.bgColor.setFill()
-        NSBezierPath(roundedRect: clamped, xRadius: 4, yRadius: 4).fill()
-        str.draw(at: NSPoint(x: clamped.minX + pad, y: clamped.minY + pad / 2), withAttributes: attrs)
-    }
-
-    /// In editor mode, show tooltip as a floating NSView in the chrome parent (container),
-    /// since EditorView's draw() can only paint within the image bounds.
-    private func updateEditorTooltipView() {
-        guard let parent = chromeParentView else {
-            editorTooltipView?.removeFromSuperview()
-            editorTooltipView = nil
-            return
-        }
-
-        guard let tooltip = hoveredTooltip, !tooltip.isEmpty,
-              let btn = hoveredTooltipButtonView,
-              !PopoverHelper.isVisible else {
-            editorTooltipView?.removeFromSuperview()
-            editorTooltipView = nil
-            return
-        }
-
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor.white,
-        ]
-        let str = tooltip as NSString
-        let textSize = str.size(withAttributes: attrs)
-        let pad: CGFloat = 6
-        let tipW = textSize.width + pad * 2
-        let tipH = textSize.height + pad
-
-        let btnFrame = btn.convert(btn.bounds, to: parent)
-        let isBottomBar = btn.superview === bottomStripView
-        let tipRect: NSRect
-
-        if isBottomBar {
-            let stripFrame = bottomStripView?.frame ?? .zero
-            var tipY = stripFrame.maxY + 4
-            if tipY + tipH > parent.bounds.maxY - 2 { tipY = stripFrame.minY - tipH - 4 }
-            tipRect = NSRect(x: btnFrame.midX - tipW / 2, y: tipY, width: tipW, height: tipH)
-        } else {
-            tipRect = NSRect(x: btnFrame.minX - tipW - 6, y: btnFrame.midY - tipH / 2, width: tipW, height: tipH)
-        }
-
-        let clamped = NSRect(
-            x: max(parent.bounds.minX + 2, min(tipRect.minX, parent.bounds.maxX - tipW - 2)),
-            y: max(parent.bounds.minY + 2, min(tipRect.minY, parent.bounds.maxY - tipH - 2)),
-            width: tipW, height: tipH)
-
-        let tip: TooltipBackgroundView
-        if let existing = editorTooltipView as? TooltipBackgroundView {
+        let tip: ScreenshotTooltipView
+        if let existing = toolbarTooltipView as? ScreenshotTooltipView, existing.superview === parent {
             tip = existing
         } else {
-            editorTooltipView?.removeFromSuperview()
-            tip = TooltipBackgroundView(frame: clamped)
-            parent.addSubview(tip)
-            editorTooltipView = tip
+            toolbarTooltipView?.removeFromSuperview()
+            tip = ScreenshotTooltipView(frame: .zero)
+            toolbarTooltipView = tip
         }
-        tip.frame = clamped
         tip.text = tooltip
-        tip.needsDisplay = true
+        let width = tip.preferredSize.width
+        let height = tip.preferredSize.height
+        let buttonFrame = button.convert(button.bounds, to: parent)
+        let proposed: NSRect
+        if isButton(button, inStrip: bottomStripView) {
+            let stripFrame = bottomStripView.map { $0.convert($0.bounds, to: parent) } ?? .zero
+            var y = stripFrame.maxY + 4
+            if y + height > parent.bounds.maxY - 2 { y = stripFrame.minY - height - 4 }
+            proposed = NSRect(x: buttonFrame.midX - width / 2, y: y, width: width, height: height)
+        } else {
+            proposed = NSRect(x: buttonFrame.minX - width - 6,
+                y: buttonFrame.midY - height / 2, width: width, height: height)
+        }
+        let frame = NSRect(
+            x: max(parent.bounds.minX + 2, min(proposed.minX, parent.bounds.maxX - width - 2)),
+            y: max(parent.bounds.minY + 2, min(proposed.minY, parent.bounds.maxY - height - 2)),
+            width: width, height: height)
+        if tip.frame != frame { tip.frame = frame }
+        if tip.superview !== parent { parent.addSubview(tip) }
+
     }
 
     func showToolbarActionMenu(_ action: ToolbarButtonAction, anchorView: NSView) {
@@ -8337,7 +8330,7 @@ class OverlayView: NSView {
     /// Update the color swatch on the main toolbar's color button without a full rebuild.
     func updateToolbarColorSwatch() {
         if let idx = bottomButtons.firstIndex(where: { if case .color = $0.action { return true } else { return false } }) {
-            let style = (self as? EditorView)?.stitchDocument?.style
+            let style = (self as? ImageEditingView)?.stitchDocument?.style
             let appearanceOnly = currentTool == .stitch && style?.visible == true && style?.transition.hasEditableColor == false
             bottomButtons[idx].bgColor = appearanceOnly ? toolbarColor.withAlphaComponent(toolbarColor.alphaComponent * 0.3) : toolbarColor
             bottomStripView?.updateState(from: bottomButtons)
@@ -8358,14 +8351,7 @@ class OverlayView: NSView {
         case .tool(let tool):
             if tool == .stitch, !isEditorMode {
                 guard state == .selected, !selectionRect.isEmpty, !isRecording,
-                    screenshotImage != nil, let delegate = overlayDelegate else { return }
-                commitTextFieldIfNeeded()
-                // The established editor handoff preserves the raw crop,
-                // editable annotations and processing settings. Stitch stays
-                // transient so the next capture keeps its drawing tool.
-                currentTool = .stitch
-                delegate.overlayViewDidRequestDetach()
-                return
+                      screenshotImage != nil else { return }
             }
             commitTextFieldIfNeeded()
             showBeautifyInOptionsRow = false  // switch back to tool options
@@ -8382,7 +8368,7 @@ class OverlayView: NSView {
         case .color:
             let colorBtn = bottomStripView?.buttonViews.first { if case .color = $0.action { return true }; return false }
             if PopoverHelper.toggleClosedIfOpen(anchorView: colorBtn) { break }
-            if let editor = self as? EditorView, currentTool == .stitch,
+            if let editor = self as? ImageEditingView, currentTool == .stitch,
                 editor.stitchDocument?.style.visible == false || editor.stitchDocument?.style.transition.hasEditableColor == false {
                 let seamsAnchor = toolOptionsRowView?.subviews.first { $0.identifier?.rawValue == "stitch.seams" } ?? colorBtn
                 if let seamsAnchor { editor.onStitchOptions?(.seams, seamsAnchor) }
@@ -8394,6 +8380,7 @@ class OverlayView: NSView {
         case .adjustSelection:
             autoAdjustSelection()
         case .moveSelection:
+            guard shouldAllowSelectionResize() else { break }
             guard let win = window else { break }
             isToolbarMoveDragActive = true
             var moveButton = rightStripView?.buttonViews.first {
@@ -9399,6 +9386,7 @@ class OverlayView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if handleScrollCaptureKey(event) { return }
         if selectionOnlyMode {
             guard !event.modifierFlags.contains(.command),
                   !event.modifierFlags.contains(.control),
@@ -9528,10 +9516,6 @@ class OverlayView: NSView {
 
         switch event.keyCode {
         case 53:  // Escape
-            if isScrollCapturing {
-                overlayDelegate?.overlayViewDidRequestCancelScrollCapture()
-                return
-            }
             if isAnchoredSelecting {
                 cancelAnchoredSelection()
                 return
@@ -9865,7 +9849,7 @@ class OverlayView: NSView {
             redoStack.append(.propertyChange(annotation: ann, snapshot: currentSnapshot))
             cachedCompositedImage = nil
         case .stitchDocument(let snapshot):
-            if let editor = self as? EditorView {
+            if let editor = self as? ImageEditingView {
                 redoStack.append(.stitchDocument(editor.stitchSnapshot()))
                 editor.restoreStitchSnapshot(snapshot)
             }
@@ -9876,26 +9860,26 @@ class OverlayView: NSView {
             redoStack.append(.imageTransform(previousImage: currentImage,
                                              previousSnappedWindowImage: currentSnapped,
                                              annotationOffsets: [],
-                                             previousStitchDocument: (self as? EditorView)?.stitchDocument,
+                                             previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
                                              previousAnnotations: annotations.map { ($0, $0.clone()) }))
             screenshotImage = previousImage
             if let previousAnnotations {
                 for saved in previousAnnotations { saved.object.copyProperties(from: saved.properties) }
                 annotations = previousAnnotations.map(\.object)
             }
-            if let previousStitch { (self as? EditorView)?.installStitchDocument(previousStitch) }
             if previousSnapped != nil { snappedWindowImage = previousSnapped }
             // Update selectionRect to match restored image size
             if isEditorMode {
                 selectionRect = NSRect(origin: .zero, size: previousImage.size)
                 if isInsideScrollView { frame.size = previousImage.size }
             }
+            if let previousStitch { (self as? ImageEditingView)?.installStitchDocument(previousStitch) }
             updateAnnotationSourceImages(annotations)
             cachedCompositedImage = nil
             resetZoom()
         }
         needsDisplay = true
-        (self as? EditorView)?.onStitchDocumentChanged?()
+        (self as? ImageEditingView)?.onStitchDocumentChanged?()
         onContentChanged?()
     }
 
@@ -9954,7 +9938,7 @@ class OverlayView: NSView {
             undoStack.append(.propertyChange(annotation: ann, snapshot: currentSnapshot))
             cachedCompositedImage = nil
         case .stitchDocument(let snapshot):
-            if let editor = self as? EditorView {
+            if let editor = self as? ImageEditingView {
                 undoStack.append(.stitchDocument(editor.stitchSnapshot()))
                 editor.restoreStitchSnapshot(snapshot)
             }
@@ -9965,25 +9949,25 @@ class OverlayView: NSView {
             undoStack.append(.imageTransform(previousImage: currentImage,
                                              previousSnappedWindowImage: currentSnapped,
                                              annotationOffsets: [],
-                                             previousStitchDocument: (self as? EditorView)?.stitchDocument,
+                                             previousStitchDocument: (self as? ImageEditingView)?.stitchDocument,
                                              previousAnnotations: annotations.map { ($0, $0.clone()) }))
             screenshotImage = redoImage
             if let redoAnnotations {
                 for saved in redoAnnotations { saved.object.copyProperties(from: saved.properties) }
                 annotations = redoAnnotations.map(\.object)
             }
-            if let redoStitch { (self as? EditorView)?.installStitchDocument(redoStitch) }
             if redoSnapped != nil { snappedWindowImage = redoSnapped }
             if isEditorMode {
                 selectionRect = NSRect(origin: .zero, size: redoImage.size)
                 if isInsideScrollView { frame.size = redoImage.size }
             }
+            if let redoStitch { (self as? ImageEditingView)?.installStitchDocument(redoStitch) }
             updateAnnotationSourceImages(annotations)
             cachedCompositedImage = nil
             if !isInsideScrollView { resetZoom() }
         }
         needsDisplay = true
-        (self as? EditorView)?.onStitchDocumentChanged?()
+        (self as? ImageEditingView)?.onStitchDocumentChanged?()
         onContentChanged?()
     }
 
@@ -10374,7 +10358,7 @@ class OverlayView: NSView {
         let initialColor: NSColor
         switch target {
         case .drawColor: initialColor = currentColor
-        case .stitchSeam: initialColor = (self as? EditorView)?.stitchDocument?.style.editableColor ?? currentColor
+        case .stitchSeam: initialColor = (self as? ImageEditingView)?.stitchDocument?.style.color ?? currentColor
         case .textBg: initialColor = textEditor.bgColor
         case .textOutline: initialColor = textEditor.outlineColor
         case .textGlyphStroke: initialColor = textEditor.glyphStrokeColor
@@ -10397,18 +10381,18 @@ class OverlayView: NSView {
         var stitchUndoState: UUID?
         var stitchGestureActive = false
         let applySeamColor: (NSColor) -> Void = { [weak self] color in
-            guard let editor = self as? EditorView, var document = editor.stitchDocument,
+            guard let editor = self as? ImageEditingView, var document = editor.stitchDocument,
                   document.style.visible, document.style.transition.hasEditableColor else { return }
             if stitchGestureActive {
                 editor.previewStitchSeamColor(color)
                 return
             }
-            guard document.style.editableColor != color else { return }
+            guard document.style.color != color else { return }
             if stitchUndoState != editor.undoStateIdentity {
                 editor.checkpointStitchDocument()
                 stitchUndoState = editor.undoStateIdentity
             }
-            document.style.editableColor = color
+            document.style.color = color
             editor.applyStitchDocument(document, registerUndo: false)
         }
         if target == .stitchSeam {
@@ -10418,15 +10402,18 @@ class OverlayView: NSView {
             }
             picker.onGestureEnded = { [weak self] in
                 stitchGestureActive = false
-                guard let editor = self as? EditorView else { return }
+                guard let editor = self as? ImageEditingView else { return }
                 if let color = editor.stitchSeamColorPreview { applySeamColor(color) }
                 editor.previewStitchSeamColor(nil)
             }
         }
         picker.onColorChanged = { [weak self, weak picker] color in
             guard let self, let picker else { return }
-            if target == .stitchSeam { applySeamColor(color.withAlphaComponent(picker.opacity)) }
-            else { self.applyPickedColor(color, target: target) }
+            if target == .stitchSeam {
+                guard let style = (self as? ImageEditingView)?.stitchDocument?.style,
+                      style.visible, style.transition.hasEditableColor else { return }
+                applySeamColor(color.withAlphaComponent(picker.opacity))
+            } else { self.applyPickedColor(color, target: target) }
             picker.saveToSelectedSlot(color)
             // Update toolbar color swatches without rebuilding (which destroys the popover anchor)
             self.toolOptionsRowView?.updateSwatchColors()
@@ -10435,8 +10422,9 @@ class OverlayView: NSView {
         picker.onOpacityChanged = { [weak self] opacity in
             guard let self else { return }
             if target == .stitchSeam {
-                guard let editor = self as? EditorView,
-                      let color = editor.stitchSeamColorPreview ?? editor.stitchDocument?.style.editableColor else { return }
+                guard let editor = self as? ImageEditingView,
+                      let style = editor.stitchDocument?.style, style.visible, style.transition.hasEditableColor else { return }
+                let color = editor.stitchSeamColorPreview ?? style.color
                 applySeamColor(color.withAlphaComponent(opacity))
                 return
             }
@@ -10535,8 +10523,9 @@ class OverlayView: NSView {
         rightStripView?.isHidden = true
         toolOptionsRowView?.isHidden = true
         PopoverHelper.dismiss()
-        editorTooltipView?.removeFromSuperview()
-        editorTooltipView = nil
+        toolbarTooltipView?.removeFromSuperview()
+        toolbarTooltipView = nil
+        captureInstructionsView?.isHidden = true
         captureSourceImage = nil
         isTranslating = false
         translateEnabled = false
@@ -10676,26 +10665,17 @@ extension OverlayView: AnnotationCanvas {
 
 extension OverlayView: TextEditingCanvas {}
 
-/// Small rounded-rect tooltip view used for editor mode toolbar hover labels.
-private class TooltipBackgroundView: NSView {
-    var text: String = ""
-
-    override func draw(_ dirtyRect: NSRect) {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: ToolbarLayout.iconColor,
-        ]
-        ToolbarLayout.bgColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
-        let pad: CGFloat = 6
-        (text as NSString).draw(at: NSPoint(x: pad, y: pad / 2), withAttributes: attrs)
-    }
-}
-
 /// Compact icon-only control shown in the pre-selection helper. It opens the
 /// same ratio/resolution presets as the selected-area size control without
 /// turning the idle helper into a full toolbar.
 private final class PreSelectionPresetButton: NSButton {
+    var displayForegroundColor = ToolbarLayout.iconColor {
+        didSet {
+            guard oldValue != displayForegroundColor else { return }
+            updateTint()
+            needsDisplay = true
+        }
+    }
     private var hovered = false
     private var activePreset = false
     private var trackingArea: NSTrackingArea?
@@ -10721,8 +10701,12 @@ private final class PreSelectionPresetButton: NSButton {
     func update(active: Bool, tooltip: String) {
         activePreset = active
         toolTip = tooltip
-        contentTintColor = active ? ToolbarLayout.accentColor : ToolbarLayout.iconColor.withAlphaComponent(0.88)
+        updateTint()
         needsDisplay = true
+    }
+
+    private func updateTint() {
+        contentTintColor = activePreset ? ToolbarLayout.accentColor : displayForegroundColor.withAlphaComponent(0.88)
     }
 
     override func updateTrackingAreas() {
@@ -10757,16 +10741,16 @@ private final class PreSelectionPresetButton: NSButton {
         if isHighlighted {
             bg = ToolbarLayout.accentColor.withAlphaComponent(0.28)
         } else if hovered {
-            bg = ToolbarLayout.iconColor.withAlphaComponent(0.14)
+            bg = displayForegroundColor.withAlphaComponent(0.14)
         } else {
-            bg = NSColor.white.withAlphaComponent(0.07)
+            bg = displayForegroundColor.withAlphaComponent(0.07)
         }
         bg.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
 
         let stroke = activePreset
             ? ToolbarLayout.accentColor.withAlphaComponent(0.85)
-            : ToolbarLayout.iconColor.withAlphaComponent(0.18)
+            : displayForegroundColor.withAlphaComponent(0.18)
         stroke.setStroke()
         let border = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         border.lineWidth = activePreset ? 1.3 : 1.0

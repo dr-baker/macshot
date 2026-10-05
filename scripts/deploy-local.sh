@@ -16,7 +16,9 @@ repo_dir="$(cd "$(dirname "$script_path")/.." && pwd)"
 build_dir="$repo_dir/build/local-dev"
 app_name="macshot Dev"
 bundle_id="com.drbaker.macshot.dev"
-app_path="$build_dir/Build/Products/Release/$app_name.app"
+product_path="$build_dir/Build/Products/Release/$app_name.app"
+signed_dir="$build_dir/signed"
+app_path="$signed_dir/$app_name.app"
 install_path="/Applications/$app_name.app"
 build_log="$build_dir/build.log"
 build_only=false
@@ -41,7 +43,7 @@ mkdir -p "$build_dir"
 echo "Building $app_name (log: $build_log)"
 if ! xcodebuild \
   -project "$repo_dir/macshot.xcodeproj" \
-  -scheme macshot \
+  -scheme "$app_name" \
   -configuration Release \
   -derivedDataPath "$build_dir" \
   -destination 'platform=macOS' \
@@ -49,21 +51,26 @@ if ! xcodebuild \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO \
   ARCHS="$(uname -m)" \
-  SWIFT_ACTIVE_COMPILATION_CONDITIONS="LOCAL_DEV" \
-  MACSHOT_BUNDLE_IDENTIFIER="$bundle_id" \
-  MACSHOT_PRODUCT_NAME="$app_name" \
-  INFOPLIST_KEY_CFBundleDisplayName="$app_name" \
-  INFOPLIST_KEY_CFBundleName="$app_name" \
   CURRENT_PROJECT_VERSION="$(date -u +%s)" \
   build > "$build_log" 2>&1; then
   tail -80 "$build_log" >&2
   exit 1
 fi
 
-if [[ ! -d "$app_path" ]]; then
-  echo "Build succeeded but $app_path is missing" >&2
+if [[ ! -d "$product_path" ]]; then
+  echo "Build succeeded but $product_path is missing" >&2
   exit 1
 fi
+
+# Keep Xcode's unsigned product intact for the next incremental build.
+mkdir -p "$signed_dir"
+signed_stage_dir="$(mktemp -d "$signed_dir/.macshot-dev.XXXXXX")"
+trap 'rm -rf "$signed_stage_dir"' EXIT
+ditto "$product_path" "$signed_stage_dir/$app_name.app"
+rm -rf "$app_path"
+mv "$signed_stage_dir/$app_name.app" "$app_path"
+rmdir "$signed_stage_dir"
+trap - EXIT
 
 # The local variant never starts Sparkle. Remove its upstream update metadata as
 # another guard against replacing a development build with an upstream release.

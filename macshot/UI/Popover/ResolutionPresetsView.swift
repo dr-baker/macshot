@@ -50,17 +50,13 @@ final class ResolutionPresetsView: NSView {
 
         // Vertical divider between columns.
         let divX = colW + midGap / 2
-        let div = NSView(frame: NSRect(x: divX, y: totalH - vPad - colsH, width: 1, height: colsH))
-        div.wantsLayer = true
-        div.layer?.backgroundColor = ToolbarLayout.iconColor.withAlphaComponent(0.12).cgColor
+        let div = ResolutionPresetSeparator(frame: NSRect(x: divX, y: totalH - vPad - colsH, width: 1, height: colsH))
         addSubview(div)
 
         if activeFooterH > 0 {
             // Horizontal separator above the footer.
             let sepY = activeFooterH + vPad
-            let hsep = NSView(frame: NSRect(x: 12, y: sepY, width: totalW - 24, height: 1))
-            hsep.wantsLayer = true
-            hsep.layer?.backgroundColor = ToolbarLayout.iconColor.withAlphaComponent(0.12).cgColor
+            let hsep = ResolutionPresetSeparator(frame: NSRect(x: 12, y: sepY, width: totalW - 24, height: 1))
             addSubview(hsep)
 
             buildFooter(width: totalW, height: activeFooterH)
@@ -71,7 +67,7 @@ final class ResolutionPresetsView: NSView {
         var y = totalH - vPad - headerH
         let head = NSTextField(labelWithString: header.uppercased())
         head.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
-        head.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.5)
+        head.textColor = screenshotForegroundColor
         head.frame = NSRect(x: x + 14, y: y, width: colW - 16, height: headerH)
         addSubview(head)
 
@@ -103,7 +99,7 @@ final class ResolutionPresetsView: NSView {
             let toggleY = height - 30
             let label = NSTextField(labelWithString: L("Keep ratio for next captures"))
             label.font = NSFont.systemFont(ofSize: 11)
-            label.textColor = ToolbarLayout.iconColor
+            label.textColor = screenshotForegroundColor
             label.frame = NSRect(x: 14, y: toggleY, width: width - 70, height: 18)
             addSubview(label)
 
@@ -124,7 +120,7 @@ final class ResolutionPresetsView: NSView {
                 : height - 32
             let unitLabel = NSTextField(labelWithString: L("Units"))
             unitLabel.font = NSFont.systemFont(ofSize: 11)
-            unitLabel.textColor = ToolbarLayout.iconColor
+            unitLabel.textColor = screenshotForegroundColor
             unitLabel.frame = NSRect(x: 14, y: unitY + 2, width: 60, height: 18)
             addSubview(unitLabel)
 
@@ -161,6 +157,13 @@ final class ResolutionPresetsView: NSView {
     @objc private func autoAdjustClicked(_ sender: NSButton) { onAutoAdjust?() }
 }
 
+private final class ResolutionPresetSeparator: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        screenshotForegroundColor.withAlphaComponent(0.12).setFill()
+        bounds.fill()
+    }
+}
+
 /// A single selectable preset row (checkmark + hover bg).
 private final class ResolutionPresetRow: NSView {
     var title: String = ""
@@ -183,12 +186,12 @@ private final class ResolutionPresetRow: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         if hovered {
-            ToolbarLayout.iconColor.withAlphaComponent(0.10).setFill()
+            screenshotForegroundColor.withAlphaComponent(0.10).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5).fill()
         }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12, weight: isItemSelected ? .semibold : .regular),
-            .foregroundColor: ToolbarLayout.iconColor,
+            .foregroundColor: screenshotForegroundColor,
         ]
         let ts = (title as NSString).size(withAttributes: attrs)
         (title as NSString).draw(at: NSPoint(x: 26, y: (bounds.height - ts.height) / 2), withAttributes: attrs)

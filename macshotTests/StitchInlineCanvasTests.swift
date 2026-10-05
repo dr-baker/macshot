@@ -223,9 +223,16 @@ final class StitchInlineCanvasTests: XCTestCase {
             let window = host(scroll)
             defer { window.orderOut(nil) }
             scroll.magnification = magnification
+            scroll.tile()
             let zoom = magnification / 2
             let start = CGPoint(x: 40, y: 30)
             let end = CGPoint(x: 40, y: 30 + 24 / zoom)
+            let pointerRegion = CGRect(x: start.x, y: start.y, width: 1, height: 29 / zoom + 1)
+                .insetBy(dx: -8 / zoom, dy: -8 / zoom)
+            canvas.scrollToVisible(pointerRegion)
+            XCTAssertTrue(canvas.visibleRect.contains(start), "The hover target must be visible at \(magnification)×")
+            XCTAssertTrue(recipient(for: mouse(.mouseMoved, canvas, start), in: scroll) === canvas,
+                          "The visible hover target must reach the canvas at \(magnification)×")
             canvas.bandGuideRows = [-20 + 7 / zoom]
             canvas.mouseMoved(with: mouse(.mouseMoved, canvas, start))
             XCTAssertNil(canvas.bandHoverRow, "Seven screen points must remain outside the six-point snap radius")
@@ -579,6 +586,195 @@ final class StitchInlineCanvasTests: XCTestCase {
         canvas.mouseExited(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
         XCTAssertNil(canvas.bandHoverRow)
         XCTAssertNil(canvas.bandHoverColumn)
+    }
+
+    func testRemovalGuidesOnlyDrawWhileHoveringCapturedContent() throws {
+        let (editor, canvas) = fixture(twoPieces: true)
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        func raster() throws -> Data {
+            let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
+            canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+            let bytes = try XCTUnwrap(bitmap.bitmapData)
+            var pixels = Data()
+            let rowLength = bitmap.pixelsWide * bitmap.bitsPerPixel / 8
+            for row in 0..<bitmap.pixelsHigh {
+                pixels.append(bytes.advanced(by: row * bitmap.bytesPerRow), count: rowLength)
+            }
+            return pixels
+        }
+        let unobstructed = try raster()
+        canvas.bandGuideRows = [-18, 30]
+        canvas.bandGuideColumns = [-60, 50]
+        XCTAssertFalse(canvas.showsBandGuides)
+        XCTAssertEqual(try raster(), unobstructed, "Idle Remove must leave the image clean")
+
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
+        XCTAssertTrue(canvas.showsBandGuides)
+        XCTAssertNotEqual(try raster(), unobstructed)
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 225, y: 30)))
+        XCTAssertFalse(canvas.showsBandGuides, "A gap between captured pieces is canvas, not an image")
+        XCTAssertNil(canvas.bandHoverRow)
+        XCTAssertNil(canvas.bandHoverColumn)
+        XCTAssertEqual(try raster(), unobstructed)
+
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 280, y: 30)))
+        XCTAssertTrue(canvas.showsBandGuides, "Every captured piece can show removal guides")
+        canvas.mouseExited(with: mouse(.mouseMoved, canvas, CGPoint(x: 280, y: 30)))
+        XCTAssertFalse(canvas.showsBandGuides)
+        XCTAssertEqual(try raster(), unobstructed)
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertFalse(canvas.showsBandGuides, "Modifier changes must not revive an exited hover")
+    }
+
+    func testUnmatchedRemovalHoverStillRedrawsWhenEnteringAndLeavingImage() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.bandGuideRows = [-18]
+        canvas.bandGuideColumns = [-60]
+        canvas.needsDisplay = false
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 200, y: 150)))
+        XCTAssertTrue(canvas.showsBandGuides)
+        XCTAssertNil(canvas.bandHoverRow)
+        XCTAssertNil(canvas.bandHoverColumn)
+        XCTAssertTrue(canvas.needsDisplay, "Faint guides need a redraw even without a nearby snap")
+        canvas.needsDisplay = false
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: -10, y: 150)))
+        XCTAssertFalse(canvas.showsBandGuides)
+        XCTAssertTrue(canvas.needsDisplay)
+    }
+
+    func testRemovalGuidesRemainDuringActiveDragOutsideImageAndOptionStillBypassesSnapping() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        canvas.bandGuideRows = [-18, 30]
+        var cut: (CGFloat, CGFloat)?
+        canvas.onCut = { _, from, to in cut = (from, to) }
+        canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 43, y: 79)))
+        XCTAssertTrue(canvas.showsBandGuides)
+        XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
+        canvas.mouseExited(with: mouse(.mouseMoved, canvas, CGPoint(x: 450, y: 79)))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 450, y: 79)))
+        XCTAssertTrue(canvas.showsBandGuides, "Leaving the image must not interrupt an active cut")
+        XCTAssertEqual(canvas.bandGuideMatches, [-18, 30])
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58, modifiers: .option))
+        XCTAssertTrue(canvas.showsBandGuides)
+        XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
+        canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 450, y: 79), modifiers: .option))
+        XCTAssertEqual(cut?.0, -20)
+        XCTAssertEqual(cut?.1, 29)
+        XCTAssertFalse(canvas.showsBandGuides)
+    }
+
+    func testRemovalHoverRefreshUsesCurrentPieceCoverageAndPixelProjection() {
+        let (editor, canvas) = fixture(twoPieces: true)
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        let original = canvas.document
+        let hover = mouse(.mouseMoved, canvas, CGPoint(x: 180, y: 30))
+        canvas.mouseMoved(with: hover)
+        XCTAssertTrue(canvas.showsBandGuides)
+        var narrowed = original
+        narrowed.pieces[0].source.size.width = 40
+        canvas.refresh(narrowed, preview: nil)
+        XCTAssertFalse(canvas.showsBandGuides, "Changing source coverage must clear a hover over a new gap")
+        canvas.refresh(original, preview: nil)
+        XCTAssertFalse(canvas.showsBandGuides, "Refresh must not revive cleared hover feedback")
+        canvas.mouseMoved(with: hover)
+        var wider = original
+        wider.pieces[1].origin.x = 300
+        canvas.refresh(wider, preview: nil)
+        XCTAssertFalse(canvas.showsBandGuides, "The stationary pointer now projects into a gap at the new canvas width")
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30)))
+        XCTAssertTrue(canvas.showsBandGuides)
+        canvas.refresh(StitchDocument(), preview: nil)
+        XCTAssertFalse(canvas.showsBandGuides)
+    }
+
+    func testRemovalHoverIgnoresNativeChromeAndClearsWhenOptionsTakeWindowFocus() {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        let hover = mouse(.mouseMoved, canvas, CGPoint(x: 40, y: 30))
+        canvas.mouseMoved(with: hover)
+        XCTAssertTrue(canvas.showsBandGuides)
+        let chrome = NSView(frame: canvas.frame)
+        editor.addSubview(chrome)
+        canvas.mouseMoved(with: hover)
+        XCTAssertFalse(canvas.showsBandGuides, "Native controls in front of the image own the hover")
+        chrome.removeFromSuperview()
+        canvas.mouseMoved(with: hover)
+        XCTAssertTrue(canvas.showsBandGuides)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        XCTAssertFalse(canvas.showsBandGuides, "Seams and other key panels must leave no passive guide feedback")
+        canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+        XCTAssertFalse(canvas.showsBandGuides)
+    }
+
+    func testRemovalHoverRejectsClippedContentUntilItIsScrolledIntoView() {
+        let (editor, canvas) = fixture()
+        let scroll = NSScrollView(frame: editor.frame)
+        scroll.allowsMagnification = true
+        scroll.maxMagnification = 8
+        scroll.documentView = editor
+        let window = host(scroll)
+        defer { window.orderOut(nil) }
+        scroll.magnification = 4
+        scroll.tile()
+        canvas.scrollToVisible(CGRect(x: 240, y: 20, width: 60, height: 20))
+        let visible = CGPoint(x: 270, y: 30)
+        let clipped = CGPoint(x: 40, y: 30)
+        XCTAssertTrue(canvas.visibleRect.contains(visible))
+        XCTAssertFalse(canvas.visibleRect.contains(clipped))
+        canvas.bandGuideRows = [-20]
+        canvas.bandGuideColumns = [-60, 170]
+        canvas.mouseMoved(with: mouse(.mouseMoved, canvas, visible))
+        XCTAssertTrue(canvas.showsBandGuides)
+        XCTAssertEqual(canvas.bandHoverRow, -20)
+        let clippedHover = mouse(.mouseMoved, canvas, clipped)
+        XCTAssertFalse(recipient(for: clippedHover, in: scroll) === canvas,
+                       "A real image point clipped by the viewport cannot receive native hover")
+        canvas.mouseMoved(with: clippedHover)
+        XCTAssertFalse(canvas.showsBandGuides)
+        XCTAssertNil(canvas.bandHoverRow)
+        XCTAssertNil(canvas.bandHoverColumn)
+
+        canvas.scrollToVisible(CGRect(origin: clipped, size: CGSize(width: 1, height: 1)).insetBy(dx: -4, dy: -4))
+        XCTAssertTrue(canvas.visibleRect.contains(clipped))
+        let revealedHover = mouse(.mouseMoved, canvas, clipped)
+        XCTAssertTrue(recipient(for: revealedHover, in: scroll) === canvas)
+        canvas.mouseMoved(with: revealedHover)
+        XCTAssertTrue(canvas.showsBandGuides)
+        XCTAssertEqual(canvas.bandHoverRow, -20)
+        XCTAssertEqual(canvas.bandHoverColumn, -60)
+    }
+
+    func testRemovalGuideStateClearsOnCancelModeChangeAndWindowDetach() {
+        for exit in 0..<3 {
+            let (editor, canvas) = fixture()
+            let window = host(editor)
+            defer { window.orderOut(nil) }
+            canvas.bandGuideRows = [-18, 30]
+            canvas.onCut = { _, _, _ in XCTFail("An exited gesture must not cut") }
+            canvas.mouseDown(with: mouse(.leftMouseDown, canvas, CGPoint(x: 40, y: 30)))
+            canvas.mouseDragged(with: mouse(.leftMouseDragged, canvas, CGPoint(x: 43, y: 79)))
+            XCTAssertTrue(canvas.showsBandGuides)
+            switch exit {
+            case 0: canvas.keyDown(with: TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53))
+            case 1: canvas.mode = .move
+            default: canvas.removeFromSuperview()
+            }
+            XCTAssertFalse(canvas.showsBandGuides)
+            XCTAssertNil(canvas.bandAxis)
+            XCTAssertTrue(canvas.bandGuideMatches.isEmpty)
+            canvas.mode = .removeSpace
+            canvas.flagsChanged(with: TestKeyEvent.keyDown(characters: "", keyCode: 58))
+            canvas.mouseUp(with: mouse(.leftMouseUp, canvas, CGPoint(x: 43, y: 79)))
+            XCTAssertFalse(canvas.showsBandGuides)
+        }
     }
 
     private func fixture(twoPieces: Bool = false) -> (KeyEditor, StitchCanvasView) {

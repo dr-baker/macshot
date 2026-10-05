@@ -20,6 +20,7 @@ local workflow reliable and publish verified work to Daniel's GitHub fork.
 
 - After changing app code, run `macshot-deploy` and verify that `/Applications/macshot Dev.app` is signed and running. A successful `xcodebuild` alone does not complete a local app change. Use `--build-only` only when installation is outside the task's scope.
 - Keep the `LOCAL_DEV` build separate from the normal and offline variants. Preserve its stable bundle ID and signing identity so macOS permissions survive redeploys. Do not enable Sparkle updates in the local build.
+- Keep normal and offline releases on macOS 13 and `macshot Dev` on macOS 26. Screenshot appearance belongs to Macshot: native Clear glass on supported systems, tinted Classic panels on older systems.
 - Run `scripts/run-tests.sh` for logic changes. When changing compilation flags, signing, or variant behavior, also check the affected Release builds described in `CLAUDE.md` and the CI workflow.
 - Publish to `origin` (`dr-baker/macshot`); fetch upstream changes from `upstream` (`sw33tLie/macshot`). Keep completed work on the fork's `main`. Do not merge with fast-forward unless Daniel specifically asks for it.
 

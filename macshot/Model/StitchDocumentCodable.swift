@@ -22,7 +22,6 @@ struct SavedStitchDocument: Codable, Equatable {
     var feather: CGFloat
     var tearWidth: CGFloat
     var tearRoughness: CGFloat
-    var paperColor: [CGFloat]
     var foldDepth: CGFloat
     var foldStrength: CGFloat
     var breakSize: CGFloat
@@ -35,7 +34,7 @@ struct SavedStitchDocument: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case images, pieces, transition, lineColor, lineWidth, wave, blur, feather, visible
-        case tearWidth, tearRoughness, paperColor, foldDepth, foldStrength, breakSize
+        case tearWidth, tearRoughness, foldDepth, foldStrength, breakSize
         case background, backgroundColor, packed, packingHorizontal, packingLength
     }
 
@@ -54,7 +53,6 @@ struct SavedStitchDocument: Codable, Equatable {
         feather = values.decode(.feather, or: style.feather)
         tearWidth = values.decode(.tearWidth, or: style.tearWidth)
         tearRoughness = values.decode(.tearRoughness, or: wave)
-        paperColor = values.decode(.paperColor, or: Self.components(style.paperColor))
         foldDepth = values.decode(.foldDepth, or: style.foldDepth)
         foldStrength = values.decode(.foldStrength, or: style.foldStrength)
         breakSize = values.decode(.breakSize, or: wave)
@@ -109,7 +107,6 @@ struct SavedStitchDocument: Codable, Equatable {
         feather = document.style.feather
         tearWidth = document.style.tearWidth
         tearRoughness = document.style.tearRoughness
-        paperColor = Self.components(document.style.paperColor)
         foldDepth = document.style.foldDepth
         foldStrength = document.style.foldStrength
         breakSize = document.style.breakSize
@@ -131,10 +128,10 @@ struct SavedStitchDocument: Codable, Equatable {
               images.reduce(0, { $0 + min($1.count, SavedCaptureValidation.maximumImageBytes + 1) }) <= SavedCaptureValidation.maximumImageBytes,
               [lineWidth, wave, blur, feather, tearWidth, tearRoughness, foldDepth, foldStrength, breakSize, packingLength].allSatisfy({ $0.isFinite && $0 >= 0 }),
               lineWidth <= 100, wave <= 100, blur <= 100, feather <= 4096,
-              tearWidth <= 100, tearRoughness <= 100, foldDepth <= 100, foldStrength <= 1, breakSize <= 100,
+              tearWidth <= 100, tearRoughness <= 100, foldDepth <= 100,
+              foldStrength <= StitchStyle.maximumFoldStrength, breakSize <= 100,
               packingLength <= StitchDocument.maximumDimension,
               !packed || packingLength > 0, let color = Self.color(lineColor),
-              let paper = Self.color(paperColor),
               let transition = StitchTransition(rawValue: transition) else { return nil }
         var pixels: [CGImage] = []
         var totalPixels = 0
@@ -176,7 +173,7 @@ struct SavedStitchDocument: Codable, Equatable {
         style.transition = transition
         style.color = color; style.lineWidth = lineWidth; style.wave = wave
         style.blur = blur; style.feather = feather; style.visible = visible
-        style.tearWidth = tearWidth; style.tearRoughness = tearRoughness; style.paperColor = paper
+        style.tearWidth = tearWidth; style.tearRoughness = tearRoughness
         style.foldDepth = foldDepth; style.foldStrength = foldStrength
         style.breakSize = breakSize
         var document = StitchDocument(pieces: restored, style: style, background: fill)

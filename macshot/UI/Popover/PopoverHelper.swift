@@ -24,9 +24,8 @@ struct PopoverToggleState {
     }
 }
 
-/// Lightweight helper for showing NSPopovers in both overlay and editor modes.
-/// In overlay mode, popovers anchor to an invisible view positioned at the button rect.
-/// In editor mode, popovers anchor to the real ToolbarButtonView.
+/// Show screenshot menus beside their toolbar controls. Glass menus share the
+/// existing window; native popovers handle classic panels and smaller windows.
 enum PopoverHelper {
 
     private static var toggleState = PopoverToggleState()
@@ -34,10 +33,12 @@ enum PopoverHelper {
     private static var anchorView: NSView?
     private static var localMouseDownMonitor: Any?
     private static var globalMouseDownMonitor: Any?
+    private static var activeSubmenu: ScreenshotSubmenuPresenter?
 
     /// Show a popover with the given content view, anchored relative to a rect in the given parent view.
     static func show(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge = .minY) {
         dismiss()
+        if showInline(contentView, size: size, relativeTo: rect, of: view, preferredEdge: preferredEdge) { return }
 
         let popover = NSPopover()
         popover.behavior = .semitransient
@@ -60,9 +61,11 @@ enum PopoverHelper {
 
     static func showAtPoint(_ contentView: NSView, size: NSSize, at point: NSPoint, in parentView: NSView, preferredEdge: NSRectEdge = .minY) {
         dismiss()
+        let rect = NSRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2)
+        if showInline(contentView, size: size, relativeTo: rect, of: parentView, preferredEdge: preferredEdge) { return }
 
         // Create a tiny invisible anchor view at the point
-        let anchor = NSView(frame: NSRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2))
+        let anchor = NSView(frame: rect)
         parentView.addSubview(anchor)
         anchorView = anchor
 
@@ -90,6 +93,10 @@ enum PopoverHelper {
     static var lastDismissedAt: Date { toggleState.dismissedAt }
 
     static func dismiss() {
+        let submenu = activeSubmenu
+        if submenu?.isVisible == true { toggleState.dismissed() }
+        activeSubmenu = nil
+        submenu?.dismiss()
         let popover = activePopover
         if popover?.isShown == true { toggleState.dismissed() }
         activePopover = nil
@@ -130,10 +137,17 @@ enum PopoverHelper {
         anchorView = nil
     }
 
-    static var isVisible: Bool { activePopover?.isShown == true }
+    static var isVisible: Bool {
+        if activeSubmenu?.isVisible == true { return true }
+        return activePopover?.isShown == true
+    }
 
     /// Resize cached content without reopening its popover or replacing its responder chain.
     static func resize(_ contentView: NSView, to size: NSSize) {
+        if let submenu = activeSubmenu {
+            submenu.resize(contentView, to: size)
+            return
+        }
         guard let popover = activePopover else { return }
         resize(contentView, to: size, in: popover)
     }
@@ -147,27 +161,75 @@ enum PopoverHelper {
     }
 
     static var isMouseInsidePopover: Bool {
+        if let submenu = activeSubmenu { return submenu.contains(screenPoint: NSEvent.mouseLocation) }
         guard let popover = activePopover, popover.isShown,
               let popoverWindow = popover.contentViewController?.view.window else { return false }
         return popoverWindow.frame.contains(NSEvent.mouseLocation)
+    }
+
+    /// Overlay hit testing calls this before routing a click to its canvas.
+    /// The point is in the caller's local coordinate space.
+    static func hitTestInline(at point: NSPoint, in view: NSView) -> NSView? {
+        return activeSubmenu?.hitTest(at: point, in: view)
+    }
+
+    static func containsInline(point: NSPoint, in view: NSView) -> Bool {
+        return activeSubmenu?.contains(point: point, in: view) == true
+    }
+
+    private static func showInline(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect,
+                                   of view: NSView, preferredEdge: NSRectEdge) -> Bool {
+        guard let submenu = ScreenshotSubmenuPresenter(contentView: contentView, size: size,
+            relativeTo: rect, of: view, preferredEdge: preferredEdge) else { return false }
+        activeSubmenu = submenu
+        toggleState.opened(from: view)
+        submenu.onNeedsNativePresentation = { [weak submenu] in
+            guard let submenu else { return }
+            showNativeAfterWindowResize(submenu)
+        }
+        installOutsideClickMonitors()
+        return true
+    }
+
+    /// A smaller window can stop fitting a menu that was already open. Retain
+    /// its content controls while letting AppKit position the native popover.
+    private static func showNativeAfterWindowResize(_ submenu: ScreenshotSubmenuPresenter) {
+        guard activeSubmenu === submenu, let anchor = submenu.anchorView else { return }
+        let responder = anchor.window.flatMap(ScreenshotSubmenuPresenter.editingResponder)
+        let menuResponder = (responder as? NSView)?.isDescendant(of: submenu.wrapper) == true ? responder : nil
+        activeSubmenu = nil
+        submenu.dismiss(restoreFocus: false)
+        removeOutsideClickMonitors()
+
+        let popover = NSPopover()
+        popover.behavior = .semitransient
+        popover.contentSize = submenu.size
+        popover.animates = true
+        popover.appearance = ToolbarLayout.appearance
+        let controller = NSViewController()
+        controller.view = cursorWrapped(submenu.contentView)
+        popover.contentViewController = controller
+        popover.delegate = AnchorCleanupDelegate.shared
+        activePopover = popover
+        popover.show(relativeTo: submenu.anchorRect, of: anchor, preferredEdge: submenu.preferredEdge)
+        configureShownPopover(popover, parentWindow: anchor.window)
+        if let menuResponder { submenu.contentView.window?.makeFirstResponder(menuResponder) }
+        installOutsideClickMonitors()
     }
 
     /// Wrap content view so the popover always shows an arrow cursor regardless of active tool.
     /// Sets appearance to match toolbar background brightness.
     private static func cursorWrapped(_ contentView: NSView) -> NSView {
         let wrapper = ArrowCursorView(frame: contentView.frame)
-        wrapper.appearance = ToolbarLayout.appearance
         contentView.frame.origin = .zero
         wrapper.addSubview(contentView)
         return wrapper
     }
 
     /// Finish window-level setup after AppKit has created the private popover
-    /// window. Overlay popovers may be opened from non-key Liquid Glass chrome
-    /// panels while macshot itself remains inactive; without an explicit key
-    /// handoff, AppKit leaves the popover visible but the first click only
-    /// focuses it. Making the popover window key preserves the non-activating
-    /// overlay/chrome topology and keeps semitransient dismissal unchanged.
+    /// window. Capture popovers may open while macshot itself remains inactive.
+    /// Making the popover window key lets its first click interact with controls
+    /// and preserves the capture overlay's nonactivating behavior.
     private static func configureShownPopover(_ popover: NSPopover, parentWindow: NSWindow?) {
         func configure() {
             guard popover.isShown,
@@ -222,6 +284,9 @@ enum PopoverHelper {
     }
 
     private static func shouldDismiss(forMouseDownAt screenPoint: NSPoint) -> Bool {
+        if let submenu = activeSubmenu {
+            return submenu.isVisible && !submenu.contains(screenPoint: screenPoint)
+        }
         guard let popover = activePopover, popover.isShown else { return false }
         guard let popoverWindow = popover.contentViewController?.view.window else { return true }
         return !popoverWindow.frame.contains(screenPoint)
@@ -229,7 +294,7 @@ enum PopoverHelper {
 }
 
 /// NSView that forces the arrow cursor over its entire bounds.
-private class ArrowCursorView: NSView {
+private class ArrowCursorView: ScreenshotPanelView {
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
     }

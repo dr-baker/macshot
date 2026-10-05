@@ -6,8 +6,8 @@ import Vision
 
 /// Scroll capture engine:
 ///
-/// - **`CGWindowListCreateImage`** for on-demand frame capture — each grab is a
-///   complete, compositor-finished snapshot. No stream management, no stale frames.
+/// - **On-demand screenshots** via ScreenCaptureKit in Dev and the legacy
+///   WindowServer API in normal/offline builds. Each grab is a complete snapshot.
 /// - **TIFF byte-by-byte comparison** — two consecutive identical TIFF representations
 ///   = content has truly stopped rendering. Zero tolerance, no false positives.
 /// - **Timer-driven `captureAndCompare`** on a dedicated serial queue — consistent
@@ -44,6 +44,8 @@ final class ScrollCaptureController {
 
     var onStripAdded:  ((Int) -> Void)?
     var onSessionDone: ((NSImage?) -> Void)?
+    /// Dev capture failures arrive after onSessionDone has torn down the capture UI.
+    var onCaptureFailed: ((String) -> Void)?
     var onAutoScrollStarted: (() -> Void)?
     var onPreviewUpdated: ((NSImage) -> Void)?
 
@@ -63,6 +65,12 @@ final class ScrollCaptureController {
     private let captureRect: NSRect
     private let screen: NSScreen
     private let backingScale: CGFloat
+    #if LOCAL_DEV
+    private let captureScreenFrame: CGRect
+    private var screenshotFilter: SCContentFilter?
+    private var screenshotConfiguration: SCStreamConfiguration?
+    private var screenshotExclusions: Set<CGWindowID> = []
+    #endif
 
     // Dedicated serial queue for capture-and-compare (off main thread)
     private let captureQueue = DispatchQueue(label: "macshot.scrollcapture", qos: .userInitiated)
@@ -102,6 +110,9 @@ final class ScrollCaptureController {
     private var pendingCaptureTask: Task<Void, Never>?
     private var settlementTimer: Timer?
     private let settlementInterval: TimeInterval = 0.25
+    #if LOCAL_DEV
+    private var manualScrollGeneration: UInt64 = 0
+    #endif
 
     // Guard: only one capture at a time
     private var isCapturing: Bool = false
@@ -119,6 +130,9 @@ final class ScrollCaptureController {
         self.captureRect = captureRect
         self.screen      = screen
         self.backingScale = screen.backingScaleFactor
+        #if LOCAL_DEV
+        self.captureScreenFrame = screen.frame
+        #endif
     }
 
     // MARK: - Session
@@ -132,7 +146,7 @@ final class ScrollCaptureController {
         maxScrollHeight = ud.object(forKey: "scrollMaxHeight") as? Int ?? 30000
         frozenDetectionEnabled = ud.object(forKey: "scrollFrozenDetection") as? Bool ?? true
 
-        // Convert AppKit coords to CG coords (top-left origin) for CGWindowListCreateImage
+        // Target window lookup and scroll events use global, top-left display coordinates.
         let primaryScreenH = NSScreen.screens.first?.frame.height ?? screen.frame.height
         captureRectCG = CGRect(
             x: captureRect.origin.x,
@@ -190,10 +204,19 @@ final class ScrollCaptureController {
         guard isActive || !isCancelled else { return }
         guard isActive else {
             isCancelled = true
+            #if LOCAL_DEV
+            screenshotFilter = nil
+            screenshotConfiguration = nil
+            #endif
             onSessionDone?(nil)
             return
         }
         isActive = false
+        #if LOCAL_DEV
+        isCancelled = true
+        screenshotFilter = nil
+        screenshotConfiguration = nil
+        #endif
 
         autoScrollTask?.cancel(); autoScrollTask = nil
         settlementTimer?.invalidate(); settlementTimer = nil
@@ -228,6 +251,10 @@ final class ScrollCaptureController {
         if let m = scrollMonitorGlobal { NSEvent.removeMonitor(m); scrollMonitorGlobal = nil }
         if let m = scrollMonitorLocal  { NSEvent.removeMonitor(m); scrollMonitorLocal  = nil }
         autoScrollActive = false
+        #if LOCAL_DEV
+        screenshotFilter = nil
+        screenshotConfiguration = nil
+        #endif
     }
 
     // MARK: - Target window/app management
@@ -297,7 +324,109 @@ final class ScrollCaptureController {
         NSRunningApplication(processIdentifier: targetAppPID)?.activate(options: [])
     }
 
-    // MARK: - Frame capture via CGWindowListCreateImage
+    // MARK: - Frame capture
+
+    #if LOCAL_DEV
+    private enum FrameCaptureError: LocalizedError {
+        case displayChanged
+        case invalidRegion
+        case exclusionsUnavailable
+        case exclusionsChanged
+        case unexpectedSize
+
+        var errorDescription: String? {
+            switch self {
+            case .displayChanged: return "The selected display changed or is no longer available."
+            case .invalidRegion: return "The selected region is no longer on this display."
+            case .exclusionsUnavailable: return "The capture controls could not be excluded from the screenshot."
+            case .exclusionsChanged: return "The capture controls changed while the screenshot was being taken."
+            case .unexpectedSize: return "The screenshot has an unexpected pixel size."
+            }
+        }
+    }
+
+    private func currentWindowExclusions() -> Set<CGWindowID> {
+        let captureUI = NSApp.windows.compactMap { window -> CGWindowID? in
+            guard window.isVisible,
+                  window is OverlayWindow || window is ScrollCaptureHUDPanel || window is ScrollCapturePreviewPanel else { return nil }
+            return CGWindowID(exactly: window.windowNumber)
+        }
+        return Set(ScreenCaptureWindowExclusions.combining(excludedWindowIDs, captureUI))
+    }
+
+    /// Enumerate fresh content at startup and whenever the visible capture UI changes.
+    /// The session owns the filter/configuration so settlement polling does not enumerate.
+    private func prepareScreenshot(excluding exclusions: Set<CGWindowID>) async throws {
+        guard screenshotFilter == nil || screenshotExclusions != exclusions else { return }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        try Task.checkCancellation()
+        guard !isCancelled else { throw CancellationError() }
+        guard let screenID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+              let display = content.displays.first(where: { $0.displayID == screenID }),
+              CGFloat(display.width) == captureScreenFrame.width,
+              CGFloat(display.height) == captureScreenFrame.height else { throw FrameCaptureError.displayChanged }
+        guard let sourceRect = ScreenCaptureGeometry.sourceRect(captureRect: captureRect, screenFrame: captureScreenFrame),
+              let size = ScreenCaptureGeometry.pixelSize(pointSize: captureRect.size, scale: backingScale) else { throw FrameCaptureError.invalidRegion }
+
+        let excludedWindows = content.windows.filter { exclusions.contains($0.windowID) }
+        let visibleExclusions = Set(NSApp.windows.compactMap { window -> CGWindowID? in
+            guard window.isVisible, let number = CGWindowID(exactly: window.windowNumber), exclusions.contains(number) else { return nil }
+            return number
+        })
+        guard visibleExclusions.isSubset(of: Set(excludedWindows.map(\.windowID))) else { throw FrameCaptureError.exclusionsUnavailable }
+
+        let config = SCStreamConfiguration()
+        config.sourceRect = sourceRect
+        config.width = size.width
+        config.height = size.height
+        config.showsCursor = false
+        config.captureResolution = .best
+        config.ignoreShadowsDisplay = true
+        config.scalesToFit = true
+        screenshotConfiguration = config
+        screenshotFilter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+        screenshotExclusions = exclusions
+    }
+
+    private func captureFrame() async -> CGImage? {
+        do {
+            for _ in 0..<2 {
+                try Task.checkCancellation()
+                guard !isCancelled else { return nil }
+                guard screen.frame == captureScreenFrame, screen.backingScaleFactor == backingScale else { throw FrameCaptureError.displayChanged }
+                let exclusions = currentWindowExclusions()
+                try await prepareScreenshot(excluding: exclusions)
+                guard currentWindowExclusions() == exclusions else { continue }
+                guard let filter = screenshotFilter, let config = screenshotConfiguration else { throw FrameCaptureError.invalidRegion }
+                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                try Task.checkCancellation()
+                guard !isCancelled else { return nil }
+                guard screen.frame == captureScreenFrame, screen.backingScaleFactor == backingScale else { throw FrameCaptureError.displayChanged }
+                // A newly shown HUD must never enter stitching through an in-flight grab.
+                guard currentWindowExclusions() == exclusions else { continue }
+                guard image.width == config.width, image.height == config.height else { throw FrameCaptureError.unexpectedSize }
+                return image
+            }
+            throw FrameCaptureError.exclusionsChanged
+        } catch {
+            guard !isCancelled, !Task.isCancelled else { return nil }
+            failCapture(error)
+            return nil
+        }
+    }
+
+    private func failCapture(_ error: Error) {
+        guard !isCancelled else { return }
+        isCancelled = true
+        if isActive {
+            // Keep the valid accumulated image, then tell the user why capture stopped.
+            stopSession()
+        } else {
+            onSessionDone?(nil)
+        }
+        onCaptureFailed?(L("Capture failed · try another region") + ": " + error.localizedDescription)
+    }
+    #else
 
     /// Captures the screen region using CGWindowListCreateImage.
     /// Returns a complete, compositor-finished snapshot — no stream management needed.
@@ -314,6 +443,7 @@ final class ScrollCaptureController {
 
         return image
     }
+    #endif
 
     /// Captures a settled frame: grabs frames until two consecutive TIFF representations
     /// match byte-for-byte. Used for initial capture and manual scroll mode.
@@ -324,7 +454,13 @@ final class ScrollCaptureController {
 
         for _ in 0..<30 {
             guard !isCancelled else { return nil }
-            guard let cg = captureFrame() else {
+            #if LOCAL_DEV
+            let frame = await captureFrame()
+            guard !isCancelled, !Task.isCancelled else { return nil }
+            #else
+            let frame = captureFrame()
+            #endif
+            guard let cg = frame else {
                 try? await Task.sleep(nanoseconds: 30_000_000)
                 continue
             }
@@ -336,6 +472,9 @@ final class ScrollCaptureController {
                 }
             }
             guard !isCancelled else { return nil }
+            #if LOCAL_DEV
+            guard !Task.isCancelled else { return nil }
+            #endif
             guard let currentTIFF = tiffData else {
                 try? await Task.sleep(nanoseconds: waitNs)
                 waitNs = min(waitNs * 3 / 2, 80_000_000)
@@ -387,6 +526,9 @@ final class ScrollCaptureController {
 
         autoScrollTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 300_000_000)
+            #if LOCAL_DEV
+            guard !Task.isCancelled else { return }
+            #endif
             guard let self = self, self.isActive, self.autoScrollActive else { return }
             await self.autoScrollLoop(linesPerTick: linesPerTick, burstCount: burstCount)
         }
@@ -395,6 +537,15 @@ final class ScrollCaptureController {
     /// Core auto-scroll loop: scroll → captureAndCompare → repeat.
     private func autoScrollLoop(linesPerTick: Int32, burstCount: Int) async {
         while isActive && autoScrollActive {
+            #if LOCAL_DEV
+            guard !Task.isCancelled else { return }
+            // The previous manual screenshot may still be awaiting SCK. Do not
+            // scroll past its content while that frame is in flight.
+            if isCapturing {
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                continue
+            }
+            #endif
             // Post scroll event(s)
             for _ in 0..<burstCount {
                 if let event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
@@ -407,13 +558,18 @@ final class ScrollCaptureController {
             // `isCapturing` serializes this against a manual settledCapture
             // that may still be running — both mutate shotA/mergedImage/
             // stripCount around their suspension points.
+            #if !LOCAL_DEV
             if isCapturing {
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
             }
+            #endif
             isCapturing = true
             let success = await captureAndCompare()
             isCapturing = false
+            #if LOCAL_DEV
+            guard isActive, autoScrollActive, !Task.isCancelled else { return }
+            #endif
 
             if !success {
                 matchNotFoundCount += 1
@@ -453,8 +609,14 @@ final class ScrollCaptureController {
 
         for _ in 0..<30 {
             guard isActive else { return false }
-
-            guard let cg = captureFrame() else {
+            #if LOCAL_DEV
+            guard !Task.isCancelled else { return false }
+            let frame = await captureFrame()
+            guard isActive, !isCancelled, !Task.isCancelled else { return false }
+            #else
+            let frame = captureFrame()
+            #endif
+            guard let cg = frame else {
                 try? await Task.sleep(nanoseconds: 30_000_000)
                 continue
             }
@@ -465,6 +627,9 @@ final class ScrollCaptureController {
                     cont.resume(returning: bitmapRep.tiffRepresentation)
                 }
             }
+            #if LOCAL_DEV
+            guard isActive, !isCancelled, !Task.isCancelled else { return false }
+            #endif
             guard let currentTIFF = tiffData else {
                 try? await Task.sleep(nanoseconds: waitNs)
                 waitNs = min(waitNs * 3 / 2, 80_000_000)
@@ -618,12 +783,22 @@ final class ScrollCaptureController {
 
     private func onManualScrollEvent() {
         guard isActive else { return }
+        #if LOCAL_DEV
+        manualScrollGeneration &+= 1
+        let generation = manualScrollGeneration
+        #endif
 
         // After scrolling stops, do a final settled capture (TIFF comparison)
         settlementTimer?.invalidate()
         settlementTimer = Timer.scheduledTimer(withTimeInterval: settlementInterval, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            Task { @MainActor in await self.settledCapture() }
+            Task { @MainActor in
+                #if LOCAL_DEV
+                await self.settledCapture(scrollGeneration: generation)
+                #else
+                await self.settledCapture()
+                #endif
+            }
         }
 
         // During scrolling, grab and process frames immediately at a fixed interval —
@@ -634,17 +809,41 @@ final class ScrollCaptureController {
         guard now - lastCaptureTime >= manualCaptureInterval else { return }
         lastCaptureTime = now
 
+        #if LOCAL_DEV
+        guard pendingCaptureTask == nil else { return }
+        pendingCaptureTask = Task { [weak self] in
+            guard let self = self else { return }
+            defer { self.pendingCaptureTask = nil }
+            await self.grabAndProcess()
+        }
+        #else
         grabAndProcess()
+        #endif
     }
 
     /// Immediate frame grab + process during active scrolling. No TIFF settlement —
     /// just captures whatever is on screen right now and tries to stitch it.
+    #if LOCAL_DEV
+    private func grabAndProcess() async {
+        guard isActive, !isCapturing else { return }
+        isCapturing = true
+        defer { isCapturing = false }
+
+        guard let currentFrame = await captureFrame(), isActive, !isCancelled, !Task.isCancelled else { return }
+        processGrabbedFrame(currentFrame)
+    }
+    #else
     private func grabAndProcess() {
         guard isActive, !isCapturing else { return }
         isCapturing = true
         defer { isCapturing = false }
 
         guard let currentFrame = captureFrame() else { return }
+        processGrabbedFrame(currentFrame)
+    }
+    #endif
+
+    private func processGrabbedFrame(_ currentFrame: CGImage) {
         guard let previousFrame = shotA else {
             shotA = currentFrame
             return
@@ -687,7 +886,14 @@ final class ScrollCaptureController {
     }
 
     /// Final settled capture after scrolling stops — uses full TIFF settlement.
-    private func settledCapture() async {
+    private func settledCapture(scrollGeneration: UInt64? = nil) async {
+        #if LOCAL_DEV
+        // SCK may take longer than the settlement timer. Finish the current
+        // immediate grab first, then only settle the most recent scroll event.
+        if let pendingCaptureTask { await pendingCaptureTask.value }
+        guard !Task.isCancelled, !autoScrollActive,
+              scrollGeneration == manualScrollGeneration else { return }
+        #endif
         guard isActive, !isCapturing else { return }
         isCapturing = true
         defer { isCapturing = false }

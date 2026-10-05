@@ -225,7 +225,7 @@ final class ToolShortcutTests: XCTestCase {
             let expected: [ToolShortcutManager.Action: String] = [
                 .pencil: "p", .arrow: "a", .line: "l", .rectangle: "r", .ellipse: "o",
                 .marker: "m", .text: "t", .number: "n", .censor: "b", .highlight: "h",
-                .colorSampler: "i", .stamp: "g", .adjustSelection: "s", .moveSelection: " ",
+                .stitch: "s", .colorSampler: "i", .stamp: "g", .adjustSelection: "", .moveSelection: " ",
                 .openInEditor: "e", .pin: "f",
             ]
             for (action, key) in expected {

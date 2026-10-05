@@ -158,7 +158,11 @@ final class StitchCaptureSession: NSObject {
     }
 
     private func makeHUD(screen: NSScreen, rect: CGRect, imageSize: CGSize) {
-        hud?.close()
+        if let hud {
+            hud.setPlacement(screen: screen, pixelRect: rect, imageSize: imageSize)
+            updateHUD(L("Drag to capture · hold Space to navigate"))
+            return
+        }
         let hud = StitchCaptureHUD(screen: screen, pixelRect: rect, imageSize: imageSize)
         hud.onUndo = { [weak self] in self?.undo() }
         hud.onFinish = { [weak self] in self?.finish() }

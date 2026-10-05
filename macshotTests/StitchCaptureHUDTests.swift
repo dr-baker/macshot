@@ -32,5 +32,12 @@ final class StitchCaptureHUDTests: XCTestCase {
         XCTAssertFalse(finish.isEnabled, "Finish requires a capture to hand off to the editor")
         XCTAssertEqual(finishes, 1)
         XCTAssertEqual(hud.windowNumbers, [number])
+        hud.setPlacement(screen: screen, pixelRect: CGRect(x: 10, y: 10, width: 100, height: 120),
+                         imageSize: screen.frame.size)
+        hud.update(count: 2, status: "Selecting a new region", canUndo: true)
+        XCTAssertEqual(hud.windowNumbers, [number], "Moving the bar must retain its excluded window ID")
+        XCTAssertTrue(panel.contentView?.subviews.contains { $0 === undo } == true)
+        undo.performClick(nil)
+        XCTAssertEqual(undos, 2, "Moving must retain the original native control and its callback")
     }
 }

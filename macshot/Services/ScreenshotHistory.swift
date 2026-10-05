@@ -291,8 +291,11 @@ final class ScreenshotHistory {
                 }
                 // Editable pieces define the current pixels. A cached raw composite
                 // can contain a seam drawn by an earlier version of the renderer.
-                guard let document = saved.restore(), let canonical = StitchRenderer.render(document),
-                      let cached = rawImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                guard let document = saved.restore(),
+                      let cached = rawImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+                let protection = StitchAnnotationTransforms.protectedRegions(annotations, in: document,
+                    scale: CGFloat(cached.width) / rawImage.size.width)
+                guard let canonical = StitchRenderer.render(document, protectedRegions: protection),
                       canonical.width == cached.width, canonical.height == cached.height else { return nil }
                 rawImage = NSImage(cgImage: canonical, size: rawImage.size)
                 for annotation in annotations where annotation.tool == .loupe { annotation.bakedBlurNSImage = nil }

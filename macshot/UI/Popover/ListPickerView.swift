@@ -125,7 +125,7 @@ private class ListPickerRowView: NSView {
         let alpha: CGFloat = isEnabled ? 1.0 : 0.35
 
         if isHovered && isEnabled {
-            ToolbarLayout.iconColor.withAlphaComponent(0.1).setFill()
+            screenshotForegroundColor.withAlphaComponent(0.1).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 3, dy: 1), xRadius: 4, yRadius: 4).fill()
         }
 
@@ -139,10 +139,9 @@ private class ListPickerRowView: NSView {
             ("✓" as NSString).draw(at: NSPoint(x: checkX, y: bounds.midY - 7), withAttributes: checkAttrs)
         }
 
-        let titleAlpha: CGFloat = (isItemSelected ? 1.0 : 0.7) * alpha
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: ToolbarLayout.iconColor.withAlphaComponent(titleAlpha),
+            .foregroundColor: screenshotForegroundColor.withAlphaComponent(alpha),
         ]
         let str = title as NSString
         let strSize = str.size(withAttributes: attrs)
@@ -152,7 +151,7 @@ private class ListPickerRowView: NSView {
             str.draw(at: NSPoint(x: 24, y: bounds.midY - strSize.height / 2), withAttributes: attrs)
             let subAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9),
-                .foregroundColor: ToolbarLayout.iconColor.withAlphaComponent(0.35 * alpha),
+                .foregroundColor: screenshotForegroundColor.withAlphaComponent(alpha),
             ]
             let subStr = subtitle as NSString
             subStr.draw(at: NSPoint(x: 24 + strSize.width + 4, y: bounds.midY - strSize.height / 2 + 1), withAttributes: subAttrs)

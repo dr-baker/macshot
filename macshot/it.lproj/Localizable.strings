@@ -963,6 +963,7 @@
 "Seam line color" = "Seam line color";
 "Send backward one layer" = "Send backward one layer";
 "Show seams to edit color" = "Show seams to edit color";
+"Show seams to edit appearance" = "Show seams to edit appearance";
 "⌥ Ignore guides" = "⌥ Ignore guides";
 "Unable to preserve these redactions. Move or resize them and try again." = "Unable to preserve these redactions. Move or resize them and try again.";
 
@@ -992,3 +993,45 @@
 "Paper width" = "Paper width";
 "Strength" = "Strength";
 "Seam appearance" = "Seam appearance";
+
+/* Screenshot appearance. English fallback pending translation. */
+"Accent color" = "Accent color";
+"Choose a custom panel tint" = "Choose a custom panel tint";
+"Classic" = "Classic";
+"Classic panel background" = "Classic panel background";
+"Clear is unavailable on this Mac. Classic is shown." = "Clear is unavailable on this Mac. Classic is shown.";
+"Clear requires macOS 26. Classic is shown on this Mac." = "Clear requires macOS 26. Classic is shown on this Mac.";
+"Connected clear glass for capture and editor controls." = "Connected clear glass for capture and editor controls.";
+"Custom panel tint color" = "Custom panel tint color";
+"Panel tint" = "Panel tint";
+"Project notes" = "Project notes";
+"Reduce Transparency is on. Clear uses a solid panel." = "Reduce Transparency is on. Clear uses a solid panel.";
+"Restore Clear glass with a subtle black tint" = "Restore Clear glass with a subtle black tint";
+"Screenshot controls" = "Screenshot controls";
+"Screenshot controls appearance preview" = "Screenshot controls appearance preview";
+"Screenshot panel style" = "Screenshot panel style";
+"Selected tools and Theme tint" = "Selected tools and Theme tint";
+"Solid panels use your theme background and tint." = "Solid panels use your theme background and tint.";
+"Theme" = "Theme";
+"Theme colors" = "Theme colors";
+"Tint" = "Tint";
+"Tint strength" = "Tint strength";
+"Uses your theme's accent color" = "Uses your theme's accent color";
+
+"Tool options" = "Tool options";
+
+// Adaptive screenshot appearance
+"Light" = "Light";
+"Dark" = "Dark";
+"Use macOS accent color" = "Use macOS accent color";
+"Match the macOS accent with a subtle matching background" = "Match the macOS accent with a subtle matching background";
+"Selected tools and Settings controls" = "Selected tools and Settings controls";
+"Panel background and glass tint" = "Panel background and glass tint";
+"Restore Clear glass with your theme background tint" = "Restore Clear glass with your theme background tint";
+"Uses your theme's background color" = "Uses your theme's background color";
+"Solid panels use your theme background. Custom tint adds a color wash." = "Solid panels use your theme background. Custom tint adds a color wash.";
+
+"Reduce Transparency is on. Glass uses a solid panel." = "Reduce Transparency is on. Glass uses a solid panel.";
+"Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
+"Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
+"Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";

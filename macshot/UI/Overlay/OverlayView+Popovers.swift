@@ -243,7 +243,7 @@ extension OverlayView {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 100))
         var y: CGFloat = 8
         let labelFont = NSFont.systemFont(ofSize: 11, weight: .medium)
-        let labelColor = NSColor.secondaryLabelColor
+        let labelColor = NSColor.labelColor
 
         func addRow(label: String, control: NSView, controlWidth: CGFloat = 140) {
             let lbl = NSTextField(labelWithString: label)
