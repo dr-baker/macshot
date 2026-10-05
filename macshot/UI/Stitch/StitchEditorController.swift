@@ -38,8 +38,8 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .lineWidth: return 0...8
         case .shape: return 0...14
         case .tearWidth: return 2...32
-        case .foldDepth: return 2...40
-        case .foldStrength: return 0...1
+        case .foldDepth: return 0...80
+        case .foldStrength: return 0...Double(StitchStyle.maximumFoldStrength)
         }
     }
 
@@ -61,7 +61,7 @@ private enum StitchSeamParameter: Int, CaseIterable {
     }
 
     func formattedValue(_ value: CGFloat) -> String {
-        self == .foldStrength ? String(format: "%.0f%%", Double(value) * 100)
+        self == .foldStrength ? String(format: "%.0f%%", Double(value / StitchStyle.maximumFoldStrength) * 100)
             : String(format: "%.1f px", Double(value))
     }
 
@@ -81,7 +81,7 @@ enum StitchOptionsAction { case seams, pieces, canvas }
 @MainActor
 final class StitchEditorController: NSObject {
     private weak var window: NSWindow?
-    private weak var editorView: EditorView?
+    private weak var editorView: ImageEditingView?
     /// The host validates, renders, and records undo before committing a change.
     var onDocumentChanged: ((StitchDocument, Bool) -> Bool)?
     var onUndo: (() -> Void)?
@@ -130,7 +130,7 @@ final class StitchEditorController: NSObject {
         super.init()
     }
 
-    func attach(to editor: EditorView) {
+    func attach(to editor: ImageEditingView) {
         editorView = editor
         canvas.inlineEditor = editor
         if canvas.superview !== editor { editor.addSubview(canvas) }
@@ -210,8 +210,8 @@ final class StitchEditorController: NSObject {
         feedback.removeFromSuperview()
         canvas.removeFromSuperview()
         canvas.inlineEditor = nil
-        editorView?.onStitchSeamColorPreview = nil
         editorView?.previewStitchSeamColor(nil)
+        editorView?.onStitchSeamColorPreview = nil
         cancelPreview()
         guideGeneration = UUID()
         guideCancellation?.cancel()
@@ -240,7 +240,7 @@ final class StitchEditorController: NSObject {
         let colorLabel = NSTextField(labelWithString: L("Line color"))
         colorLabel.identifier = NSUserInterfaceItemIdentifier("stitch.seam.color.label")
         colorLabel.font = .systemFont(ofSize: 11)
-        colorLabel.textColor = ToolbarLayout.iconColor
+        colorLabel.textColor = view.screenshotForegroundColor
         color.identifier = NSUserInterfaceItemIdentifier("stitch.seam.color")
         color.setAccessibilityLabel(L("Seam line color"))
         color.target = self
@@ -251,11 +251,11 @@ final class StitchEditorController: NSObject {
         for parameter in StitchSeamParameter.allCases {
             let label = NSTextField(labelWithString: parameter.title(for: document.style.transition))
             label.font = .systemFont(ofSize: 11)
-            label.textColor = ToolbarLayout.iconColor
+            label.textColor = view.screenshotForegroundColor
             label.identifier = NSUserInterfaceItemIdentifier("stitch.seam.\(parameter).label")
             let value = NSTextField(labelWithString: "")
             value.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
-            value.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.55)
+            value.textColor = view.screenshotForegroundColor
             value.alignment = .right
             value.identifier = NSUserInterfaceItemIdentifier("stitch.seam.\(parameter).value")
             let slider = StitchSlider(value: 0, minValue: parameter.range.lowerBound, maxValue: parameter.range.upperBound,
@@ -301,7 +301,7 @@ final class StitchEditorController: NSObject {
         let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 264, height: listHeight + 76))
         let title = pieceCountLabel
         title.font = .systemFont(ofSize: 11, weight: .medium)
-        title.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.6)
+        title.textColor = view.screenshotForegroundColor
         title.frame = NSRect(x: 12, y: listHeight + 50, width: 240, height: 16)
         pieceScroll.frame = NSRect(x: 12, y: 42, width: 240, height: listHeight)
         view.addSubview(title)
@@ -315,7 +315,7 @@ final class StitchEditorController: NSObject {
             button.frame = NSRect(x: 12 + index * 36, y: 8, width: 30, height: 26)
             button.bezelStyle = .recessed
             button.isBordered = false
-            button.contentTintColor = ToolbarLayout.iconColor
+            button.contentTintColor = view.screenshotForegroundColor
             view.addSubview(button)
         }
         updatePieceActions()
@@ -327,7 +327,7 @@ final class StitchEditorController: NSObject {
         let view = StitchOptionsView(frame: NSRect(x: 0, y: 0, width: 264, height: 100))
         let title = NSTextField(labelWithString: L("Canvas background"))
         title.font = .systemFont(ofSize: 11, weight: .medium)
-        title.textColor = ToolbarLayout.iconColor
+        title.textColor = view.screenshotForegroundColor
         title.frame = NSRect(x: 12, y: 72, width: 240, height: 16)
         backgroundChoice.removeAllItems()
         backgroundChoice.addItems(withTitles: [L("Adjacent edge colors"), L("Solid color"), L("Transparent")])
@@ -345,7 +345,7 @@ final class StitchEditorController: NSObject {
         canvasColor.isHidden = backgroundChoice.indexOfSelectedItem != 1
         let hint = NSTextField(labelWithString: L("Fills space between captured pieces."))
         hint.font = .systemFont(ofSize: 10)
-        hint.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.55)
+        hint.textColor = view.screenshotForegroundColor
         hint.frame = NSRect(x: 12, y: 13, width: 240, height: 16)
         for child in [title, backgroundChoice, canvasColor, hint] { view.addSubview(child) }
         PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
@@ -370,10 +370,10 @@ final class StitchEditorController: NSObject {
     private func showFeedback(_ text: String) {
         guard let editor = editorView, let parent = editor.chromeParentView ?? editor.superview else { return }
         let token = UUID(); feedbackGeneration = token
-        let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)])
         feedback.text = text
-        feedback.frame = CGRect(x: max(8, parent.bounds.midX - (size.width + 12) / 2),
-                                y: 108, width: min(parent.bounds.width - 16, size.width + 12), height: size.height + 6)
+        let size = feedback.preferredSize
+        feedback.frame = CGRect(x: max(8, parent.bounds.midX - size.width / 2),
+                                y: 108, width: min(parent.bounds.width - 16, size.width), height: size.height)
         parent.addSubview(feedback)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let self, self.feedbackGeneration == token else { return }
@@ -417,15 +417,13 @@ final class StitchEditorController: NSObject {
         seamStylePicker.selection = s.transition
         seamStylePicker.isEnabled = s.visible
         seamToggle.state = s.visible ? .on : .off
-        color.color = s.editableColor
+        color.color = s.color
         if color.isActive && (!hasColor || !s.visible) { color.deactivate() }
         color.isHidden = !hasColor
         color.isEnabled = s.visible && hasColor
         color.alphaValue = s.visible ? 1 : 0.35
         color.frame = NSRect(x: 308, y: height - 37, width: 46, height: 24)
         let colorLabel = seamLabels[0]
-        colorLabel.stringValue = s.transition == .torn ? L("Paper color") : L("Line color")
-        color.setAccessibilityLabel(s.transition == .torn ? L("Paper color") : L("Seam line color"))
         colorLabel.isHidden = !hasColor
         colorLabel.alphaValue = s.visible ? 1 : 0.35
         colorLabel.frame = NSRect(x: 12, y: height - 33, width: 258, height: 18)
@@ -459,8 +457,9 @@ final class StitchEditorController: NSObject {
     }
     private func previewSeamColor(_ color: NSColor?) {
         guard let style = editorView?.stitchDocument?.style else { return }
+        guard color == nil || (style.visible && style.transition.hasEditableColor) else { return }
         document.style = style
-        if let color { document.style.editableColor = color }
+        if let color { document.style.color = color }
         adjustingStyle = color != nil
         syncSeamControls()
         scheduleRender(publishDocument: false)
@@ -516,9 +515,13 @@ final class StitchEditorController: NSObject {
     }
     private func scheduleRender(publishDocument: Bool = true) {
         if publishDocument && !adjustingStyle { publish() }
+        guard editorView?.refreshFoldProtection() != false else { return }
         canvas.syncInlineGeometry()
         cancelPreview()
         let snapshot = document
+        let sourceScale = editorView?.screenshotImage.map { snapshot.bounds.integral.width / $0.size.width } ?? 1
+        let protection = StitchAnnotationTransforms.protectedRegions(editorView?.localStitchAnnotations ?? [],
+            in: snapshot, scale: sourceScale)
         let generation = renderGeneration
         let cancellation = StitchPreviewCancellation()
         renderCancellation = cancellation
@@ -527,7 +530,8 @@ final class StitchEditorController: NSObject {
             let bounds = snapshot.bounds
             let scale = min(1, sqrt(16_000_000 / max(1, bounds.width * bounds.height)))
             let result = autoreleasepool {
-                (StitchRenderer.render(snapshot, maximumPreviewDimension: max(bounds.width, bounds.height) * scale),
+                (StitchRenderer.render(snapshot, maximumPreviewDimension: max(bounds.width, bounds.height) * scale,
+                    protectedRegions: protection),
                  StitchRenderer.renderBackground(snapshot, maximumPreviewDimension: max(bounds.width, bounds.height) * scale))
             }
             guard !cancellation.isCancelled else { return }
@@ -565,7 +569,7 @@ final class StitchEditorController: NSObject {
             }
             button.alignment = .left
             button.font = .systemFont(ofSize: 11)
-            button.contentTintColor = canvas.selectedID == piece.id ? ToolbarLayout.accentColor : ToolbarLayout.iconColor
+            button.contentTintColor = canvas.selectedID == piece.id ? ToolbarLayout.accentColor : piecesStack.screenshotForegroundColor
             button.toolTip = piece.label
             piecesStack.addArrangedSubview(button)
             button.widthAnchor.constraint(equalToConstant: 236).isActive = true
@@ -654,6 +658,7 @@ final class StitchEditorController: NSObject {
     }
     private func selectSeamTransition(_ transition: StitchTransition) {
         guard document.style.visible, document.style.transition != transition else { return }
+        editorView?.previewStitchSeamColor(nil)
         var next = document
         next.style.transition = transition
         guard commitDocument(next) else { syncSeamControls(); return }
@@ -664,13 +669,15 @@ final class StitchEditorController: NSObject {
     @objc private func changeColor() {
         guard document.style.visible, document.style.transition.hasEditableColor else { return }
         var next = document
-        next.style.editableColor = color.color
+        next.style.color = color.color
         guard commitDocument(next) else { return }
         scheduleRender()
     }
     @objc private func toggleSeams() {
+        let visible = seamToggle.state == .on
+        editorView?.previewStitchSeamColor(nil)
         var next = document
-        next.style.visible = seamToggle.state == .on
+        next.style.visible = visible
         guard commitDocument(next) else { return }
         syncSeamControls(); updateBandGuides(); scheduleRender()
     }

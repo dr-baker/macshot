@@ -4,6 +4,17 @@ enum StitchAnnotationTransforms {
     typealias Change = (object: Annotation, properties: Annotation)
     static let maximumFragments = 10_000
 
+    /// Immutable document-pixel coverage for the renderer, including clipped
+    /// or rotated censors. Background rendering can safely use this snapshot.
+    static func protectedRegions(_ annotations: [Annotation], in document: StitchDocument,
+                                 scale: CGFloat) -> [CGRect] {
+        annotations.filter(\.isStitchRedaction).compactMap {
+            let rect = $0.stitchPixelCoverage(in: document.bounds.integral, scale: scale)
+            return !rect.isNull && !rect.isEmpty
+                && [rect.minX, rect.minY, rect.maxX, rect.maxY].allSatisfy(\.isFinite) ? rect : nil
+        }
+    }
+
     /// Build all fragments before changing the live canvas or its undo stack.
     /// Every intersection follows source coordinates, including marks whose
     /// center disappears and marks covering several independent captures.

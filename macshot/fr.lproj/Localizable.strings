@@ -980,6 +980,7 @@
 "Seam line color" = "Seam line color";
 "Send backward one layer" = "Send backward one layer";
 "Show seams to edit color" = "Show seams to edit color";
+"Show seams to edit appearance" = "Show seams to edit appearance";
 "⌥ Ignore guides" = "⌥ Ignore guides";
 "Unable to preserve these redactions. Move or resize them and try again." = "Unable to preserve these redactions. Move or resize them and try again.";
 
@@ -1009,3 +1010,45 @@
 "Paper width" = "Paper width";
 "Strength" = "Strength";
 "Seam appearance" = "Seam appearance";
+
+/* Screenshot appearance */
+"Accent color" = "Couleur d’accentuation";
+"Choose a custom panel tint" = "Choisir une teinte personnalisée";
+"Classic" = "Classique";
+"Classic panel background" = "Arrière-plan des panneaux classiques";
+"Clear is unavailable on this Mac. Classic is shown." = "Le style transparent est indisponible sur ce Mac. Le style classique est affiché.";
+"Clear requires macOS 26. Classic is shown on this Mac." = "Le style transparent nécessite macOS 26. Le style classique est affiché sur ce Mac.";
+"Connected clear glass for capture and editor controls." = "Verre transparent connecté pour les commandes de capture et de l’éditeur.";
+"Custom panel tint color" = "Couleur de teinte personnalisée";
+"Panel tint" = "Teinte des panneaux";
+"Project notes" = "Notes du projet";
+"Reduce Transparency is on. Clear uses a solid panel." = "Réduire la transparence est activé. Les panneaux sont opaques.";
+"Restore Clear glass with a subtle black tint" = "Rétablir le verre transparent avec une légère teinte noire";
+"Screenshot controls" = "Commandes de capture";
+"Screenshot controls appearance preview" = "Aperçu de l’apparence des commandes de capture";
+"Screenshot panel style" = "Style des panneaux de capture";
+"Selected tools and Theme tint" = "Outils sélectionnés et teinte du thème";
+"Solid panels use your theme background and tint." = "Les panneaux opaques utilisent l’arrière-plan et la teinte du thème.";
+"Theme" = "Thème";
+"Theme colors" = "Couleurs du thème";
+"Tint" = "Teinte";
+"Tint strength" = "Intensité de la teinte";
+"Uses your theme's accent color" = "Utilise la couleur d’accentuation du thème";
+
+"Tool options" = "Options de l’outil";
+
+// Adaptive screenshot appearance
+"Light" = "Light";
+"Dark" = "Dark";
+"Use macOS accent color" = "Utiliser la couleur d’accentuation de macOS";
+"Match the macOS accent with a subtle matching background" = "Associer la couleur d’accentuation de macOS à un arrière-plan discret";
+"Selected tools and Settings controls" = "Outils sélectionnés et commandes des réglages";
+"Panel background and glass tint" = "Arrière-plan des panneaux et teinte du verre";
+"Restore Clear glass with your theme background tint" = "Rétablir le verre clair avec la teinte d’arrière-plan du thème";
+"Uses your theme's background color" = "Utilise la couleur d’arrière-plan du thème";
+"Solid panels use your theme background. Custom tint adds a color wash." = "Les panneaux opaques utilisent l’arrière-plan du thème. Une teinte personnalisée ajoute un voile coloré.";
+
+"Reduce Transparency is on. Glass uses a solid panel." = "Réduire la transparence est activé. Le verre utilise un panneau opaque.";
+"Connected glass for capture and editor controls." = "Verre connecté pour les commandes de capture et de l’éditeur.";
+"Glass is unavailable on this Mac. Classic is shown." = "Le verre est indisponible sur ce Mac. Le style classique est affiché.";
+"Glass requires macOS 26. Classic is shown on this Mac." = "Le verre nécessite macOS 26. Le style classique est affiché sur ce Mac.";

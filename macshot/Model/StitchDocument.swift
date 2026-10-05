@@ -53,10 +53,13 @@ enum StitchTransition: String, CaseIterable, Codable {
     case wave, blend, torn, fold, breakLine
 
     var usesBlur: Bool { self == .wave || self == .blend || self == .breakLine }
-    var hasEditableColor: Bool { self == .wave || self == .torn || self == .breakLine }
+    var hasEditableColor: Bool { self == .wave || self == .breakLine }
 }
 
 struct StitchStyle {
+    /// One retains the original full-strength fold at the slider's midpoint.
+    static let maximumFoldStrength: CGFloat = 2
+
     var transition: StitchTransition = .wave
     var color = NSColor(calibratedRed: 0.23, green: 0.28, blue: 0.34, alpha: 0.9)
     var lineWidth: CGFloat = 1.25
@@ -66,19 +69,10 @@ struct StitchStyle {
     var feather: CGFloat = 64
     var tearWidth: CGFloat = 8
     var tearRoughness: CGFloat = 3
-    var paperColor = NSColor(white: 0.97, alpha: 1)
     var foldDepth: CGFloat = 18
-    var foldStrength: CGFloat = 0.5
+    var foldStrength: CGFloat = 1
     var breakSize: CGFloat = 3
     var visible = true
-
-    var editableColor: NSColor {
-        get { transition == .torn ? paperColor : color }
-        set {
-            if transition == .torn { paperColor = newValue }
-            else { color = newValue }
-        }
-    }
 }
 
 struct StitchJoin {
@@ -89,6 +83,7 @@ struct StitchJoin {
 }
 
 struct StitchDocument {
+    let paperPaletteCache = StitchPaperSampler.Cache()
     var pieces: [StitchPiece] = []
     var style = StitchStyle()
     var background: StitchBackground = .automatic

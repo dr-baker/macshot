@@ -6,6 +6,49 @@ struct ScreenCapture {
     let image: CGImage
 }
 
+nonisolated enum ScreenCaptureGeometry {
+    struct PixelSize: Equatable {
+        let width: Int
+        let height: Int
+    }
+
+    static func pixelSize(pointSize: CGSize, scale: CGFloat) -> PixelSize? {
+        guard pointSize.width.isFinite, pointSize.width > 0,
+              pointSize.height.isFinite, pointSize.height > 0,
+              scale.isFinite, scale > 0 else { return nil }
+        let width = (pointSize.width * scale).rounded()
+        let height = (pointSize.height * scale).rounded()
+        guard width.isFinite, height.isFinite, width >= 1, height >= 1,
+              width < CGFloat(Int.max), height < CGFloat(Int.max) else { return nil }
+        return PixelSize(width: Int(width), height: Int(height))
+    }
+
+    /// ScreenCaptureKit crops use display-local points with the origin at the top left.
+    static func sourceRect(captureRect: CGRect, screenFrame: CGRect) -> CGRect? {
+        guard valid(captureRect), valid(screenFrame), screenFrame.contains(captureRect) else { return nil }
+        return CGRect(x: captureRect.minX - screenFrame.minX,
+                      y: screenFrame.maxY - captureRect.maxY,
+                      width: captureRect.width, height: captureRect.height)
+    }
+
+    private static func valid(_ rect: CGRect) -> Bool {
+        !rect.isNull && !rect.isInfinite && rect.origin.x.isFinite && rect.origin.y.isFinite
+            && rect.width.isFinite && rect.height.isFinite && rect.width > 0 && rect.height > 0
+            && rect.maxX.isFinite && rect.maxY.isFinite
+    }
+}
+
+nonisolated enum ScreenCaptureCoverage {
+    static func missingDisplayIDs(expected: [CGDirectDisplayID], captured: [CGDirectDisplayID]) -> [CGDirectDisplayID] {
+        let capturedIDs = Set(captured)
+        return expected.filter { !capturedIDs.contains($0) }
+    }
+
+    static func isComplete(expected: [CGDirectDisplayID], captured: [CGDirectDisplayID]) -> Bool {
+        !expected.isEmpty && missingDisplayIDs(expected: expected, captured: captured).isEmpty
+    }
+}
+
 class ScreenCaptureManager {
 
     struct ImmediateCaptureContext {
@@ -83,6 +126,7 @@ class ScreenCaptureManager {
             cursor: cursor)
     }
 
+    #if !LOCAL_DEV
     static func captureAllScreensImmediately(
         context: ImmediateCaptureContext,
         timing: (@Sendable (String) -> Void)? = nil
@@ -116,6 +160,7 @@ class ScreenCaptureManager {
             return ScreenCapture(screen: screen, image: finalImage)
         }
     }
+    #endif
 
     /// SCScreenshotManager-based immediate capture (macOS 14+). Unlike
     /// `captureAllScreensImmediately` (which uses CGWindowListCreateImage and
@@ -130,8 +175,8 @@ class ScreenCaptureManager {
     /// falls back to the older content-filter path, which fetches fresh
     /// shareable content so transient UI present at hotkey time — open menus,
     /// Spotlight/Raycast panels — is in the window list and gets captured.
-    /// Returns nil on any failure so the caller can fall back to the synchronous
-    /// CGWindowListCreateImage path.
+    /// Returns nil if the supported capture paths cannot cover every display.
+    /// Normal and offline builds can then use their legacy synchronous fallback.
     @available(macOS 14.0, *)
     static func captureAllScreensImmediatelySCK(
         priorityScreen: NSScreen? = nil,
@@ -139,6 +184,11 @@ class ScreenCaptureManager {
         onCapture: ((ScreenCapture) -> Void)? = nil
     ) async -> [ScreenCapture]? {
         let showsCursor = UserDefaults.standard.bool(forKey: "captureCursor")
+        #if LOCAL_DEV
+        return await captureAllScreensImmediatelySCKModern(
+            showsCursor: showsCursor, priorityScreen: priorityScreen,
+            timing: timing, onCapture: onCapture)
+        #else
         if #available(macOS 26.0, *) {
             if let captures = await captureAllScreensImmediatelySCKRect(
                 showsCursor: showsCursor,
@@ -217,16 +267,106 @@ class ScreenCaptureManager {
             return nil
         }
         return captures
+        #endif
     }
+
+    #if LOCAL_DEV
+    private static func captureAllScreensImmediatelySCKModern(
+        showsCursor: Bool,
+        priorityScreen: NSScreen?,
+        timing: (@Sendable (String) -> Void)?,
+        onCapture: ((ScreenCapture) -> Void)?
+    ) async -> [ScreenCapture]? {
+        let screens = NSScreen.screens
+        let expectedIDs = screens.compactMap(displayID)
+        guard !screens.isEmpty, expectedIDs.count == screens.count else { return nil }
+
+        // Preserve completed rect captures. Their overlays may already be on screen.
+        let rectCaptures = await captureAllScreensImmediatelySCKRect(
+            showsCursor: showsCursor, priorityScreen: priorityScreen, timing: timing,
+            onCapture: onCapture, screens: screens, requireCompleteCoverage: false) ?? []
+        let capturedIDs = rectCaptures.compactMap { displayID($0.screen) }
+        let missingIDs = Set(ScreenCaptureCoverage.missingDisplayIDs(expected: expectedIDs, captured: capturedIDs))
+        guard !missingIDs.isEmpty else { return rectCaptures }
+
+        timing?("SCK immediate fallback: shareable content begin missing=\(missingIDs.count)")
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: true) else {
+            timing?("SCK immediate fallback: shareable content failed")
+            return nil
+        }
+        let overlayIDs: [CGWindowID] = await MainActor.run {
+            NSApp.windows.compactMap { window in
+                guard window is OverlayWindow, window.isVisible else { return nil }
+                return CGWindowID(exactly: window.windowNumber)
+            }
+        }
+        let excludedWindows = content.windows.filter { overlayIDs.contains($0.windowID) }
+        guard Set(overlayIDs).isSubset(of: Set(excludedWindows.map(\.windowID))) else {
+            timing?("SCK immediate fallback: visible overlays could not be excluded")
+            return nil
+        }
+
+        let pairs: [(SCDisplay, NSScreen)] = screens.compactMap { screen in
+            guard let id = displayID(screen), missingIDs.contains(id),
+                  let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
+            return (display, screen)
+        }
+        guard pairs.count == missingIDs.count else {
+            timing?("SCK immediate fallback: missing displays are no longer available")
+            return nil
+        }
+
+        let fallbackCaptures = await withTaskGroup(of: ScreenCapture?.self, returning: [ScreenCapture].self) { group in
+            for (display, screen) in pairs {
+                group.addTask {
+                    guard let size = ScreenCaptureGeometry.pixelSize(pointSize: screen.frame.size, scale: screen.backingScaleFactor) else { return nil }
+                    let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+                    let config = SCStreamConfiguration()
+                    config.width = size.width
+                    config.height = size.height
+                    config.showsCursor = showsCursor
+                    config.captureResolution = .best
+                    timing?("SCK immediate fallback capture begin display=\(display.displayID)")
+                    guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else {
+                        timing?("SCK immediate fallback capture failed display=\(display.displayID)")
+                        return nil
+                    }
+                    return ScreenCapture(screen: screen, image: image)
+                }
+            }
+            var results: [ScreenCapture] = []
+            for await capture in group {
+                if let capture = capture {
+                    results.append(capture)
+                    onCapture?(capture)
+                }
+            }
+            return results
+        }
+        let captures = rectCaptures + fallbackCaptures
+        guard ScreenCaptureCoverage.isComplete(expected: expectedIDs, captured: captures.compactMap { displayID($0.screen) }) else {
+            timing?("SCK immediate fallback: incomplete captures \(captures.count)/\(screens.count)")
+            return nil
+        }
+        return captures
+    }
+
+    private static func displayID(_ screen: NSScreen) -> CGDirectDisplayID? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+    #endif
 
     @available(macOS 26.0, *)
     private static func captureAllScreensImmediatelySCKRect(
         showsCursor: Bool,
         priorityScreen: NSScreen? = nil,
         timing: (@Sendable (String) -> Void)? = nil,
-        onCapture: ((ScreenCapture) -> Void)? = nil
+        onCapture: ((ScreenCapture) -> Void)? = nil,
+        screens suppliedScreens: [NSScreen]? = nil,
+        requireCompleteCoverage: Bool = true
     ) async -> [ScreenCapture]? {
-        let screens = NSScreen.screens
+        let screens = suppliedScreens ?? NSScreen.screens
         guard !screens.isEmpty else {
             timing?("SCK rect immediate: no screens — fallback")
             return nil
@@ -289,7 +429,7 @@ class ScreenCaptureManager {
             onCapture?(capture)
         }
 
-        guard captures.count == screens.count else {
+        guard !requireCompleteCoverage || captures.count == screens.count else {
             timing?("SCK rect immediate: partial captures \(captures.count)/\(screens.count) — fallback")
             return nil
         }
@@ -456,6 +596,7 @@ class ScreenCaptureManager {
                                 timing?("SCScreenshotManager capture end display=\(index) pixels=\(image.width)x\(image.height)")
                                 return ScreenCapture(screen: screen, image: image)
                             } else {
+                                #if !LOCAL_DEV
                                 // macOS 13.x: use CGWindowListCreateImage which returns
                                 // a CGImage directly — no pixel buffer format ambiguity.
                                 // Convert the AppKit screen frame (bottom-left origin) to the
@@ -487,6 +628,9 @@ class ScreenCaptureManager {
                                 }
                                 timing?("fallback CGWindowListCreateImage end display=\(index) pixels=\(image.width)x\(image.height)")
                                 return ScreenCapture(screen: screen, image: image)
+                                #else
+                                return nil
+                                #endif
                             }
                         }
                     }
@@ -500,6 +644,13 @@ class ScreenCaptureManager {
                 }
                 timing?("SCScreenshot capture group end captures=\(captures.count)")
 
+                #if LOCAL_DEV
+                guard pairs.count == screens.count, captures.count == pairs.count else {
+                    timing?("captureAllScreens incomplete captures=\(captures.count) screens=\(screens.count)")
+                    await MainActor.run { completion([]) }
+                    return
+                }
+                #endif
                 await MainActor.run { completion(captures) }
             } catch {
                 timing?("captureAllScreens error \(error.localizedDescription)")
@@ -517,6 +668,19 @@ class ScreenCaptureManager {
     /// On macOS 14+, uses `desktopIndependentWindow` filter for clean transparent background.
     /// On macOS 12–13, uses `CGWindowListCreateImage` targeting the specific window.
     static func captureWindow(windowID: CGWindowID, screen: NSScreen) async -> CGImage? {
+        #if LOCAL_DEV
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: true),
+              let window = content.windows.first(where: { $0.windowID == windowID }) else { return nil }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        guard let size = ScreenCaptureGeometry.pixelSize(pointSize: filter.contentRect.size, scale: CGFloat(filter.pointPixelScale)) else { return nil }
+        let config = SCStreamConfiguration()
+        config.width = size.width
+        config.height = size.height
+        config.showsCursor = false
+        config.captureResolution = .best
+        return try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        #else
         func captureViaWindowList() -> CGImage? {
             CGWindowListCreateImage(.null, .optionIncludingWindow, windowID, .bestResolution)
         }
@@ -563,5 +727,6 @@ class ScreenCaptureManager {
             // macOS 13.x: CGWindowListCreateImage targeting the specific window
             return captureViaWindowList()
         }
+        #endif
     }
 }

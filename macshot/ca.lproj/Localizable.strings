@@ -982,6 +982,7 @@
 "Seam line color" = "Seam line color";
 "Send backward one layer" = "Send backward one layer";
 "Show seams to edit color" = "Show seams to edit color";
+"Show seams to edit appearance" = "Show seams to edit appearance";
 "⌥ Ignore guides" = "⌥ Ignore guides";
 "Unable to preserve these redactions. Move or resize them and try again." = "Unable to preserve these redactions. Move or resize them and try again.";
 
@@ -1011,3 +1012,45 @@
 "Paper width" = "Paper width";
 "Strength" = "Strength";
 "Seam appearance" = "Seam appearance";
+
+/* Screenshot appearance */
+"Accent color" = "Color d’accent";
+"Choose a custom panel tint" = "Tria un tint personalitzat";
+"Classic" = "Clàssic";
+"Classic panel background" = "Fons dels panells clàssics";
+"Clear is unavailable on this Mac. Classic is shown." = "L’estil transparent no està disponible en aquest Mac. Es mostra el clàssic.";
+"Clear requires macOS 26. Classic is shown on this Mac." = "L’estil transparent requereix macOS 26. En aquest Mac es mostra el clàssic.";
+"Connected clear glass for capture and editor controls." = "Vidre transparent connectat per als controls de captura i de l’editor.";
+"Custom panel tint color" = "Color de tint personalitzat";
+"Panel tint" = "Tint dels panells";
+"Project notes" = "Notes del projecte";
+"Reduce Transparency is on. Clear uses a solid panel." = "La reducció de transparència està activada. Els panells són opacs.";
+"Restore Clear glass with a subtle black tint" = "Restaura el vidre transparent amb un tint negre suau";
+"Screenshot controls" = "Controls de captura";
+"Screenshot controls appearance preview" = "Previsualització de l’aparença dels controls de captura";
+"Screenshot panel style" = "Estil dels panells de captura";
+"Selected tools and Theme tint" = "Eines seleccionades i tint del tema";
+"Solid panels use your theme background and tint." = "Els panells opacs utilitzen el fons i el tint del tema.";
+"Theme" = "Tema";
+"Theme colors" = "Colors del tema";
+"Tint" = "Tint";
+"Tint strength" = "Intensitat del tint";
+"Uses your theme's accent color" = "Utilitza el color d’accent del tema";
+
+"Tool options" = "Opcions de l’eina";
+
+// Adaptive screenshot appearance
+"Light" = "Light";
+"Dark" = "Dark";
+"Use macOS accent color" = "Utilitza el color d’accent del macOS";
+"Match the macOS accent with a subtle matching background" = "Combina l’accent del macOS amb un fons discret a joc";
+"Selected tools and Settings controls" = "Eines seleccionades i controls de configuració";
+"Panel background and glass tint" = "Fons del panell i tint del vidre";
+"Restore Clear glass with your theme background tint" = "Restaura el vidre clar amb el tint de fons del tema";
+"Uses your theme's background color" = "Utilitza el color de fons del tema";
+"Solid panels use your theme background. Custom tint adds a color wash." = "Els panells opacs utilitzen el fons del tema. El tint personalitzat hi afegeix una capa de color.";
+
+"Reduce Transparency is on. Glass uses a solid panel." = "La reducció de transparència està activada. El vidre utilitza un panell opac.";
+"Connected glass for capture and editor controls." = "Vidre connectat per als controls de captura i de l’editor.";
+"Glass is unavailable on this Mac. Classic is shown." = "El vidre no està disponible en aquest Mac. Es mostra l’estil clàssic.";
+"Glass requires macOS 26. Classic is shown on this Mac." = "El vidre requereix macOS 26. Es mostra l’estil clàssic en aquest Mac.";

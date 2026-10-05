@@ -133,9 +133,14 @@ class OverlayWindowController {
     private var selectionOnlyGeneration = UUID()
     private var pendingRawSelection: NSRect?
 
-    private var overlayView: OverlayView?
+    private var overlayView: ImageEditingView?
     private var rootView: ScreenshotOverlayRootView?
     private var overlayWindow: OverlayWindow?
+    private var stitchController: StitchEditorController?
+    private var applyingStitchChange = false
+    private var stitchSessionGeneration = UUID()
+    private var stitchAnnotationRefreshScheduled = false
+    private var inStitchMode: Bool { overlayView?.currentTool == .stitch }
     private var shareDelegate: SharePickerDelegate?
     private var shareDismissTime: Date = .distantPast
     var windowNumber: CGWindowID {
@@ -197,7 +202,7 @@ class OverlayWindowController {
         // the real screen.
         window.animationBehavior = .none
 
-        let view = OverlayView()
+        let view = ImageEditingView()
         view.frame = NSRect(origin: .zero, size: screen.frame.size)
         view.autoresizingMask = [.width, .height]
         view.overlayDelegate = self
@@ -206,9 +211,10 @@ class OverlayWindowController {
         let rootView = ScreenshotOverlayRootView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
             overlayView: view)
-        view.externalScreenshotPreviewUpdater = { [weak rootView] cgImage in
-            if let cgImage {
-                rootView?.setScreenshotPreviewImage(cgImage)
+        view.externalScreenshotPreviewUpdater = { [weak rootView, weak view] cgImage in
+            let backdrop = view?.overlayBackgroundImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            if let preview = backdrop ?? cgImage {
+                rootView?.setScreenshotPreviewImage(preview)
             } else {
                 rootView?.clearScreenshotPreview()
             }
@@ -218,6 +224,125 @@ class OverlayWindowController {
         self.overlayWindow = window
         self.rootView = rootView
         self.overlayView = view
+        configureStitchCallbacks(for: view)
+    }
+
+    private func configureStitchCallbacks(for view: ImageEditingView) {
+        view.onStitchToolChanged = { [weak self] enabled in self?.activateStitchTool(enabled) }
+        view.onStitchModeChanged = { [weak self] mode in self?.stitchController?.setMode(mode) }
+        view.onStitchOptions = { [weak self] action, anchor in self?.stitchController?.showOptions(action, at: anchor) }
+        view.onStitchPlacementChanged = { [weak self] placement in self?.stitchController?.setPlacement(placement) }
+        view.onStitchImages = { [weak self] images in self?.stitchController?.append(images) }
+        view.onContentChanged = { [weak self] in self?.scheduleStitchAnnotationRefresh() }
+        view.onStitchDocumentChanged = { [weak self] in self?.restoreStitchController() }
+    }
+
+    private func activateStitchTool(_ enabled: Bool) {
+        guard let window = overlayWindow, let view = overlayView else { return }
+        PopoverHelper.dismiss()
+        guard enabled else {
+            stitchController?.suspend()
+            window.makeFirstResponder(view)
+            return
+        }
+        guard view.state == .selected, !view.selectionOnlyMode, !view.isRecording else { return }
+        view.commitTextFieldIfNeeded()
+        if view.stitchDocument == nil {
+            applyingStitchChange = true
+            let rawImage = overlayDelegate?.overlayCrossScreenImage(self)
+            let began = view.beginStitchEditing(rawImage: rawImage)
+            applyingStitchChange = false
+            guard began else {
+                view.currentTool = .select
+                view.showOverlayError(L("Unable to render this canvas. Reduce its size and try again."))
+                return
+            }
+            // Remote selectors still refer to the original desktop crop. Clear
+            // their selection before the edited capture starts changing size.
+            overlayDelegate?.overlayDidBeginSelection(self)
+        }
+        guard let document = view.stitchDocument else { return }
+        if stitchController == nil {
+            let controller = StitchEditorController(document: document, window: window)
+            controller.onDocumentChanged = { [weak self, weak view] document, registerUndo in
+                guard let self, let view else { return false }
+                self.applyingStitchChange = true
+                defer { self.applyingStitchChange = false }
+                let applied = view.applyStitchDocument(document, registerUndo: registerUndo)
+                if applied {
+                    self.updateStitchAnnotations()
+                    self.stitchController?.updateUndoState()
+                }
+                return applied
+            }
+            controller.onUndo = { [weak view] in view?.undo() }
+            controller.onRedo = { [weak view] in view?.redo() }
+            controller.canUndo = { [weak view] in !(view?.undoStack.isEmpty ?? true) }
+            controller.canRedo = { [weak view] in !(view?.redoStack.isEmpty ?? true) }
+            controller.onAction = { [weak self] action, anchor in
+                if action == .share { self?.overlayViewDidRequestShare(anchorView: anchor) }
+                else { self?.overlayView?.handleToolbarAction(action) }
+            }
+            stitchController = controller
+        } else {
+            stitchController?.restore(document)
+        }
+        stitchController?.attach(to: view)
+        updateStitchAnnotations()
+        view.refreshStitchOptions()
+        stitchController?.focus()
+    }
+
+    private func restoreStitchController() {
+        guard !applyingStitchChange, let view = overlayView, !view.selectionOnlyMode else { return }
+        if let document = view.stitchDocument {
+            if stitchController == nil {
+                if inStitchMode { activateStitchTool(true) }
+                return
+            }
+            stitchController?.restore(document)
+            if inStitchMode, stitchController?.isAttached == false {
+                stitchController?.attach(to: view)
+                stitchController?.focus()
+            }
+            updateStitchAnnotations()
+        } else {
+            stitchController?.suspend()
+            guard inStitchMode else { return }
+            let generation = stitchSessionGeneration
+            // Crop/flip undo may restore the document after assigning pixels.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.stitchSessionGeneration == generation,
+                      self.inStitchMode, self.overlayView?.stitchDocument == nil else { return }
+                self.activateStitchTool(true)
+            }
+        }
+    }
+
+    private func scheduleStitchAnnotationRefresh() {
+        guard !applyingStitchChange, !stitchAnnotationRefreshScheduled else { return }
+        stitchAnnotationRefreshScheduled = true
+        let generation = stitchSessionGeneration
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.stitchSessionGeneration == generation else { return }
+            self.stitchAnnotationRefreshScheduled = false
+            self.stitchController?.updateUndoState()
+            if self.inStitchMode { self.updateStitchAnnotations() }
+        }
+    }
+
+    private func updateStitchAnnotations() {
+        guard let view = overlayView, let controller = stitchController else { return }
+        controller.annotationPreview = view.stitchAnnotationPreview()
+        controller.unattachedAnnotationPreview = view.stitchUnattachedAnnotationPreview()
+        controller.annotationLayers = view.stitchAnnotationLayers()
+    }
+
+    private func stopStitchEditing() {
+        stitchSessionGeneration = UUID()
+        stitchAnnotationRefreshScheduled = false
+        stitchController?.suspend()
+        stitchController = nil
     }
 
     /// Install the screenshot into the overlay's backing layer. Once set, the
@@ -312,10 +437,12 @@ class OverlayWindowController {
     }
 
     func applySelection(_ rect: NSRect) {
+        guard overlayView?.stitchCaptureBackdrop == nil else { return }
         overlayView?.applySelection(rect)
     }
 
     func clearSelection() {
+        if overlayView?.stitchCaptureBackdrop != nil { stopStitchEditing() }
         overlayView?.clearSelection()
     }
 
@@ -326,6 +453,7 @@ class OverlayWindowController {
     }
 
     func setRemoteSelection(_ rect: NSRect, fullRect: NSRect = .zero) {
+        guard overlayView?.stitchCaptureBackdrop == nil else { return }
         overlayView?.remoteSelectionRect = rect
         overlayView?.remoteSelectionFullRect = fullRect.width >= 1 ? fullRect : rect
         if rect.width >= 1 && rect.height >= 1 {
@@ -336,6 +464,7 @@ class OverlayWindowController {
 
     /// Auto-select the full screen (as if user clicked without dragging).
     func applyFullScreenSelection() {
+        guard overlayView?.stitchCaptureBackdrop == nil else { return }
         overlayView?.applyFullScreenSelection()
     }
 
@@ -382,6 +511,7 @@ class OverlayWindowController {
     /// Use the normal selector to return raw screen-local points without image processing.
     func setSelectionOnlyMode(stitchCapture: Bool = false, onSelect: @escaping (NSRect) -> Void,
                               onCancel: @escaping () -> Void) {
+        stopStitchEditing()
         selectionOnlyGeneration = UUID()
         pendingRawSelection = nil
         selectionOnlyHandler = onSelect
@@ -492,6 +622,7 @@ class OverlayWindowController {
         pendingRawSelection = nil
         selectionOnlyHandler = nil
         selectionOnlyCancelHandler = nil
+        stopStitchEditing()
         saveSelectionIfNeeded()
         overlayView?.reset()
         overlayView?.screenshotImage = nil
@@ -518,6 +649,14 @@ class OverlayWindowController {
         pendingRawSelection = nil
         selectionOnlyHandler = nil
         selectionOnlyCancelHandler = nil
+        stopStitchEditing()
+        overlayView?.onStitchToolChanged = nil
+        overlayView?.onStitchModeChanged = nil
+        overlayView?.onStitchOptions = nil
+        overlayView?.onStitchPlacementChanged = nil
+        overlayView?.onStitchImages = nil
+        overlayView?.onContentChanged = nil
+        overlayView?.onStitchDocumentChanged = nil
         overlayView?.reset()
         overlayView?.overlayDelegate = nil
         overlayWindow?.contentView = nil
@@ -533,9 +672,10 @@ class OverlayWindowController {
         guard let view = overlayView, view.state == .selected,
             view.selectionRect.width > 1, view.selectionRect.height > 1
         else { return }
+        let captureRect = view.stitchCaptureSelectionRect ?? view.selectionRect
         let rect = view.selectionOnlyMode
-            ? view.selectionRect.intersection(NSRect(origin: .zero, size: screen.frame.size))
-            : view.selectionRect
+            ? captureRect.intersection(NSRect(origin: .zero, size: screen.frame.size))
+            : captureRect
         guard !rect.isNull, rect.width > 1, rect.height > 1 else { return }
         UserDefaults.standard.set(NSStringFromRect(rect), forKey: "lastSelectionRect")
         UserDefaults.standard.set(
@@ -550,28 +690,33 @@ class OverlayWindowController {
     }
 
     private func captureRegion() -> NSImage? {
-        return overlayDelegate?.overlayCrossScreenImage(self)
-            ?? overlayView?.captureSelectedRegion()
+        guard let view = overlayView else { return nil }
+        return Self.captureRegion(in: view) { overlayDelegate?.overlayCrossScreenImage(self) }
+    }
+
+    /// Edited Stitch pixels already contain the whole original selection.
+    /// Recapturing its screen contributions would restore removed content.
+    static func captureRegion(in view: ImageEditingView, crossScreenImage: () -> NSImage?) -> NSImage? {
+        if view.stitchCaptureBackdrop != nil { return view.captureSelectedRegion() }
+        return crossScreenImage() ?? view.captureSelectedRegion()
     }
 
     /// Snapshot editable history data, using a pre-captured raw image.
-    /// Returns nil if there are no movable annotations or post-processing edits.
-    private func snapshotAnnotationData(rawImage: NSImage) -> CaptureAnnotationData? {
-        guard let view = overlayView else { return nil }
+    static func snapshotAnnotationData(in view: ImageEditingView, rawImage: NSImage) -> CaptureAnnotationData? {
         let annotations = view.annotations.filter { $0.isMovable }
         let editState = view.captureEditState()
-        guard !annotations.isEmpty || editState.hasPostProcessing else { return nil }
+        guard !annotations.isEmpty || editState.hasEditableContent else { return nil }
 
         let sel = view.selectionRect
         let shifted = annotations.map { ann -> Annotation in
             let c = ann.clone()
-            c.move(dx: -sel.origin.x, dy: -sel.origin.y)
+            c.moveWithSource(dx: -sel.origin.x, dy: -sel.origin.y)
             return c
         }
         return CaptureAnnotationData(
             rawImage: rawImage,
             annotations: shifted,
-            editState: editState.hasPostProcessing ? editState : nil
+            editState: editState.hasEditableContent ? editState : nil
         )
     }
 
@@ -580,11 +725,11 @@ class OverlayWindowController {
         let editState = view.captureEditState()
         let snapWindowImg = view.snappedWindowImage
         let hasAnnotations = view.annotations.contains(where: { $0.isMovable })
-        guard hasAnnotations || editState.hasPostProcessing else { return nil }
-        let rawImage: NSImage? = (editState.beautifyIsWindowSnap && snapWindowImg != nil)
+        guard hasAnnotations || editState.hasEditableContent else { return nil }
+        let rawImage: NSImage? = (view.stitchDocument == nil && editState.beautifyIsWindowSnap && snapWindowImg != nil)
             ? snapWindowImg : view.captureSelectedRegionRaw()
         guard let rawImage else { return nil }
-        return snapshotAnnotationData(rawImage: rawImage)
+        return Self.snapshotAnnotationData(in: view, rawImage: rawImage)
     }
 
     /// Composite annotations onto the snapped window image (preserving transparency).
@@ -643,6 +788,7 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     func overlayViewSelectionDidChange(_ rect: NSRect) {
+        guard overlayView?.stitchCaptureBackdrop == nil else { return }
         let screenOrigin = screen.frame.origin
         let globalRect = NSRect(
             x: rect.origin.x + screenOrigin.x,
@@ -668,7 +814,7 @@ extension OverlayWindowController: OverlayViewDelegate {
         let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
         let hasBeautify = overlayView?.beautifyEnabled ?? false
         let beautifyCfg = overlayView?.beautifyConfig ?? BeautifyConfig()
-        let snapWindowImg = overlayView?.snappedWindowImage
+        let snapWindowImg = overlayView?.stitchDocument == nil ? overlayView?.snappedWindowImage : nil
 
         // Capture the composited image (screenshot + annotations baked in).
         // This is a single render — no double capture.
@@ -682,22 +828,7 @@ extension OverlayWindowController: OverlayViewDelegate {
         let snapshotAnnotations = overlayView?.annotations ?? []
         let snapshotSelRect = overlayView?.selectionRect ?? .zero
 
-        // Snapshot annotation data using the raw screenshot (without annotations).
-        // For window snaps, use the independently captured window image (transparent corners)
-        // so the editor shows clean corners when re-editing.
-        let hasAnnotations = overlayView?.annotations.contains(where: { $0.isMovable }) ?? false
-        let annotationData: CaptureAnnotationData?
-        if hasAnnotations || hasEffects || hasBeautify {
-            let rawImage: NSImage? = (beautifyCfg.isWindowSnap && snapWindowImg != nil)
-                ? snapWindowImg : overlayView?.captureSelectedRegionRaw()
-            if let raw = rawImage {
-                annotationData = snapshotAnnotationData(rawImage: raw)
-            } else {
-                annotationData = nil
-            }
-        } else {
-            annotationData = nil
-        }
+        let annotationData = currentAnnotationDataForHistory()
 
         // Dismiss immediately — user is free to continue working
         playCopySound()
@@ -892,6 +1023,7 @@ extension OverlayWindowController: OverlayViewDelegate {
     func overlayViewDidRequestAddCapture() {}  // editor-only
 
     func overlayViewRemoteSelectionDidChange(_ rect: NSRect) {
+        guard overlayView?.stitchCaptureBackdrop == nil else { return }
         // Convert local rect to global screen coords and forward to delegate
         let screenOrigin = screen.frame.origin
         let globalRect = NSRect(
@@ -902,6 +1034,7 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     func overlayViewRemoteSelectionDidFinish(_ rect: NSRect) {
+        guard overlayView?.stitchCaptureBackdrop == nil else { return }
         let screenOrigin = screen.frame.origin
         let globalRect = NSRect(
             x: rect.origin.x + screenOrigin.x,
@@ -915,9 +1048,11 @@ extension OverlayWindowController: OverlayViewDelegate {
         let sel = view.selectionRect
 
         // Use stitched cross-screen image if available, otherwise crop from single screen.
-        let croppedImage: NSImage? =
-            overlayDelegate?.overlayCrossScreenImage(self)
-            ?? {
+        let croppedImage: NSImage?
+        if view.stitchCaptureBackdrop != nil {
+            croppedImage = view.captureSelectedRegionRaw()
+        } else {
+            croppedImage = overlayDelegate?.overlayCrossScreenImage(self) ?? {
                 guard let src = view.screenshotImage else { return nil }
                 // Render the crop into a concrete 8-bit bitmap now, so the editor
                 // doesn't hit a 16-bit float conversion on first draw.
@@ -944,13 +1079,14 @@ extension OverlayWindowController: OverlayViewDelegate {
                 guard let cgImage = ctx.makeImage() else { return nil }
                 return NSImage(cgImage: cgImage, size: sel.size)
             }()
+        }
         guard let image = croppedImage else { return }
 
         // Clone annotations and shift them from overlay coords to image-relative (0,0) origin.
         let state = view.snapshotEditorState()
         let shiftedAnnotations = state.annotations.map { ann -> Annotation in
             let c = ann.clone()
-            c.move(dx: -sel.origin.x, dy: -sel.origin.y)
+            c.moveWithSource(dx: -sel.origin.x, dy: -sel.origin.y)
             return c
         }
 
@@ -964,7 +1100,7 @@ extension OverlayWindowController: OverlayViewDelegate {
         DetachedEditorWindowController.open(
             image: image, tool: tool, color: color, strokeWidth: stroke,
             annotations: shiftedAnnotations, fromCapture: true,
-            editState: editState.hasPostProcessing ? editState : nil)
+            editState: editState.hasEditableContent ? editState : nil)
     }
 
     @available(macOS 14.0, *)
@@ -1054,7 +1190,7 @@ extension OverlayWindowController: OverlayViewDelegate {
         let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
         let hasBeautify = overlayView?.beautifyEnabled ?? false
         let beautifyCfg = overlayView?.beautifyConfig ?? BeautifyConfig()
-        let snapWindowImg = overlayView?.snappedWindowImage
+        let snapWindowImg = overlayView?.stitchDocument == nil ? overlayView?.snappedWindowImage : nil
 
         guard let compositedImage = captureRegion() else {
             dismiss()
@@ -1066,20 +1202,7 @@ extension OverlayWindowController: OverlayViewDelegate {
         let snapshotAnns = overlayView?.annotations ?? []
         let snapshotSel = overlayView?.selectionRect ?? .zero
 
-        // Snapshot annotation data — use snapped window image for clean corners
-        let hasAnnotations = overlayView?.annotations.contains(where: { $0.isMovable }) ?? false
-        let annotationData: CaptureAnnotationData?
-        if hasAnnotations || hasEffects || hasBeautify {
-            let rawImage: NSImage? = (beautifyCfg.isWindowSnap && snapWindowImg != nil)
-                ? snapWindowImg : overlayView?.captureSelectedRegionRaw()
-            if let raw = rawImage {
-                annotationData = snapshotAnnotationData(rawImage: raw)
-            } else {
-                annotationData = nil
-            }
-        } else {
-            annotationData = nil
-        }
+        let annotationData = currentAnnotationDataForHistory()
 
         dismiss()
 
@@ -1149,6 +1272,8 @@ extension OverlayWindowController: OverlayViewDelegate {
 
     func overlayViewDidRequestSaveAs() {
         guard let image = captureImageForSave() else { return }
+        let annotationData = currentAnnotationDataForHistory()
+        let generation = stitchSessionGeneration
 
         ImageSaveService.showSavePanel(
             for: image,
@@ -1156,16 +1281,18 @@ extension OverlayWindowController: OverlayViewDelegate {
             appName: resolvedAppName(),
             panelLevel: NSWindow.Level(258)
         ) { [weak self] success in
-            guard let self = self else { return }
+            guard let self = self, self.stitchSessionGeneration == generation else { return }
             if success {
                 self.playCopySound()
                 self.dismiss()
-                self.overlayDelegate?.overlayDidConfirm(self, capturedImage: nil, annotationData: nil)
+                self.overlayDelegate?.overlayDidConfirm(self, capturedImage: image, annotationData: annotationData)
             } else {
                 // Save cancelled — return to the active capture, mouse-interactive.
                 self.overlayWindow?.ignoresMouseEvents = false
                 self.overlayWindow?.makeKeyAndOrderFront(nil)
-                if let view = self.overlayView {
+                if self.inStitchMode {
+                    self.stitchController?.focus()
+                } else if let view = self.overlayView {
                     self.overlayWindow?.makeFirstResponder(view)
                 }
             }
@@ -1177,7 +1304,7 @@ extension OverlayWindowController: OverlayViewDelegate {
         let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
         let hasBeautify = overlayView?.beautifyEnabled ?? false
         let beautifyCfg = overlayView?.beautifyConfig ?? BeautifyConfig()
-        let snapWindowImg = overlayView?.snappedWindowImage
+        let snapWindowImg = overlayView?.stitchDocument == nil ? overlayView?.snappedWindowImage : nil
         let snapshotAnns = overlayView?.annotations ?? []
         let snapshotSel = overlayView?.selectionRect ?? .zero
 
@@ -1200,7 +1327,7 @@ extension OverlayWindowController: OverlayViewDelegate {
 
 // MARK: - Custom Window subclass
 
-class OverlayWindow: NSPanel {
+class OverlayWindow: ScreenshotGlassPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }

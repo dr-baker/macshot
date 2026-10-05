@@ -133,7 +133,7 @@ extension OverlayView {
             beautifyBackgroundBlur: Double(beautifyBackgroundBlur),
             beautifyIsWindowSnap: selectionIsWindowSnap,
             customBeautifyBackgroundPNG: customBackgroundData,
-            stitchDocument: (self as? EditorView)?.savedStitchDocument
+            stitchDocument: (self as? ImageEditingView)?.savedStitchDocument
         )
     }
 
@@ -166,7 +166,7 @@ extension OverlayView {
         }
 
         if let document = state.stitchDocument?.restore() {
-            (self as? EditorView)?.installStitchDocument(document)
+            (self as? ImageEditingView)?.installStitchDocument(document)
         }
         cachedCompositedImage = nil
         rebuildToolbarLayout()

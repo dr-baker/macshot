@@ -20,6 +20,12 @@ macshot has two release variants:
 - **Normal:** product name `macshot`, bundle id `com.sw33tlie.macshot.macshot`, Sparkle feed `appcast.xml`, release asset `MacShot.dmg`.
 - **Offline:** product name `macshot Offline`, bundle id `com.sw33tlie.macshot.offline`, Sparkle feed `appcast-offline.xml`, release asset `MacShot-Offline.dmg`.
 
+Daniel's local **`macshot Dev`** target uses macOS 26, `LOCAL_DEV`, bundle id
+`com.drbaker.macshot.dev`. The normal and offline targets remain on macOS 13.
+All variants share the app-owned screenshot renderer: native Clear glass on
+supported macOS 26 systems and tinted Classic panels elsewhere.
+`scripts/deploy-local.sh` builds and signs the separate Dev scheme.
+
 The offline build is selected with the `OFFLINE` Swift compilation condition. Use `BuildVariant.isOffline` / `BuildVariant.displayName` for runtime variant checks and display names. Upload and cloud storage integrations must be compiled out of the offline build with `#if !OFFLINE`, including upload UI, upload shortcuts, upload settings, upload context menu items, and uploader implementations.
 
 The release workflow builds both variants from the same tag. It patches the offline app's `SUFeedURL` to `appcast-offline.xml`, removes the Google OAuth URL scheme from the offline app, signs both apps, packages both DMGs, notarizes both DMGs, and writes both appcasts. Do not point the offline app at the normal appcast or vice versa; Sparkle updates must stay variant-specific so offline users never update into the normal app.
@@ -310,7 +316,7 @@ Copy to clipboard, Save to file (PNG/JPEG/HEIC/WebP), Pin (floating always-on-to
 
 ## Coding Conventions
 
-- Pure AppKit, no SwiftUI except `BeautifyRenderer` which uses SwiftUI `MeshGradient` + `ImageRenderer` for mesh gradient rendering (macOS 15+ only, guarded with `@available`)
+- AppKit owns windows, controls, and focus. `BeautifyRenderer` uses SwiftUI `MeshGradient` + `ImageRenderer` (macOS 15+). `ScreenshotPanelView` hosts app-owned SwiftUI glass decoration beneath the capture, editor, and Stitch controls. Settings → Appearance controls Clear or Classic with shared tint settings. Native glass requires macOS 26; Classic supplies the fallback. Style updates preserve windows and focus.
 - **Use proper AppKit components:** NSPopover for popovers, NSView subclasses for toolbar buttons and strips, NSSlider/NSSegmentedControl/NSButton for controls, NSScrollView for editor zoom/pan, NSTextView for text editing. Avoid reimplementing standard UI components with manual `draw()` + coordinate hit-testing.
 - **Strict concurrency:** CI builds with Xcode 16+ and `-Owholemodule` which enforces strict Swift concurrency. Any code using `@MainActor`-isolated SwiftUI APIs (e.g. `ImageRenderer`) must itself be `@MainActor`. Always mark classes/functions that touch SwiftUI rendering with `@MainActor`. Calling `@MainActor`-isolated methods (e.g. on AppDelegate) from non-`@MainActor` classes requires `MainActor.assumeIsolated { }`. **Local Debug builds do NOT catch these errors.** Before tagging a release, always verify with a Release build: `xcodebuild -scheme macshot -configuration Release build 2>&1 | grep "error:"`
 - **Tool handler pattern:** New annotation tools should implement `AnnotationToolHandler` protocol in `UI/Tools/`, not add switch cases to OverlayView. The handler's `start`/`update`/`finish` methods use `AnnotationCanvas` to access shared state.

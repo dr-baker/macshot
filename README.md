@@ -4,7 +4,10 @@
 
 This fork adds guided Accessibility setup with PermissionFlow and a native
 [Stitch editor](docs/stitch-capture.md) for combining captures, removing space,
-and choosing seam treatments. It targets macOS 13 or later.
+and choosing seam treatments. Normal and offline builds target macOS 13 or
+later. Screenshot controls share native Clear glass on macOS 26 and tinted
+Classic panels on older systems. Choose the finish and tint in Settings → Appearance.
+The local Dev app targets macOS 26.
 
 Use the [local development workflow](docs/local-development.md) to build,
 sign, install, and launch `macshot Dev` on this Mac. Verified changes land on

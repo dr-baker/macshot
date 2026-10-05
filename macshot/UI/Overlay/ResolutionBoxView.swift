@@ -5,7 +5,7 @@ import Cocoa
 /// Two real, separately-editable number fields with a non-editable "×" between
 /// them (so the separator can't be deleted), plus a presets dropdown button for
 /// aspect ratios and common resolutions. Replaces the old drawn "W × H" badge.
-final class ResolutionBoxView: NSView, NSTextFieldDelegate {
+final class ResolutionBoxView: ScreenshotPanelView, NSTextFieldDelegate {
 
     enum EditedDimension {
         case width
@@ -32,19 +32,16 @@ final class ResolutionBoxView: NSView, NSTextFieldDelegate {
     private let pad: CGFloat = 6
     private let btnW: CGFloat = 30
     private var suppressNextEndEditingCommit = false
+    private var hasActivePreset = false
 
     init() {
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.backgroundColor = ToolbarLayout.bgColor.cgColor
-        appearance = ToolbarLayout.appearance
 
         configureField(widthField)
         configureField(heightField)
 
         timesLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        timesLabel.color = ToolbarLayout.iconColor.withAlphaComponent(0.55)
+        timesLabel.color = panelForegroundColor.withAlphaComponent(0.55)
         addSubview(timesLabel)
 
         presetsButton.bezelStyle = .regularSquare
@@ -52,7 +49,7 @@ final class ResolutionBoxView: NSView, NSTextFieldDelegate {
         presetsButton.imagePosition = .imageOnly
         presetsButton.image = NSImage(systemSymbolName: "aspectratio", accessibilityDescription: L("Aspect ratio & resolution presets"))
             ?? NSImage(systemSymbolName: "rectangle.ratio.16.to.9", accessibilityDescription: nil)
-        presetsButton.contentTintColor = ToolbarLayout.iconColor
+        presetsButton.contentTintColor = panelForegroundColor
         presetsButton.target = self
         presetsButton.action = #selector(presetsClicked)
         presetsButton.toolTip = L("Aspect ratio & resolution presets")
@@ -63,10 +60,31 @@ final class ResolutionBoxView: NSView, NSTextFieldDelegate {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    override func refreshPanelAppearance() {
+        super.refreshPanelAppearance()
+        for field in [widthField, heightField] {
+            field.textColor = panelForegroundColor
+            field.layer?.backgroundColor = panelForegroundColor.withAlphaComponent(0.12).cgColor
+        }
+        timesLabel.color = panelForegroundColor.withAlphaComponent(0.55)
+        presetsButton.contentTintColor = hasActivePreset ? ToolbarLayout.accentColor : panelForegroundColor
+    }
+
+    /// Edited image dimensions follow its pieces instead of recropping the screen.
+    func setEditable(_ editable: Bool) {
+        guard widthField.isEditable != editable else { return }
+        widthField.isEditable = editable
+        heightField.isEditable = editable
+        widthField.isSelectable = editable
+        heightField.isSelectable = editable
+        presetsButton.isEnabled = editable
+        window?.invalidateCursorRects(for: self)
+    }
+
     private func configureField(_ f: NSTextField) {
         f.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         f.alignment = .center
-        f.textColor = ToolbarLayout.iconColor
+        f.textColor = panelForegroundColor
         f.delegate = self
         f.isEditable = true
         f.isSelectable = true
@@ -79,7 +97,7 @@ final class ResolutionBoxView: NSView, NSTextFieldDelegate {
         f.focusRingType = .none
         f.wantsLayer = true
         f.layer?.cornerRadius = 5
-        f.layer?.backgroundColor = ToolbarLayout.iconColor.withAlphaComponent(0.12).cgColor
+        f.layer?.backgroundColor = panelForegroundColor.withAlphaComponent(0.12).cgColor
         f.formatter = ResolutionBoxView.intFormatter()
         addSubview(f)
     }
@@ -155,8 +173,9 @@ final class ResolutionBoxView: NSView, NSTextFieldDelegate {
 
     /// Reflect the active ratio/resolution preset in the presets button.
     func setActivePresetLabel(_ label: String?) {
+        hasActivePreset = label != nil
         presetsButton.toolTip = label.map { "\(L("Presets")) — \($0)" } ?? L("Aspect ratio & resolution presets")
-        presetsButton.contentTintColor = label == nil ? ToolbarLayout.iconColor : ToolbarLayout.accentColor
+        presetsButton.contentTintColor = hasActivePreset ? ToolbarLayout.accentColor : panelForegroundColor
     }
 
     @objc private func presetsClicked() {
@@ -206,8 +225,8 @@ final class ResolutionBoxView: NSView, NSTextFieldDelegate {
 
     override func resetCursorRects() {
         // Fields show the I-beam (editable affordance); the button shows arrow.
-        addCursorRect(widthField.frame, cursor: .iBeam)
-        addCursorRect(heightField.frame, cursor: .iBeam)
+        addCursorRect(widthField.frame, cursor: widthField.isEditable ? .iBeam : .arrow)
+        addCursorRect(heightField.frame, cursor: heightField.isEditable ? .iBeam : .arrow)
         addCursorRect(presetsButton.frame, cursor: .arrow)
     }
 }

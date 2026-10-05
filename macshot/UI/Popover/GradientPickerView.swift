@@ -14,6 +14,7 @@ class GradientPickerView: NSView {
     private let swSize: CGFloat = 28
     private let padding: CGFloat = 8
     private let gap: CGFloat = 4
+    private var cachedPlusIcon: (color: NSColor, image: NSImage)?
     /// Whether a custom background image is stored.
     private var hasCustomImage: Bool {
         UserDefaults.standard.data(forKey: "beautifyCustomBgImageData") != nil
@@ -85,16 +86,9 @@ class GradientPickerView: NSView {
         // "+" button — always present, always opens file picker
         let pr = rectForIndex(idx)
         let plusPath = NSBezierPath(roundedRect: pr, xRadius: 6, yRadius: 6)
-        ToolbarLayout.iconColor.withAlphaComponent(0.15).setFill()
+        screenshotForegroundColor.withAlphaComponent(0.15).setFill()
         plusPath.fill()
-        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        if let plusIcon = NSImage(systemSymbolName: "photo.badge.plus", accessibilityDescription: nil)?
-            .withSymbolConfiguration(symbolConfig) {
-            let tinted = plusIcon.copy() as! NSImage
-            tinted.lockFocus()
-            ToolbarLayout.iconColor.set()
-            NSRect(origin: .zero, size: tinted.size).fill(using: .sourceAtop)
-            tinted.unlockFocus()
+        if let tinted = plusIcon(color: screenshotForegroundColor) {
             let iconSize = tinted.size
             let iconRect = NSRect(
                 x: pr.midX - iconSize.width / 2,
@@ -102,6 +96,22 @@ class GradientPickerView: NSView {
                 width: iconSize.width, height: iconSize.height)
             tinted.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 0.7)
         }
+    }
+
+    private func plusIcon(color: NSColor) -> NSImage? {
+        if let cachedPlusIcon, cachedPlusIcon.color == color { return cachedPlusIcon.image }
+        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        guard let symbol = NSImage(systemSymbolName: "photo.badge.plus", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else { return nil }
+        let image = NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+            color.setFill()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        image.lockFocus(); image.unlockFocus()
+        cachedPlusIcon = (color, image)
+        return image
     }
 
     override func mouseDown(with event: NSEvent) {

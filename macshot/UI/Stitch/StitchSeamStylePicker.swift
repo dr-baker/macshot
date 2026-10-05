@@ -24,7 +24,7 @@ final class StitchSeamStylePicker: NSView {
             button.image = Self.previews[transition]
             button.imagePosition = .imageAbove
             button.imageScaling = .scaleProportionallyDown
-            button.contentTintColor = ToolbarLayout.iconColor
+            button.contentTintColor = screenshotForegroundColor
             button.setAccessibilityLabel(button.title)
             button.wantsLayer = true
             button.layer?.cornerRadius = 6
@@ -37,6 +37,16 @@ final class StitchSeamStylePicker: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        syncButtons()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        syncButtons()
+    }
 
     override func layout() {
         super.layout()
@@ -63,12 +73,13 @@ final class StitchSeamStylePicker: NSView {
             let selected = StitchTransition.allCases[index] == selection
             button.state = selected ? .on : .off
             button.isEnabled = isEnabled
+            button.contentTintColor = screenshotForegroundColor
             button.layer?.backgroundColor = (selected
                 ? ToolbarLayout.accentColor.withAlphaComponent(0.18)
-                : ToolbarLayout.iconColor.withAlphaComponent(0.035)).cgColor
+                : screenshotForegroundColor.withAlphaComponent(0.035)).cgColor
             button.layer?.borderColor = (selected
                 ? ToolbarLayout.accentColor
-                : ToolbarLayout.iconColor.withAlphaComponent(0.14)).cgColor
+                : screenshotForegroundColor.withAlphaComponent(0.14)).cgColor
         }
     }
 

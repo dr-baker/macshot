@@ -5,10 +5,23 @@ import Cocoa
 class ToolbarButtonView: NSView {
 
     var action: ToolbarButtonAction
-    var sfSymbol: String?
-    var isOn: Bool = false { didSet { if oldValue != isOn { cachedIcon = nil; needsDisplay = true } } }
-    var tintColor: NSColor = ToolbarLayout.iconColor { didSet { cachedIcon = nil; cachedIconIsOn = nil; needsDisplay = true } }
-    var selectedTintColor: NSColor? { didSet { cachedIcon = nil; cachedIconIsOn = nil; needsDisplay = true } }
+    var sfSymbol: String? { didSet { if oldValue != sfSymbol { invalidateIcon() } } }
+    var isOn: Bool = false { didSet { if oldValue != isOn { invalidateIcon() } } }
+    var tintColor: NSColor = ToolbarLayout.iconColor {
+        didSet {
+            let wasDefaultTintColor = usesDefaultTintColor
+            usesDefaultTintColor = tintColor.isEqual(ToolbarLayout.iconColor)
+            if oldValue != tintColor || wasDefaultTintColor != usesDefaultTintColor { invalidateIcon() }
+        }
+    }
+    var selectedTintColor: NSColor? { didSet { if oldValue != selectedTintColor { invalidateIcon() } } }
+    /// The containing panel supplies its neutral foreground without changing semantic tints.
+    var displayForegroundColor: NSColor? {
+        didSet { if oldValue != displayForegroundColor { invalidateIcon() } }
+    }
+    var displaySelectedForegroundColor: NSColor? {
+        didSet { if oldValue != displaySelectedForegroundColor { invalidateIcon() } }
+    }
     var swatchColor: NSColor? { didSet { needsDisplay = true } }
     var hasContextMenu: Bool = false
     /// Mic input level (0–1). When > 0, draws a green fill from the bottom of the button.
@@ -20,16 +33,26 @@ class ToolbarButtonView: NSView {
     private var suppressHoverStartPoint: NSPoint?
     private var cachedIcon: NSImage?       // cached tinted SF Symbol for current state
     private var cachedIconIsOn: Bool?       // the isOn state when icon was cached
+    private var usesDefaultTintColor = true
+    private var neutralForegroundColor: NSColor { displayForegroundColor ?? ToolbarLayout.iconColor }
 
     /// Shared cross-instance cache: avoids re-rasterizing SF Symbols when toolbar is rebuilt.
-    /// Key: "symbolName|isOn|colorHex"
+    /// Color and alpha are part of the raster cache key.
     private static var iconCache: [String: NSImage] = [:]
 
     private static func cacheKey(name: String, isOn: Bool, color: NSColor) -> String {
-        let rgb = color.usingColorSpace(.sRGB) ?? color
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0
-        rgb.getRed(&r, green: &g, blue: &b, alpha: nil)
-        return "\(name)|\(isOn)|\(Int(r*255)),\(Int(g*255)),\(Int(b*255))"
+        func components(_ color: NSColor) -> String {
+            guard let rgb = color.usingColorSpace(.sRGB) else { return color.description }
+            return [rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent]
+                .map { String(Int(round($0 * 255))) }.joined(separator: ",")
+        }
+        return "\(name)|\(isOn)|\(components(color))"
+    }
+
+    private func invalidateIcon() {
+        cachedIcon = nil
+        cachedIconIsOn = nil
+        needsDisplay = true
     }
 
     var onClick: ((ToolbarButtonAction) -> Void)?
@@ -84,7 +107,7 @@ class ToolbarButtonView: NSView {
         } else if isOn {
             bg = ToolbarLayout.accentColor
         } else if isHovered {
-            bg = ToolbarLayout.iconColor.withAlphaComponent(0.12)
+            bg = neutralForegroundColor.withAlphaComponent(0.12)
         } else {
             bg = NSColor.clear
         }
@@ -108,7 +131,7 @@ class ToolbarButtonView: NSView {
             let r = bounds.insetBy(dx: inset, dy: inset)
             swatch.setFill()
             NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4).fill()
-            ToolbarLayout.iconColor.withAlphaComponent(0.4).setStroke()
+            neutralForegroundColor.withAlphaComponent(0.4).setStroke()
             let border = NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4)
             border.lineWidth = 0.5
             border.stroke()
@@ -119,30 +142,15 @@ class ToolbarButtonView: NSView {
         guard let name = sfSymbol else { return }
         let currentIsOn = isOn
         if cachedIcon == nil || cachedIconIsOn != currentIsOn {
-            let color = currentIsOn ? (selectedTintColor ?? ToolbarLayout.iconColor) : tintColor
+            let color = currentIsOn
+                ? (selectedTintColor ?? displaySelectedForegroundColor ?? ToolbarLayout.iconColor)
+                : (usesDefaultTintColor ? neutralForegroundColor : tintColor)
             let key = Self.cacheKey(name: name, isOn: currentIsOn, color: color)
             if let cached = Self.iconCache[key] {
                 cachedIcon = cached
                 cachedIconIsOn = currentIsOn
             } else {
-                let img: NSImage?
-                if name == "_custom.checkerboard" {
-                    img = Self.checkerboardIcon(color: color)
-                } else {
-                    let cfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-                    if let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-                            .withSymbolConfiguration(cfg) {
-                        img = NSImage(size: symbol.size, flipped: false) { r in
-                            symbol.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1.0)
-                            color.setFill()
-                            r.fill(using: .sourceAtop)
-                            return true
-                        }
-                    } else {
-                        img = nil
-                    }
-                }
-                if let img = img {
+                if let img = Self.icon(name: name, color: color) {
                     img.lockFocus(); img.unlockFocus()
                     Self.iconCache[key] = img
                     cachedIcon = img
@@ -164,7 +172,7 @@ class ToolbarButtonView: NSView {
             path.line(to: NSPoint(x: bounds.maxX - 3, y: bounds.minY + 3))
             path.line(to: NSPoint(x: bounds.maxX - 3, y: bounds.minY + 3 + s))
             path.close()
-            ToolbarLayout.iconColor.withAlphaComponent(0.4).setFill()
+            neutralForegroundColor.withAlphaComponent(0.4).setFill()
             path.fill()
         }
     }
@@ -306,6 +314,20 @@ class ToolbarButtonView: NSView {
     }
 
     // MARK: - Custom checkerboard icon
+
+    /// Cache the native glyph at its original size, without an outline or shadow.
+    private static func icon(name: String, color: NSColor) -> NSImage? {
+        if name == "_custom.checkerboard" { return checkerboardIcon(color: color) }
+        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else { return nil }
+        return NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+            color.setFill()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+    }
 
     /// Generate a checkerboard icon matching the style of SF Symbols, tinted with the given color.
     /// The result is a rounded square with a 4x4 checkerboard pattern.

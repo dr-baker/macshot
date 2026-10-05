@@ -687,6 +687,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         mainMenu.addItem(fileMenuItem)
 
         let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(makeCaptureMenuItem(.captureArea))
+        fileMenu.addItem(makeCaptureMenuItem(.captureScreen))
         let stitchCaptureItem = NSMenuItem(title: L("Stitch Capture"), action: #selector(stitchCapture), keyEquivalent: "")
         stitchCaptureItem.target = self
         HotkeyManager.applyMenuShortcut(for: .stitchCapture, to: stitchCaptureItem)
@@ -716,6 +718,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenuItem.submenu = editMenu
+
 
         NSApp.mainMenu = mainMenu
     }
@@ -917,6 +920,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         prefsItem.target = self
         prefsItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
         menu.addItem(prefsItem)
+
 
         #if !LOCAL_DEV
         let updateItem = NSMenuItem(title: L("Check for Updates..."), action: #selector(checkForUpdates), keyEquivalent: "")
@@ -1518,13 +1522,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             // No SCK result, or some displays failed after others were already
             // shown: capture the rest with the fallback and install only those.
             let remaining = controllers.filter { !progressive.installed.contains(ObjectIdentifier($0)) }
+            #if LOCAL_DEV
+            // SCK already retried missing displays with fresh content filters.
+            // An incomplete result must close the partial overlay session.
+            let finalCaptures = captures ?? []
+            #else
             let finalCaptures = captures ?? ScreenCaptureManager.captureAllScreensImmediately(
                 context: captureContext,
                 timing: { label in trace?.mark(label) })
+            #endif
             trace?.mark("background screenshot end count=\(finalCaptures.count)")
             await MainActor.run {
                 guard let self = self, self.isCapturing,
                       self.captureSessionID == sessionID else { return }
+                #if LOCAL_DEV
+                guard !finalCaptures.isEmpty else {
+                    self.pendingRestoreLastArea = false
+                    self.dismissOverlays(refocusPreviousApp: true)
+                    self.showFailureToast(L("Capture failed · try another region"))
+                    return
+                }
+                #endif
                 if progressive.shownAny {
                     self.installAndShowOverlays(
                         captures: finalCaptures.filter { capture in remaining.contains { $0.screen == capture.screen } },
@@ -2501,6 +2519,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     // MARK: - Settings
 
+
     @objc private func openSettings() {
         if settingsController == nil {
             settingsController = SettingsWindowController()
@@ -3227,6 +3246,11 @@ extension AppDelegate: OverlayWindowControllerDelegate {
         scc.onSessionDone = { [weak self] finalImage in
             self?.handleScrollCaptureCompleted(finalImage: finalImage)
         }
+        #if LOCAL_DEV
+        scc.onCaptureFailed = { [weak self] message in
+            self?.showFailureToast(message)
+        }
+        #endif
 
         Task { await scc.startSession() }
     }
@@ -3248,6 +3272,9 @@ extension AppDelegate: OverlayWindowControllerDelegate {
         captureController?.onPreviewUpdated = nil
         captureController?.onAutoScrollStarted = nil
         captureController?.onSessionDone = nil
+        #if LOCAL_DEV
+        captureController?.onCaptureFailed = nil
+        #endif
         captureController?.cancelSession()
         scrollCapturePreviewPanel?.close()
         scrollCapturePreviewPanel = nil

@@ -1,8 +1,9 @@
 import Cocoa
 
 /// Real NSView container for a row (horizontal) or column (vertical) of ToolbarButtonViews.
-/// Dark rounded background matching the existing toolbar look.
-class ToolbarStripView: NSView {
+/// Uses the shared screenshot panel appearance.
+class ToolbarStripView: ScreenshotPanelView {
+    override var joinsAdjacentGlass: Bool { true }
 
     enum Orientation { case horizontal, vertical }
 
@@ -30,9 +31,22 @@ class ToolbarStripView: NSView {
     init(orientation: Orientation) {
         self.orientation = orientation
         super.init(frame: .zero)
+        glassUnionIdentity = orientation == .horizontal ? "drawing-controls" : "capture-actions"
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func refreshPanelAppearance() {
+        super.refreshPanelAppearance()
+        for button in buttonViews {
+            applyForeground(to: button)
+        }
+    }
+
+    private func applyForeground(to button: ToolbarButtonView) {
+        button.displayForegroundColor = panelForegroundColor
+        button.displaySelectedForegroundColor = panelSelectedForegroundColor
+    }
 
     /// Strip-level tracking area: clears all button hovers when the cursor leaves
     /// the whole strip (covers the case where AppKit drops the last button's
@@ -51,7 +65,10 @@ class ToolbarStripView: NSView {
     override func mouseMoved(with event: NSEvent) { NSCursor.arrow.set() }
     override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
     override func mouseExited(with event: NSEvent) {
-        clearInteractionState(clearPressed: !suppressesHover)
+        // AppKit can send a tracking exit when an adjoining glass menu morphs
+        // away. Preserve the button's mouse-down until its matching mouse-up;
+        // the button already checks release bounds before activating.
+        for button in buttonViews { button.setHovered(false) }
     }
 
     /// Rebuild buttons from ToolbarButton data.
@@ -64,6 +81,7 @@ class ToolbarStripView: NSView {
             bv.isOn = data.isSelected
             bv.tintColor = data.tintColor
             bv.selectedTintColor = data.selectedTintColor
+            applyForeground(to: bv)
             bv.swatchColor = data.bgColor
             bv.hasContextMenu = data.hasContextMenu
             bv.onClick = { [weak self] action in self?.onClick?(action) }
@@ -77,7 +95,7 @@ class ToolbarStripView: NSView {
 
     /// Clear hover on every button except `keep`. Called when a button is
     /// entered, to defensively reset any sibling AppKit failed to send
-    /// mouseExited to (happens in non-activating glass chrome panels).
+    /// mouseExited to (happens in nonactivating capture overlays).
     func clearHover(except keep: ToolbarButtonView) {
         if suppressesHover { return }
         for bv in buttonViews where bv !== keep { bv.setHovered(false) }
@@ -127,11 +145,6 @@ class ToolbarStripView: NSView {
                 bv.frame.origin = NSPoint(x: padding, y: h - padding - btnSize - CGFloat(i) * (btnSize + spacing))
             }
         }
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        ToolbarLayout.bgColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
     }
 
     // Consume clicks on gaps between buttons so they don't fall through to OverlayView.

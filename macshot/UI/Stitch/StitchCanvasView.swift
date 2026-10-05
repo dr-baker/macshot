@@ -4,7 +4,7 @@ import AppKit
 final class StitchCanvasView: NSView, NSMenuItemValidation {
     enum Mode: Int { case removeSpace, move }
     var document = StitchDocument()
-    weak var inlineEditor: EditorView? {
+    weak var inlineEditor: ImageEditingView? {
         didSet {
             setAccessibilityLabel(L(inlineEditor == nil ? "Stitch canvas" : "Stitch editing canvas"))
             setAccessibilityHelp(L(inlineEditor == nil
@@ -65,6 +65,10 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     private var rawBandStart: CGPoint?
     private var rawBandEnd: CGPoint?
     private var rawBandHover: CGPoint?
+    private var bandHoverInWindow: CGPoint?
+    var showsBandGuides: Bool {
+        mode == .removeSpace && document.canRender && (rawBandStart != nil || rawBandHover != nil)
+    }
     private var bandSnapBypassed = false
     private var inset: CGFloat { inlineEditor == nil ? 80 : 0 }
     private var effectiveZoom: CGFloat {
@@ -105,6 +109,8 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             if inlineEditor != nil { syncInlineGeometry() }
             else { setFrameSize(NSSize(width: value.bounds.width + inset * 2, height: value.bounds.height + inset * 2)) }
         }
+        if let bandHoverInWindow { updateBandHover(at: bandHoverInWindow) }
+        else { refreshBandSnapping() }
         needsDisplay = true
     }
     /// The editor owns point geometry; this child retains source-pixel coordinates.
@@ -112,12 +118,16 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         guard let inlineEditor, document.canRender else { return }
         frame = inlineEditor.selectionRect
         bounds = CGRect(origin: .zero, size: contentBounds.size)
+        if let bandHoverInWindow { updateBandHover(at: bandHoverInWindow) }
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 
     private func canvasPoint(_ event: NSEvent) -> CGPoint {
-        let p = convert(event.locationInWindow, from: nil)
+        canvasPoint(at: event.locationInWindow)
+    }
+    private func canvasPoint(at locationInWindow: CGPoint) -> CGPoint {
+        let p = convert(locationInWindow, from: nil)
         return CGPoint(x: p.x - inset + contentBounds.minX, y: p.y - inset + contentBounds.minY)
     }
     private func viewRect(_ rect: CGRect) -> CGRect {
@@ -128,6 +138,25 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             return CGRect(origin: dragPreviewOrigin, size: piece.frame.size)
         }
         return piece.frame
+    }
+    private func isOverCapturedContent(_ point: CGPoint) -> Bool {
+        document.pieces.contains { $0.frame.contains(point) }
+    }
+    private func isUnobstructedCanvasPoint(at locationInWindow: CGPoint) -> Bool {
+        guard let contentView = window?.contentView else { return true }
+        let point = contentView.superview?.convert(locationInWindow, from: nil) ?? locationInWindow
+        return contentView.hitTest(point) === self
+    }
+    private func updateBandHover(at locationInWindow: CGPoint) {
+        let point = canvasPoint(at: locationInWindow)
+        let isOverImage = isOverCapturedContent(point) && isUnobstructedCanvasPoint(at: locationInWindow)
+        rawBandHover = isOverImage ? point : nil
+        bandHoverInWindow = isOverImage ? locationInWindow : nil
+        refreshBandSnapping()
+    }
+    private func clearBandHover() {
+        rawBandHover = nil; bandHoverInWindow = nil; bandHoverRow = nil; bandHoverColumn = nil
+        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -345,7 +374,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         bandHoverColumn = rawBandHover.flatMap { bandMatch($0, axis: .vertical) }
     }
     private func drawBandGuides(zoom: CGFloat) {
-        guard mode == .removeSpace else { return }
+        guard showsBandGuides else { return }
         let region = imageRect.intersection(visibleRect)
         guard !region.isNull else { return }
         for axis in [StitchAxis.horizontal, .vertical] where bandAxis == nil || bandAxis == axis {
@@ -388,7 +417,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         let wasMoving = moving
         start = nil; end = nil; dragBounds = nil; originalOrigin = nil; moving = false
         gestureBandGuides = nil; bandAxis = nil; bandStartInWindow = nil; bandEndInWindow = nil
-        rawBandStart = nil; rawBandEnd = nil; rawBandHover = nil
+        rawBandStart = nil; rawBandEnd = nil; rawBandHover = nil; bandHoverInWindow = nil
         bandGuideMatches = []; bandHoverRow = nil; bandHoverColumn = nil
         hoveredID = nil; alignmentGuides = []; dragPreviewOrigin = nil; packedPreview = nil
         if wasMoving { onCancelMove?() }
@@ -400,6 +429,13 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         selectedID = nil
         onSelect?(nil)
         window?.invalidateCursorRects(for: self)
+    }
+
+    /// Capture overlays manage cursors imperatively as well as through cursor rects.
+    func cursor(at point: CGPoint) -> NSCursor {
+        let contentPoint = CGPoint(x: point.x - inset + contentBounds.minX, y: point.y - inset + contentBounds.minY)
+        guard bounds.contains(point), isOverCapturedContent(contentPoint) else { return .arrow }
+        return mode == .move ? (moving ? .closedHand : .openHand) : .crosshair
     }
 
     override func resetCursorRects() {
@@ -415,14 +451,30 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         addTrackingArea(area)
         hoverTracking = area
     }
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
+        if window !== newWindow { cancelGesture() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowDidResignKey(_:)),
+                name: NSWindow.didResignKeyNotification, object: window)
+        }
+    }
+    @objc private func windowDidResignKey(_ notification: Notification) {
+        clearBandHover()
+    }
     override func mouseMoved(with event: NSEvent) {
         if mode == .removeSpace, start == nil {
             bandSnapBypassed = event.modifierFlags.contains(.option)
-            let point = canvasPoint(event)
-            rawBandHover = document.bounds.contains(point) ? point : nil
+            let wasShowingGuides = showsBandGuides
             let previousRow = bandHoverRow, previousColumn = bandHoverColumn
-            refreshBandSnapping()
-            if previousRow != bandHoverRow || previousColumn != bandHoverColumn { needsDisplay = true }
+            updateBandHover(at: event.locationInWindow)
+            if wasShowingGuides != showsBandGuides || previousRow != bandHoverRow || previousColumn != bandHoverColumn {
+                needsDisplay = true
+            }
             return
         }
         guard mode == .move, !moving, start == nil else { return }
@@ -433,8 +485,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseExited(with event: NSEvent) {
         hoveredID = nil
-        rawBandHover = nil; bandHoverRow = nil; bandHoverColumn = nil
-        needsDisplay = true
+        clearBandHover()
     }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -449,7 +500,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         if mode == .removeSpace {
             gestureBandGuides = StitchBandGuides.Result(rows: bandCandidates(for: .horizontal), columns: bandCandidates(for: .vertical))
             bandAxis = nil; bandStartInWindow = event.locationInWindow; bandEndInWindow = event.locationInWindow
-            rawBandStart = p; rawBandEnd = p; rawBandHover = nil
+            rawBandStart = p; rawBandEnd = p; rawBandHover = nil; bandHoverInWindow = nil
             bandSnapBypassed = event.modifierFlags.contains(.option)
             refreshBandSnapping()
         }
@@ -480,6 +531,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        let wasRemoving = mode == .removeSpace && rawBandStart != nil
         let hadBandPreview = removalBand != nil
         if mode == .removeSpace, start != nil {
             rawBandEnd = canvasPoint(event)
@@ -503,6 +555,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         }
         moving = false; originalOrigin = nil
         alignmentGuides = []; hoveredID = nil; dragPreviewOrigin = nil; packedPreview = nil
+        if wasRemoving { updateBandHover(at: event.locationInWindow) }
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
     }

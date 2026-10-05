@@ -5,7 +5,7 @@ import ScreenCaptureKit
 import UniformTypeIdentifiers
 
 /// Settings window that intercepts Cmd+Q to close itself instead of quitting the app.
-private class SettingsWindow: NSWindow {
+private class SettingsWindow: ScreenshotGlassWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if KeyboardShortcutMatcher.matches(event, character: "q", modifiers: .command) {
             close()
@@ -27,6 +27,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
     private static var tabDefs: [TabDef] {
         var tabs: [TabDef] = [
             TabDef(id: "general",   label: "General",   symbolName: "gearshape",                 legacyImageName: NSImage.preferencesGeneralName),
+            TabDef(id: "appearance", label: "Appearance", symbolName: "paintpalette",             legacyImageName: NSImage.preferencesGeneralName),
             TabDef(id: "capture",   label: "Capture",   symbolName: "camera.viewfinder",         legacyImageName: NSImage.preferencesGeneralName),
             TabDef(id: "shortcuts", label: "Shortcuts", symbolName: "keyboard",                  legacyImageName: NSImage.preferencesGeneralName),
             TabDef(id: "tools",     label: "Tools",     symbolName: "paintbrush",                legacyImageName: NSImage.preferencesGeneralName),
@@ -98,9 +99,9 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
     private var autoUpdateCheckbox: NSButton!
     private var betaUpdateCheckbox: NSButton!
     private var accentColorWell: NSColorWell!
-    private var iconColorWell: NSColorWell!
     private var bgColorWell: NSColorWell!
     private var themePresetPopup: NSPopUpButton!
+    private var screenshotAppearanceView: ScreenshotAppearanceSettingsView?
     private var quickModePopup: NSPopUpButton!
     private var quickCaptureOpenEditorCheckbox: NSButton!
     private var closeEditorAfterCopyCheckbox: NSButton!
@@ -170,6 +171,9 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         window.delegate = self
         setupUI()
         loadSettings()
+        NotificationCenter.default.addObserver(self, selector: #selector(themeAppearanceChanged),
+            name: .toolbarColorsDidChange, object: nil)
+        themeAppearanceChanged()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -182,7 +186,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         // Toolbar (preference style — icon + label, Shottr-like)
         let toolbar = NSToolbar(identifier: "SettingsToolbar")
         toolbar.delegate = self
-        toolbar.displayMode = .iconAndLabel
+        toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
         if #available(macOS 11.0, *) {
@@ -193,16 +197,12 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         // Re-apply content size after toolbar install, since NSToolbar can
         // resize the window to fit its items.
         //
-        // Width went from 560 → 620 to accommodate longer translated
-        // strings (issue #130 — Polish "Szybkie przechwycenie:" + the
-        // "Automatycznie zamazuj dane wrażliwe" checkbox both overflowed
-        // the old layout). The extra 60pt flows evenly across the two
-        // toggle-grid columns so Polish/German/Dutch labels fit on one
-        // line instead of wrapping.
-        window.setContentSize(NSSize(width: 620, height: 520))
+        // Leave room for the Appearance tab and longer translated labels.
+        window.setContentSize(NSSize(width: 640, height: 520))
 
         // Build all tab content views up front (preserves existing behavior — nothing lazy-created)
         tabContentViews["general"]   = makeGeneralTabView()
+        tabContentViews["appearance"] = makeAppearanceTabView()
         tabContentViews["capture"]   = makeCaptureTabView()
         tabContentViews["shortcuts"] = makeShortcutsTabView()
         tabContentViews["tools"]     = makeToolsTabView()
@@ -276,6 +276,8 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         guard let container = tabContentContainer, let view = tabContentViews[id] else { return }
         // Remove existing content
         for sub in container.subviews { sub.removeFromSuperview() }
+        // The Appearance preview re-enables this when its glass panels attach.
+        (window as? ScreenshotGlassWindow)?.glassAlwaysActive = false
         view.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(view)
         NSLayoutConstraint.activate([
@@ -284,7 +286,11 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
             view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        SettingsAccentStyle.apply(to: view)
         currentTabID = id
+        window?.toolbar?.selectedItemIdentifier = NSToolbarItem.Identifier(id)
+        refreshToolbarAppearance()
+        if id == "appearance" { screenshotAppearanceView?.refreshControls() }
         window?.title = "\(BuildVariant.displayName) \(L("Settings")) · \(L(Self.tabDefs.first(where: { $0.id == id })?.label ?? ""))"
         #if !OFFLINE
         if id == "uploads" {
@@ -293,8 +299,16 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         #endif
     }
 
-    @objc private func toolbarTabSelected(_ sender: NSToolbarItem) {
+    @objc private func toolbarButtonSelected(_ sender: SettingsToolbarButton) {
         showTab(id: sender.itemIdentifier.rawValue)
+    }
+
+    private func refreshToolbarAppearance() {
+        for item in window?.toolbar?.items ?? [] {
+            guard let button = item.view as? SettingsToolbarButton else { continue }
+            button.isSelectedTab = item.itemIdentifier.rawValue == currentTabID
+            button.refreshAppearance()
+        }
     }
 
     // MARK: - NSToolbarDelegate
@@ -313,17 +327,10 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         guard let def = Self.tabDefs.first(where: { $0.id == itemIdentifier.rawValue }) else { return nil }
-        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-        item.label = L(def.label)
-        item.paletteLabel = L(def.label)
-        if #available(macOS 11.0, *) {
-            item.image = NSImage(systemSymbolName: def.symbolName, accessibilityDescription: def.label)
-        } else {
-            item.image = NSImage(named: def.legacyImageName)
-        }
-        item.target = self
-        item.action = #selector(toolbarTabSelected(_:))
-        return item
+        let image = NSImage(systemSymbolName: def.symbolName, accessibilityDescription: L(def.label))
+        let button = SettingsToolbarButton(itemIdentifier: itemIdentifier, title: L(def.label),
+            image: image, target: self, action: #selector(toolbarButtonSelected(_:)))
+        return button.makeToolbarItem()
     }
 
     // MARK: - General Tab
@@ -434,11 +441,11 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(sectionHeader(L("Application")))
         stack.setCustomSpacing(10, after: stack.arrangedSubviews.last!)
 
-        launchAtLoginCheckbox = NSButton(checkboxWithTitle: L("Launch at login"), target: self, action: #selector(launchAtLoginChanged(_:)))
+        launchAtLoginCheckbox = SettingsAccentStyle.checkbox(title: L("Launch at login"), target: self, action: #selector(launchAtLoginChanged(_:)))
         stack.addArrangedSubview(indented(launchAtLoginCheckbox))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
-        hideMenuBarIconCheckbox = NSButton(checkboxWithTitle: L("Hide menu bar icon"), target: self, action: #selector(hideMenuBarIconChanged(_:)))
+        hideMenuBarIconCheckbox = SettingsAccentStyle.checkbox(title: L("Hide menu bar icon"), target: self, action: #selector(hideMenuBarIconChanged(_:)))
         stack.addArrangedSubview(indented(hideMenuBarIconCheckbox))
         stack.setCustomSpacing(4, after: stack.arrangedSubviews.last!)
 
@@ -487,7 +494,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(indented(iconNote))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
-        let urlSchemeCheckbox = NSButton(checkboxWithTitle: L("Enable macshot:// URL scheme"), target: self, action: #selector(urlSchemeChanged(_:)))
+        let urlSchemeCheckbox = SettingsAccentStyle.checkbox(title: L("Enable macshot:// URL scheme"), target: self, action: #selector(urlSchemeChanged(_:)))
         urlSchemeCheckbox.state = (UserDefaults.standard.object(forKey: "urlSchemeEnabled") as? Bool ?? true) ? .on : .off
 
         let urlSchemeInfoIcon = HoverPopoverIconView(
@@ -510,59 +517,14 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
         #if !LOCAL_DEV
-        autoUpdateCheckbox = NSButton(checkboxWithTitle: L("Check for updates automatically"), target: self, action: #selector(autoUpdateChanged(_:)))
+        autoUpdateCheckbox = SettingsAccentStyle.checkbox(title: L("Check for updates automatically"), target: self, action: #selector(autoUpdateChanged(_:)))
         stack.addArrangedSubview(indented(autoUpdateCheckbox))
         stack.setCustomSpacing(4, after: stack.arrangedSubviews.last!)
 
-        betaUpdateCheckbox = NSButton(checkboxWithTitle: L("Check for beta updates"), target: self, action: #selector(betaUpdateChanged(_:)))
+        betaUpdateCheckbox = SettingsAccentStyle.checkbox(title: L("Check for beta updates"), target: self, action: #selector(betaUpdateChanged(_:)))
         stack.addArrangedSubview(indented(betaUpdateCheckbox))
         #endif
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
-
-        // ── Appearance ───────────────────────────────────────
-        stack.addArrangedSubview(sectionHeader(L("Appearance")))
-        stack.setCustomSpacing(10, after: stack.arrangedSubviews.last!)
-
-        // Theme preset dropdown
-        themePresetPopup = NSPopUpButton()
-        for preset in ThemePreset.all {
-            themePresetPopup.addItem(withTitle: L(preset.name))
-        }
-        themePresetPopup.addItem(withTitle: L("Custom"))
-        themePresetPopup.target = self
-        themePresetPopup.action = #selector(themePresetChanged(_:))
-        stack.addArrangedSubview(indented(labeledRow(L("Theme:"), controls: [themePresetPopup])))
-        stack.setCustomSpacing(12, after: stack.arrangedSubviews.last!)
-
-        // Three color wells in a single row with labels underneath
-        accentColorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 44, height: 32))
-        accentColorWell.color = ToolbarLayout.accentColor
-        accentColorWell.target = self
-        accentColorWell.action = #selector(accentColorChanged(_:))
-
-        iconColorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 44, height: 32))
-        iconColorWell.color = ToolbarLayout.iconColor
-        iconColorWell.target = self
-        iconColorWell.action = #selector(iconColorChanged(_:))
-
-        bgColorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 44, height: 32))
-        bgColorWell.color = ToolbarLayout.bgColor
-        bgColorWell.target = self
-        bgColorWell.action = #selector(bgColorChanged(_:))
-
-        let accentCol = makeColorColumn(well: accentColorWell, caption: L("Accent"))
-        let iconCol   = makeColorColumn(well: iconColorWell,   caption: L("Icon"))
-        let bgCol     = makeColorColumn(well: bgColorWell,     caption: L("Background"))
-
-        let colorsRow = NSStackView(views: [accentCol, iconCol, bgCol])
-        colorsRow.orientation = .horizontal
-        colorsRow.alignment = .top
-        colorsRow.spacing = 20
-        stack.addArrangedSubview(indented(colorsRow))
-        stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
-
-        // Sync preset popup to current colors
-        updateThemePresetSelection()
 
         // ── Settings Backup ──────────────────────────────────
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
@@ -594,6 +556,63 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
 
         finalizeSettingsStack(scroll: scroll, stack: stack)
         return scroll
+    }
+
+    // MARK: - Appearance Tab
+
+    private func makeAppearanceTabView() -> NSView {
+        themePresetPopup = NSPopUpButton()
+        for preset in ToolbarThemePreset.all { themePresetPopup.addItem(withTitle: L(preset.name)) }
+        themePresetPopup.addItem(withTitle: L("Custom"))
+        themePresetPopup.target = self
+        themePresetPopup.action = #selector(themePresetChanged(_:))
+        themePresetPopup.setAccessibilityLabel(L("Theme"))
+
+        accentColorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 30, height: 28))
+        accentColorWell.color = ToolbarLayout.accentColor
+        accentColorWell.target = self
+        accentColorWell.action = #selector(accentColorChanged(_:))
+        accentColorWell.setAccessibilityLabel(L("Accent color"))
+        accentColorWell.toolTip = L("Selected tools and Settings controls")
+
+        bgColorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 30, height: 28))
+        bgColorWell.color = ToolbarLayout.bgColor
+        bgColorWell.target = self
+        bgColorWell.action = #selector(bgColorChanged(_:))
+        bgColorWell.setAccessibilityLabel(L("Background color"))
+        bgColorWell.toolTip = L("Panel background and glass tint")
+
+        for well in [accentColorWell!, bgColorWell!] {
+            well.colorWellStyle = .minimal
+            well.isContinuous = true
+            well.translatesAutoresizingMaskIntoConstraints = false
+            well.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            well.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        }
+
+        let accentLabel = NSTextField(labelWithString: L("Accent"))
+        let backgroundLabel = NSTextField(labelWithString: L("Background"))
+        accentLabel.font = .systemFont(ofSize: 12)
+        backgroundLabel.font = .systemFont(ofSize: 12)
+        let colorControls = NSStackView(views: [accentColorWell, accentLabel, bgColorWell, backgroundLabel])
+        colorControls.orientation = .horizontal
+        colorControls.alignment = .centerY
+        colorControls.spacing = 8
+        colorControls.setCustomSpacing(24, after: accentLabel)
+
+        let themeControls = NSStackView(views: [
+            ScreenshotAppearanceSettingsView.settingsRow(L("Theme"), controls: [themePresetPopup]),
+            ScreenshotAppearanceSettingsView.settingsRow(L("Colors"), controls: [colorControls]),
+        ])
+        themeControls.orientation = .vertical
+        themeControls.alignment = .leading
+        themeControls.spacing = 12
+        themeControls.translatesAutoresizingMaskIntoConstraints = false
+        updateThemePresetSelection()
+
+        let appearanceView = ScreenshotAppearanceSettingsView(themeControls: themeControls)
+        screenshotAppearanceView = appearanceView
+        return appearanceView
     }
 
     // MARK: - Settings Backup actions
@@ -679,6 +698,9 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         // Re-apply the cheap live side-effects immediately; everything else takes effect on relaunch.
         (NSApp.delegate as? AppDelegate)?.reapplySettingsAfterImport()
 
+        // Import writes defaults directly, so refresh the shared renderer snapshot.
+        NotificationCenter.default.post(name: ScreenshotPanelStyle.didChange, object: nil)
+
         // Rebuild this window's controls so the visible tabs reflect the imported values.
         rebuildAllTabsAfterImport()
 
@@ -698,6 +720,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         let previouslySelected = currentTabID
         tabContentViews.removeAll()
         tabContentViews["general"] = makeGeneralTabView()
+        tabContentViews["appearance"] = makeAppearanceTabView()
         tabContentViews["capture"] = makeCaptureTabView()
         tabContentViews["shortcuts"] = makeShortcutsTabView()
         tabContentViews["tools"] = makeToolsTabView()
@@ -761,11 +784,11 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(labeledRow(L("Enter / Quick Capture:"), controls: [quickModePopup]))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
-        quickCaptureOpenEditorCheckbox = NSButton(checkboxWithTitle: L("Also open in Editor"), target: self, action: #selector(quickCaptureOpenEditorChanged(_:)))
+        quickCaptureOpenEditorCheckbox = SettingsAccentStyle.checkbox(title: L("Also open in Editor"), target: self, action: #selector(quickCaptureOpenEditorChanged(_:)))
         stack.addArrangedSubview(indented(quickCaptureOpenEditorCheckbox))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
-        closeEditorAfterCopyCheckbox = NSButton(checkboxWithTitle: L("Close editor after copying"), target: self, action: #selector(closeEditorAfterCopyChanged(_:)))
+        closeEditorAfterCopyCheckbox = SettingsAccentStyle.checkbox(title: L("Close editor after copying"), target: self, action: #selector(closeEditorAfterCopyChanged(_:)))
         stack.addArrangedSubview(indented(closeEditorAfterCopyCheckbox))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
@@ -783,19 +806,18 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.setCustomSpacing(12, after: stack.arrangedSubviews.last!)
 
         // Checkboxes
-        copySoundCheckbox = NSButton(checkboxWithTitle: L("Play sound on capture"), target: self, action: #selector(copySoundChanged(_:)))
-        rememberToolCheckbox = NSButton(checkboxWithTitle: L("Remember last selected tool"), target: self, action: #selector(rememberToolChanged(_:)))
-        thumbnailCheckbox = NSButton(checkboxWithTitle: L("Show floating thumbnail after capture"), target: self, action: #selector(thumbnailChanged(_:)))
-        snapGuidesCheckbox = NSButton(checkboxWithTitle: L("Show snap alignment guides"), target: self, action: #selector(snapGuidesChanged(_:)))
-        boundarySnapCheckbox = NSButton(checkboxWithTitle: L("Snap selection edges to image boundaries"), target: self, action: #selector(boundarySnapChanged(_:)))
-        browserElementSnapCheckbox = NSButton(
-            checkboxWithTitle: L("Enhance browser and Electron element snapping"),
+        copySoundCheckbox = SettingsAccentStyle.checkbox(title: L("Play sound on capture"), target: self, action: #selector(copySoundChanged(_:)))
+        rememberToolCheckbox = SettingsAccentStyle.checkbox(title: L("Remember last selected tool"), target: self, action: #selector(rememberToolChanged(_:)))
+        thumbnailCheckbox = SettingsAccentStyle.checkbox(title: L("Show floating thumbnail after capture"), target: self, action: #selector(thumbnailChanged(_:)))
+        snapGuidesCheckbox = SettingsAccentStyle.checkbox(title: L("Show snap alignment guides"), target: self, action: #selector(snapGuidesChanged(_:)))
+        boundarySnapCheckbox = SettingsAccentStyle.checkbox(title: L("Snap selection edges to image boundaries"), target: self, action: #selector(boundarySnapChanged(_:)))
+        browserElementSnapCheckbox = SettingsAccentStyle.checkbox(title: L("Enhance browser and Electron element snapping"),
             target: self,
             action: #selector(browserElementSnapChanged(_:)))
-        captureCursorCheckbox = NSButton(checkboxWithTitle: L("Capture mouse cursor in screenshot"), target: self, action: #selector(captureCursorChanged(_:)))
-        doubleClickToCopyCheckbox = NSButton(checkboxWithTitle: L("Double-click selection to copy"), target: self, action: #selector(doubleClickToCopyChanged(_:)))
-        hideCaptureInstructionsCheckbox = NSButton(checkboxWithTitle: L("Hide capture instructions"), target: self, action: #selector(hideCaptureInstructionsChanged(_:)))
-        disableSelectionShadowCheckbox = NSButton(checkboxWithTitle: L("Disable shadow outside selection"), target: self, action: #selector(disableSelectionShadowChanged(_:)))
+        captureCursorCheckbox = SettingsAccentStyle.checkbox(title: L("Capture mouse cursor in screenshot"), target: self, action: #selector(captureCursorChanged(_:)))
+        doubleClickToCopyCheckbox = SettingsAccentStyle.checkbox(title: L("Double-click selection to copy"), target: self, action: #selector(doubleClickToCopyChanged(_:)))
+        hideCaptureInstructionsCheckbox = SettingsAccentStyle.checkbox(title: L("Hide capture instructions"), target: self, action: #selector(hideCaptureInstructionsChanged(_:)))
+        disableSelectionShadowCheckbox = SettingsAccentStyle.checkbox(title: L("Disable shadow outside selection"), target: self, action: #selector(disableSelectionShadowChanged(_:)))
         filenameTemplateField = NSTextField()
         filenameTemplateField.placeholderString = FilenameFormatter.defaultTemplate
         filenameTemplateField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -862,8 +884,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(indented(labeledRow(L("  Preview size:"), controls: [sizeSlider, thumbnailScaleLabel])))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
-        thumbnailLetterboxCheckbox = NSButton(
-            checkboxWithTitle: L("Fit image in preview (letterbox)"),
+        thumbnailLetterboxCheckbox = SettingsAccentStyle.checkbox(title: L("Fit image in preview (letterbox)"),
             target: self,
             action: #selector(thumbnailLetterboxChanged(_:))
         )
@@ -923,8 +944,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(labeledRow(L("Save folder:"), controls: [savePathField, browseBtn]))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
-        copyPathAfterSaveCheckbox = NSButton(
-            checkboxWithTitle: L("Copy Path"),
+        copyPathAfterSaveCheckbox = SettingsAccentStyle.checkbox(title: L("Copy Path"),
             target: self,
             action: #selector(copyPathAfterSaveChanged(_:))
         )
@@ -962,7 +982,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(labeledRow(L("Image format:"), controls: [imageFormatPopup]))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
-        clipboardFormatCheckbox = NSButton(checkboxWithTitle: L("Also copy to the clipboard in this format"),
+        clipboardFormatCheckbox = SettingsAccentStyle.checkbox(title: L("Also copy to the clipboard in this format"),
                                            target: self, action: #selector(clipboardFormatChanged(_:)))
         stack.addArrangedSubview(indented(clipboardFormatCheckbox))
         stack.setCustomSpacing(2, after: stack.arrangedSubviews.last!)
@@ -1001,7 +1021,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
         // Downscale Retina
-        downscaleRetinaCheckbox = NSButton(checkboxWithTitle: L("Save at standard resolution (1x)"), target: self, action: #selector(downscaleRetinaChanged(_:)))
+        downscaleRetinaCheckbox = SettingsAccentStyle.checkbox(title: L("Save at standard resolution (1x)"), target: self, action: #selector(downscaleRetinaChanged(_:)))
         stack.addArrangedSubview(indented(downscaleRetinaCheckbox))
         stack.setCustomSpacing(2, after: stack.arrangedSubviews.last!)
 
@@ -1027,7 +1047,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         historySizeStepper.target = self
         historySizeStepper.action = #selector(historySizeChanged(_:))
 
-        historyUnlimitedCheckbox = NSButton(checkboxWithTitle: L("Unlimited"), target: self, action: #selector(historyUnlimitedChanged(_:)))
+        historyUnlimitedCheckbox = SettingsAccentStyle.checkbox(title: L("Unlimited"), target: self, action: #selector(historyUnlimitedChanged(_:)))
         historyUnlimitedCheckbox.font = NSFont.systemFont(ofSize: 11)
 
         let histNote = NSTextField(labelWithString: L("(0 = off)"))
@@ -1037,8 +1057,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(labeledRow(L("History size:"), controls: [historySizeField, historySizeStepper, histNote, historyUnlimitedCheckbox]))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
-        historyOrderByLastEditCheckbox = NSButton(
-            checkboxWithTitle: L("Order history by last edit"),
+        historyOrderByLastEditCheckbox = SettingsAccentStyle.checkbox(title: L("Order history by last edit"),
             target: self, action: #selector(historyOrderByLastEditChanged(_:)))
         historyOrderByLastEditCheckbox.state = ScreenshotHistory.orderByLastEdit ? .on : .off
         stack.addArrangedSubview(indented(historyOrderByLastEditCheckbox))
@@ -1338,8 +1357,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(sectionHeader(L("Overlay / Editor Shortcuts")))
         stack.setCustomSpacing(10, after: stack.arrangedSubviews.last!)
 
-        showToolShortcutsInTooltipsCheckbox = NSButton(
-            checkboxWithTitle: L("Show shortcuts in tooltips"),
+        showToolShortcutsInTooltipsCheckbox = SettingsAccentStyle.checkbox(title: L("Show shortcuts in tooltips"),
             target: self,
             action: #selector(showToolShortcutsInTooltipsChanged(_:)))
         stack.addArrangedSubview(indented(showToolShortcutsInTooltipsCheckbox))
@@ -1792,7 +1810,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(labeledRow(L("When done:"), controls: [recordingOnStopPopup]))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
-        let editableCheckbox = NSButton(checkboxWithTitle: L("Editable pointer, clicks and keystrokes"),
+        let editableCheckbox = SettingsAccentStyle.checkbox(title: L("Editable pointer, clicks and keystrokes"),
                                         target: self, action: #selector(editablePointerChanged(_:)))
         editableCheckbox.state = AppDelegate.recordsEditablePointer ? .on : .off
         stack.addArrangedSubview(indented(editableCheckbox))
@@ -1803,7 +1821,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(indented(editableNote))
         stack.setCustomSpacing(10, after: stack.arrangedSubviews.last!)
 
-        let hideHUDCheckbox = NSButton(checkboxWithTitle: L("Hide recording controls"), target: self, action: #selector(hideRecordingHUDChanged(_:)))
+        let hideHUDCheckbox = SettingsAccentStyle.checkbox(title: L("Hide recording controls"), target: self, action: #selector(hideRecordingHUDChanged(_:)))
         hideHUDCheckbox.state = UserDefaults.standard.bool(forKey: "hideRecordingHUD") ? .on : .off
         stack.addArrangedSubview(indented(hideHUDCheckbox))
 
@@ -1853,7 +1871,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(sectionHeader(L("Scroll Capture")))
         stack.setCustomSpacing(10, after: stack.arrangedSubviews.last!)
 
-        scrollAutoScrollCheckbox = NSButton(checkboxWithTitle: L("Auto-scroll (sends synthetic scroll events)"),
+        scrollAutoScrollCheckbox = SettingsAccentStyle.checkbox(title: L("Auto-scroll (sends synthetic scroll events)"),
                                             target: self, action: #selector(scrollAutoScrollChanged(_:)))
         stack.addArrangedSubview(scrollAutoScrollCheckbox)
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
@@ -1886,7 +1904,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(labeledRow(L("Max height:"), controls: [scrollMaxHeightField, scrollMaxHeightStepper, maxHeightNote]))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
-        scrollFrozenDetectionCheckbox = NSButton(checkboxWithTitle: L("Detect fixed/sticky headers"),
+        scrollFrozenDetectionCheckbox = SettingsAccentStyle.checkbox(title: L("Detect fixed/sticky headers"),
                                                  target: self, action: #selector(scrollFrozenDetectionChanged(_:)))
         stack.addArrangedSubview(scrollFrozenDetectionCheckbox)
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
@@ -2051,7 +2069,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(indented(pathPrefixNote))
         stack.setCustomSpacing(8, after: stack.arrangedSubviews.last!)
 
-        s3PublicReadCheckbox = NSButton(checkboxWithTitle: L("Make uploads publicly readable"), target: self, action: #selector(s3PublicReadChanged(_:)))
+        s3PublicReadCheckbox = SettingsAccentStyle.checkbox(title: L("Make uploads publicly readable"), target: self, action: #selector(s3PublicReadChanged(_:)))
         s3PublicReadCheckbox.state = UserDefaults.standard.bool(forKey: "s3PublicRead") ? .on : .off
         stack.addArrangedSubview(indented(s3PublicReadCheckbox))
         stack.setCustomSpacing(4, after: stack.arrangedSubviews.last!)
@@ -2571,7 +2589,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
                 if idx < items.count {
                     let item = items[idx]
                     let isEnabled = enabledValues == nil || enabledValues!.contains(item.tag)
-                    let cb = NSButton(checkboxWithTitle: item.label, target: self, action: #selector(toggleItemChanged(_:)))
+                    let cb = SettingsAccentStyle.checkbox(title: item.label, target: self, action: #selector(toggleItemChanged(_:)))
                     cb.state = isEnabled ? .on : .off
                     cb.tag = item.tag
                     cb.identifier = NSUserInterfaceItemIdentifier(defaultsKey)
@@ -2693,8 +2711,9 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         #endif
 
         accentColorWell.color = ToolbarLayout.accentColor
-        iconColorWell.color = ToolbarLayout.iconColor
         bgColorWell.color = ToolbarLayout.bgColor
+        updateThemePresetSelection()
+        screenshotAppearanceView?.refreshControls()
 
         let historySize = UserDefaults.standard.object(forKey: "historySize") as? Int ?? 10
         historySizeField.integerValue = historySize
@@ -3027,11 +3046,6 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         notifyToolbarColorChange()
         updateThemePresetSelection()
     }
-    @objc private func iconColorChanged(_ sender: NSColorWell) {
-        ToolbarLayout.saveIconColor(sender.color)
-        notifyToolbarColorChange()
-        updateThemePresetSelection()
-    }
     @objc private func bgColorChanged(_ sender: NSColorWell) {
         ToolbarLayout.saveBgColor(sender.color)
         notifyToolbarColorChange()
@@ -3039,96 +3053,37 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
     }
     // MARK: - Theme presets
 
-    private struct ThemePreset {
-        let name: String
-        let accent: NSColor
-        let icon: NSColor
-        let bg: NSColor
-
-        static let all: [ThemePreset] = [
-            ThemePreset(name: "Default",
-                        accent: ToolbarLayout.defaultAccentColor,
-                        icon:   ToolbarLayout.defaultIconColor,
-                        bg:     ToolbarLayout.defaultBgColor),
-            ThemePreset(name: "Classic",
-                        accent: NSColor(calibratedRed: 0.00, green: 0.48, blue: 1.00, alpha: 1.0),
-                        icon:   .white,
-                        bg:     NSColor(white: 0.12, alpha: 1.0)),
-            ThemePreset(name: "Ocean",
-                        accent: NSColor(calibratedRed: 0.20, green: 0.70, blue: 0.75, alpha: 1.0),
-                        icon:   .white,
-                        bg:     NSColor(calibratedRed: 0.08, green: 0.12, blue: 0.18, alpha: 1.0)),
-            ThemePreset(name: "Sunset",
-                        accent: NSColor(calibratedRed: 1.00, green: 0.55, blue: 0.20, alpha: 1.0),
-                        icon:   .white,
-                        bg:     NSColor(calibratedRed: 0.15, green: 0.10, blue: 0.12, alpha: 1.0)),
-            ThemePreset(name: "Forest",
-                        accent: NSColor(calibratedRed: 0.30, green: 0.75, blue: 0.45, alpha: 1.0),
-                        icon:   .white,
-                        bg:     NSColor(calibratedRed: 0.08, green: 0.14, blue: 0.10, alpha: 1.0)),
-            ThemePreset(name: "Mono",
-                        accent: NSColor(white: 0.30, alpha: 1.0),
-                        icon:   .white,
-                        bg:     NSColor(white: 0.10, alpha: 1.0)),
-        ]
-    }
-
-    private func makeColorColumn(well: NSColorWell, caption: String) -> NSView {
-        let label = NSTextField(labelWithString: caption)
-        label.font = NSFont.systemFont(ofSize: 11)
-        label.textColor = .secondaryLabelColor
-        label.alignment = .center
-
-        let col = NSStackView(views: [well, label])
-        col.orientation = .vertical
-        col.alignment = .centerX
-        col.spacing = 4
-        col.translatesAutoresizingMaskIntoConstraints = false
-        return col
-    }
-
     @objc private func themePresetChanged(_ sender: NSPopUpButton) {
         let idx = sender.indexOfSelectedItem
         // indexOfSelectedItem is -1 with no selection, which passes "< count".
-        guard idx >= 0, idx < ThemePreset.all.count else { return } // "Custom" — no-op
-        applyThemePreset(ThemePreset.all[idx])
+        guard idx >= 0, idx < ToolbarThemePreset.all.count else { return } // "Custom" — no-op
+        applyThemePreset(ToolbarThemePreset.all[idx])
     }
 
-    private func applyThemePreset(_ preset: ThemePreset) {
-        ToolbarLayout.saveAccentColor(preset.accent)
-        ToolbarLayout.saveIconColor(preset.icon)
-        ToolbarLayout.saveBgColor(preset.bg)
-        accentColorWell.color = preset.accent
-        iconColorWell.color = preset.icon
-        bgColorWell.color = preset.bg
+    private func applyThemePreset(_ preset: ToolbarThemePreset) {
+        ToolbarLayout.applyThemePreset(preset)
         notifyToolbarColorChange()
-        updateThemePresetSelection()
     }
 
     private func updateThemePresetSelection() {
         guard let popup = themePresetPopup else { return }
-        let current = (ToolbarLayout.accentColor, ToolbarLayout.iconColor, ToolbarLayout.bgColor)
-        for (i, preset) in ThemePreset.all.enumerated() {
-            if colorsClose(current.0, preset.accent) &&
-               colorsClose(current.1, preset.icon) &&
-               colorsClose(current.2, preset.bg) {
-                popup.selectItem(at: i)
-                return
-            }
-        }
-        // No match — select "Custom" (the last item)
-        popup.selectItem(at: ThemePreset.all.count)
+        let index = ToolbarThemePreset.all.firstIndex { $0.id == ToolbarLayout.selectedThemePreset?.id }
+        popup.selectItem(at: index ?? ToolbarThemePreset.all.count)
+        popup.isEnabled = !ToolbarLayout.usesSystemAccent
+        accentColorWell?.color = ToolbarLayout.accentColor
+        bgColorWell?.color = ToolbarLayout.bgColor
+        accentColorWell?.isEnabled = !ToolbarLayout.usesSystemAccent
+        bgColorWell?.isEnabled = !ToolbarLayout.usesSystemAccent
     }
 
-    /// Compare two NSColors in sRGB with a small tolerance (color picker rounding).
-    private func colorsClose(_ a: NSColor, _ b: NSColor) -> Bool {
-        guard let x = a.usingColorSpace(.sRGB), let y = b.usingColorSpace(.sRGB) else { return false }
-        let tol: CGFloat = 0.01
-        return abs(x.redComponent - y.redComponent) < tol
-            && abs(x.greenComponent - y.greenComponent) < tol
-            && abs(x.blueComponent - y.blueComponent) < tol
-            && abs(x.alphaComponent - y.alphaComponent) < tol
+    @objc private func themeAppearanceChanged() {
+        window?.appearance = ToolbarLayout.appearance
+        updateThemePresetSelection()
+        refreshToolbarAppearance()
+        // Tabs are retained while hidden, so update all of them in place.
+        for view in tabContentViews.values { SettingsAccentStyle.apply(to: view) }
     }
+
     private func notifyToolbarColorChange() {
         NotificationCenter.default.post(name: .toolbarColorsDidChange, object: nil)
     }

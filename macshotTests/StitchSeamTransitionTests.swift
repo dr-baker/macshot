@@ -35,6 +35,55 @@ final class StitchSeamTransitionTests: XCTestCase {
         return Data(bytes: try XCTUnwrap(context.data), count: image.width * image.height * 4)
     }
 
+    private func foldTextureFixture(axis: StitchAxis, dark: Bool = false,
+                                    printed: Bool = true, hasAlpha: Bool = false) throws -> StitchDocument {
+        let paper = dark ? SIMD3<UInt8>(31, 38, 48) : SIMD3<UInt8>(240, 242, 247)
+        let ink = dark ? SIMD3<UInt8>(192, 207, 226) : SIMD3<UInt8>(52, 64, 79)
+        var bytes = [UInt8](repeating: 0, count: 256 * 256 * 4)
+        for y in 0..<256 {
+            for x in 0..<256 {
+                let normal = axis == .horizontal ? y : x
+                let along = axis == .horizontal ? x : y
+                let isInk = printed && (117..<119).contains(normal)
+                    && (20..<236).contains(along) && along % 48 < 32
+                let color = isInk ? ink : paper
+                let alpha: UInt8
+                if hasAlpha {
+                    let alongAlpha = [96, 160, 224, 255][along / 64]
+                    let normalAlpha = normal < 117 ? 255 : normal < 119 ? 112 : 192
+                    let hole = (80..<112).contains(along) && (108..<152).contains(normal)
+                    alpha = hole ? 0 : UInt8((alongAlpha * normalAlpha + 127) / 255)
+                } else {
+                    alpha = 255
+                }
+                let offset = (y * 256 + x) * 4
+                for (channel, value) in [color.x, color.y, color.z].enumerated() {
+                    bytes[offset + channel] = UInt8((Int(value) * Int(alpha) + 127) / 255)
+                }
+                bytes[offset + 3] = alpha
+            }
+        }
+        let image = try XCTUnwrap(CGImage(width: 256, height: 256, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: 256 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent))
+        var document = StitchDocument(pieces: [StitchPiece(image: image)], background: .transparent)
+        XCTAssertTrue(document.collapse(axis: axis, from: 120, to: 136))
+        document.style.transition = .fold
+        return document
+    }
+
+    private func seamColor(_ bitmap: NSBitmapImageRep, axis: StitchAxis,
+                           along: Int, normal: Int, scale: CGFloat = 1) throws -> NSColor {
+        try XCTUnwrap(bitmap.colorAt(x: Int(CGFloat(axis == .horizontal ? along : normal) * scale),
+            y: Int(CGFloat(axis == .horizontal ? normal : along) * scale))?.usingColorSpace(.sRGB))
+    }
+
+    private func luminance(_ color: NSColor) -> CGFloat {
+        color.redComponent * 0.2126 + color.greenComponent * 0.7152 + color.blueComponent * 0.0722
+    }
+
     func testTreatmentsAreDistinctOnLightAndDarkContentAndBothAxes() throws {
         for dark in [false, true] {
             for axis in [StitchAxis.horizontal, .vertical] {
@@ -97,116 +146,434 @@ final class StitchSeamTransitionTests: XCTestCase {
                 document.style.color = .red
                 document.style.wave = 14
                 document.style.breakSize = 14
-                if transition == .fold { document.style.wave = 14; document.style.paperColor = .green }
                 XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), original,
                     "\(transition) must use its own paper controls and leave content crisp")
             }
         }
     }
 
-    func testTornHasAnExposedPaperStripWithIrregularEdgesOnBothAxes() throws {
+    func testTornHasSeparatedContrastingPaperEdgesWithIrregularTeethOnBothAxes() throws {
         for axis in [StitchAxis.horizontal, .vertical] {
-            let document = try fixture(.torn, axis: axis, dark: true, flat: true)
+            var document = try fixture(.torn, axis: axis, dark: true, flat: true)
             let image = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+            document.style.visible = false
+            let original = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
             var firstPaperPixels = Set<Int>()
             for along in stride(from: 30, through: 220, by: 5) {
                 var exposed: [Int] = []
                 for normal in 104..<136 {
                     let color = try XCTUnwrap(image.colorAt(x: axis == .horizontal ? along : normal,
                         y: axis == .horizontal ? normal : along)).usingColorSpace(.sRGB)!
-                    if color.redComponent > 0.9 && color.greenComponent > 0.9 && color.blueComponent > 0.9 {
+                    let base = try XCTUnwrap(original.colorAt(x: axis == .horizontal ? along : normal,
+                        y: axis == .horizontal ? normal : along)).usingColorSpace(.sRGB)!
+                    if abs(color.redComponent - base.redComponent) > 0.02
+                        && abs(color.greenComponent - base.greenComponent) > 0.02
+                        && abs(color.blueComponent - base.blueComponent) > 0.02 {
                         exposed.append(normal)
                     }
                 }
-                XCTAssertGreaterThanOrEqual(exposed.count, 4, "A tear needs exposed paper, not a thin ink line")
+                XCTAssertGreaterThanOrEqual(exposed.count, 2, "Both torn lips should contrast with the local background")
                 XCTAssertLessThanOrEqual(exposed.count, 12)
                 firstPaperPixels.insert(try XCTUnwrap(exposed.first))
+                XCTAssertGreaterThanOrEqual(try XCTUnwrap(exposed.last) - XCTUnwrap(exposed.first), 4,
+                    "The tear should have separated edges around its unaltered paper color")
             }
             XCTAssertGreaterThan(firstPaperPixels.count, 2, "Paper edges should have visibly unequal teeth")
         }
     }
 
-    func testTransparentPaperColorHidesTheWholeTearIncludingFibersAndShadow() throws {
+    func testZeroPaperWidthHidesTheWholeTearIncludingFibersAndShadow() throws {
         for axis in [StitchAxis.horizontal, .vertical] {
             var document = try fixture(.torn, axis: axis, dark: true)
-            document.style.paperColor = document.style.paperColor.withAlphaComponent(0)
+            document.style.tearWidth = 0
             let cleared = try pixels(XCTUnwrap(StitchRenderer.render(document)))
             document.style.visible = false
             XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), cleared)
         }
     }
 
-    func testFoldHasMatteFrontTuckedReturnAndPaperLipOnBothBackgroundsAndAxes() throws {
+    func testFoldHasAThinReturnAndFadingShadowBelowTheJoinOnBothBackgroundsAndAxes() throws {
         for dark in [false, true] {
             for axis in [StitchAxis.horizontal, .vertical] {
                 var document = try fixture(.fold, axis: axis, dark: dark, flat: true)
                 let folded = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
-                document.style.foldStrength = 0
-                let untouched = try pixels(XCTUnwrap(StitchRenderer.render(document)))
                 document.style.visible = false
-                XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document))), untouched)
-                func luminance(_ normal: Int) throws -> CGFloat {
-                    let color = try XCTUnwrap(folded.colorAt(x: axis == .horizontal ? 128 : normal,
-                        y: axis == .horizontal ? normal : 128)).usingColorSpace(.sRGB)!
-                    return (color.redComponent + color.greenComponent + color.blueComponent) / 3
+                let original = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+                func darkening(_ normal: Int) throws -> CGFloat {
+                    let before = try seamColor(original, axis: axis, along: 128, normal: normal)
+                    let after = try seamColor(folded, axis: axis, along: 128, normal: normal)
+                    return luminance(before) - luminance(after)
                 }
-                XCTAssertGreaterThan(try luminance(115) - luminance(121), 0.06,
-                    "The tucked return should be darker than the broad paper face")
-                XCTAssertGreaterThan(try luminance(122) - luminance(121), 0.035,
-                    "An exposed paper lip should follow the tucked return")
-                XCTAssertEqual(try luminance(114), try luminance(117), accuracy: 0.025,
-                    "The broad face should be matte without a bright ridge gradient")
-                if dark {
-                    XCTAssertLessThan(try luminance(115), 0.3, "Dark captures should retain dark paper")
-                } else {
-                    XCTAssertGreaterThan(try luminance(115), 0.85)
+
+                for normal in 108..<119 {
+                    XCTAssertEqual(try darkening(normal), 0, accuracy: 2 / 255,
+                        "The flat upper sheet must retain its captured color")
+                }
+                let returnShade = try (119..<122).map { try darkening($0) }.max()!
+                let nearShadow = try (121..<123).map { try darkening($0) }.max()!
+                XCTAssertGreaterThan(returnShade, 1 / 255, "The returned edge must remain visible")
+                XCTAssertGreaterThan(nearShadow, 1 / 255, "The lower edge must cast a shadow")
+                XCTAssertLessThan(returnShade, 0.25, "A shallow fold needs a restrained edge")
+                XCTAssertLessThan(try darkening(124), nearShadow,
+                    "The shadow must fade as it falls away from the lower edge")
+                for normal in 125..<136 {
+                    XCTAssertEqual(try darkening(normal), 0, accuracy: 1 / 255)
+                }
+                let changedRows = try (108..<136).filter { try abs(darkening($0)) > 2 / 255 }
+                XCTAssertLessThanOrEqual(changedRows.count, 6,
+                    "The returned edge and shadow must fit in a narrow strip")
+            }
+        }
+    }
+
+    func testFoldStrengthAboveMidpointProgressivelyDeepensTheLowerShadowAtUnchangedDepth() throws {
+        for dark in [false, true] {
+            for axis in [StitchAxis.horizontal, .vertical] {
+                var document = try fixture(.fold, axis: axis, dark: dark, flat: true)
+                document.style.foldDepth = 18
+                document.style.visible = false
+                let original = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+                document.style.visible = true
+                var previousShadow: CGFloat = 0
+                for strength: CGFloat in [1, 1.5, 2] {
+                    document.style.foldStrength = strength
+                    let folded = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
+                    var shadow: CGFloat = 0
+                    for along in stride(from: 32, to: 224, by: 16) {
+                        for normal in 121..<125 {
+                            shadow += try luminance(seamColor(original, axis: axis, along: along, normal: normal))
+                                - luminance(seamColor(folded, axis: axis, along: along, normal: normal))
+                        }
+                    }
+                    XCTAssertGreaterThan(shadow, previousShadow,
+                        "Strength \(strength) must deepen the lower shadow at depth 18: \(axis), dark=\(dark)")
+                    previousShadow = shadow
                 }
             }
         }
     }
 
-    func testOpaqueFoldOccludesTextInsteadOfShowingItThroughThePaper() throws {
+    func testFoldGentlyDistortsTheUpperEdgeWhileRetainingPrintedDetailsAtExportAndPreviewSizes() throws {
         for dark in [false, true] {
             for axis in [StitchAxis.horizontal, .vertical] {
-                var printed = try fixture(.fold, axis: axis, dark: dark)
-                var blank = try fixture(.fold, axis: axis, dark: dark, flat: true)
+                var printed = try foldTextureFixture(axis: axis, dark: dark)
+                var blank = try foldTextureFixture(axis: axis, dark: dark, printed: false)
                 printed.style.foldStrength = 1
                 blank.style.foldStrength = 1
-                let a = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(printed)))
-                let b = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(blank)))
-                for along in [32, 128, 224] {
-                    for normal in [110, 116, 121, 122] {
-                        let x = axis == .horizontal ? along : normal
-                        let y = axis == .horizontal ? normal : along
-                        let first = try XCTUnwrap(a.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                        let second = try XCTUnwrap(b.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                        XCTAssertEqual(first.redComponent, second.redComponent, accuracy: 2 / 255)
-                        XCTAssertEqual(first.greenComponent, second.greenComponent, accuracy: 2 / 255)
-                        XCTAssertEqual(first.blueComponent, second.blueComponent, accuracy: 2 / 255)
+                for dimension: CGFloat in [256, 128, 127] {
+                    printed.style.visible = true
+                    blank.style.visible = true
+                    let foldedPrint = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(printed,
+                        maximumPreviewDimension: dimension)))
+                    let foldedBlank = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(blank,
+                        maximumPreviewDimension: dimension)))
+                    printed.style.visible = false
+                    blank.style.visible = false
+                    let originalPrint = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(printed,
+                        maximumPreviewDimension: dimension)))
+                    let originalBlank = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(blank,
+                        maximumPreviewDimension: dimension)))
+                    let scale = dimension / 256
+                    var capturedContrast: CGFloat = 0, retainedContrast: CGFloat = 0
+                    var capturedMoment: CGFloat = 0, retainedMoment: CGFloat = 0
+                    for normal in 112..<120 {
+                        for along in stride(from: 30, to: 220, by: 5) {
+                            let original = try abs(luminance(seamColor(originalPrint, axis: axis,
+                                along: along, normal: normal, scale: scale))
+                                - luminance(seamColor(originalBlank, axis: axis,
+                                    along: along, normal: normal, scale: scale)))
+                            let folded = try abs(luminance(seamColor(foldedPrint, axis: axis,
+                                along: along, normal: normal, scale: scale))
+                                - luminance(seamColor(foldedBlank, axis: axis,
+                                    along: along, normal: normal, scale: scale)))
+                            capturedContrast += original
+                            retainedContrast += folded
+                            capturedMoment += CGFloat(normal) * original
+                            retainedMoment += CGFloat(normal) * folded
+                        }
+                    }
+                    XCTAssertGreaterThan(capturedContrast, 1)
+                    XCTAssertGreaterThan(retainedContrast, capturedContrast * 0.55,
+                        "Printed details must travel with the upper sheet: \(axis), dark=\(dark), dimension=\(dimension)")
+                    if dimension == 256 {
+                        let shift = retainedMoment / retainedContrast - capturedMoment / capturedContrast
+                        XCTAssertGreaterThan(shift, 0.04, "The upper edge must bend toward the join")
+                        XCTAssertLessThan(shift, 1, "The captured details must move by less than one pixel")
                     }
                 }
             }
         }
     }
 
-    func testFoldPaperFollowsLocalBackgroundsAtExportAndPreviewSizes() throws {
-        let source = try XCTUnwrap(ImageProbe.makeImage(width: 512, height: 256) { context in
-            context.setFillColor(CGColor(gray: 0.12, alpha: 1))
-            context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
-            context.setFillColor(CGColor(gray: 0.94, alpha: 1))
-            context.fill(CGRect(x: 256, y: 0, width: 256, height: 256))
-        }.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        var document = StitchDocument(pieces: [StitchPiece(image: source)], background: .transparent)
-        XCTAssertTrue(document.collapse(axis: .horizontal, from: 120, to: 136))
-        document.style.transition = .fold
-        for dimension in [CGFloat(512), 256] {
-            let image = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document,
-                maximumPreviewDimension: dimension)))
-            let scale = dimension / 512
-            let dark = try XCTUnwrap(image.colorAt(x: Int(64 * scale), y: Int(115 * scale))?.usingColorSpace(.sRGB))
-            let light = try XCTUnwrap(image.colorAt(x: Int(448 * scale), y: Int(115 * scale))?.usingColorSpace(.sRGB))
-            XCTAssertLessThan(dark.redComponent, 0.35)
-            XCTAssertGreaterThan(light.redComponent, 0.85)
+    func testZeroFoldDepthOrStrengthIsAnExactNoOpAtExportAndFractionalPreviewSizes() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var document = try foldTextureFixture(axis: axis, hasAlpha: true)
+            for dimension: CGFloat in [256, 128, 127] {
+                document.style.visible = false
+                let original = try pixels(XCTUnwrap(StitchRenderer.render(document,
+                    maximumPreviewDimension: dimension)))
+                document.style.visible = true
+                for (depth, strength): (CGFloat, CGFloat) in [(0, 1), (40, 0), (0, 2), (80, 0)] {
+                    document.style.foldDepth = depth
+                    document.style.foldStrength = strength
+                    XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(document,
+                        maximumPreviewDimension: dimension))), original)
+                }
+            }
+        }
+    }
+
+    func testFoldPreservesSourceAlphaAndInteriorHolesWithFractionalOriginsAndPreviews() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var document = try foldTextureFixture(axis: axis, hasAlpha: true)
+            let source = NSBitmapImageRep(cgImage: document.pieces[0].image)
+            XCTAssertNotEqual(try seamColor(source, axis: axis, along: 160, normal: 116).alphaComponent,
+                try seamColor(source, axis: axis, along: 160, normal: 118).alphaComponent,
+                "The fixture must change alpha across the bend, where source samples move")
+            for index in document.pieces.indices {
+                document.pieces[index].origin.x += 0.25
+                document.pieces[index].origin.y -= 0.35
+            }
+            let bounds = document.bounds.integral
+            for dimension: CGFloat in [257, 128, 127] {
+                document.style.visible = false
+                let original = try XCTUnwrap(StitchRenderer.render(document, maximumPreviewDimension: dimension))
+                document.style.visible = true
+                for (depth, strength): (CGFloat, CGFloat) in [(18, 1), (80, 2)] {
+                    document.style.foldDepth = depth
+                    document.style.foldStrength = strength
+                    let folded = try XCTUnwrap(StitchRenderer.render(document, maximumPreviewDimension: dimension))
+                    XCTAssertEqual(folded.width, original.width)
+                    XCTAssertEqual(folded.height, original.height)
+                    XCTAssertEqual(document.bounds.integral, bounds)
+                    let before = try pixels(original), after = try pixels(folded)
+                    XCTAssertNotEqual(after, before, "The fold must still render on partially transparent content")
+                    let changedAlpha = stride(from: 3, to: before.count, by: 4).first { after[$0] != before[$0] }
+                    XCTAssertNil(changedAlpha,
+                        "Strength \(strength), depth \(depth): every source alpha byte must survive, including holes. First change: \(String(describing: changedAlpha))")
+                }
+            }
+        }
+    }
+
+    func testFoldKeepsRedactedSourcePixelsUnderTheirMasksInEditorExportsAndUndoRedo() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            for tool in [AnnotationTool.filledRectangle, .pixelate, .blur] {
+                for scale: CGFloat in [1, 2] {
+                    for (depth, strength): (CGFloat, CGFloat) in [(18, 0.5), (18, 1), (80, 2)] {
+                        let fixture = try redactedFoldFixture(axis: axis, tool: tool, scale: scale)
+                        try assertFoldRedactionCoverage(fixture.editor, axis: axis, bendsExposedStroke: false)
+                        var folded = fixture.document
+                        folded.style.visible = true
+                        folded.style.transition = .fold
+                        folded.style.foldDepth = depth
+                        folded.style.foldStrength = strength
+                        XCTAssertTrue(fixture.editor.applyStitchDocument(folded))
+                        try assertFoldRedactionCoverage(fixture.editor, axis: axis, bendsExposedStroke: true)
+                        fixture.editor.undo()
+                        try assertFoldRedactionCoverage(fixture.editor, axis: axis, bendsExposedStroke: false)
+                        fixture.editor.redo()
+                        try assertFoldRedactionCoverage(fixture.editor, axis: axis, bendsExposedStroke: true)
+                    }
+                }
+            }
+        }
+    }
+
+    func testEditableHistoryReopenKeepsFoldedSourcePixelsUnderFilledAndBakedRedactions() async throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            for tool in [AnnotationTool.filledRectangle, .pixelate, .blur] {
+                let fixture = try redactedFoldFixture(axis: axis, tool: tool, scale: 2)
+                var folded = fixture.document
+                folded.style.visible = true
+                folded.style.transition = .fold
+                folded.style.foldDepth = 80
+                folded.style.foldStrength = 2
+                XCTAssertTrue(fixture.editor.applyStitchDocument(folded))
+                let raw = try XCTUnwrap(fixture.editor.captureSelectedRegionRaw())
+                let composited = try XCTUnwrap(fixture.editor.captureSelectedRegion())
+                let state = fixture.editor.captureEditState()
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                let history = ScreenshotHistory(directory: directory)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                withDefaults(["historySize": 10, "historyUnlimited": false]) {
+                    history.add(image: composited, rawImage: raw, annotations: fixture.editor.annotations, editState: state)
+                }
+                await history.waitUntilIdle()
+                let entry = try XCTUnwrap(history.entries.first)
+                let editable = try XCTUnwrap(history.loadEditableCapture(for: entry))
+                let reopened = EditorView(frame: CGRect(origin: .zero, size: editable.rawImage.size))
+                reopened.screenshotImage = editable.rawImage
+                reopened.applySelection(reopened.bounds)
+                reopened.setAnnotations(editable.annotations)
+                reopened.applyCaptureEditState(try XCTUnwrap(editable.editState))
+                try assertFoldRedactionCoverage(reopened, axis: axis, bendsExposedStroke: true)
+                XCTAssertEqual(reopened.screenshotImage?.size, raw.size)
+                let restoredMask = try XCTUnwrap(reopened.annotations.first)
+                if tool != .filledRectangle {
+                    let originalBake = try XCTUnwrap(fixture.editor.annotations.first?.bakedBlurNSImage)
+                    let restoredBake = try XCTUnwrap(restoredMask.bakedBlurNSImage)
+                    XCTAssertEqual(try pixels(XCTUnwrap(restoredBake.cgImage(forProposedRect: nil,
+                        context: nil, hints: nil))), try pixels(XCTUnwrap(originalBake.cgImage(forProposedRect: nil,
+                            context: nil, hints: nil))))
+                }
+            }
+        }
+    }
+
+    func testRedactionsAddedMovedAndDeletedAfterFoldRefreshRawExportAndHistoryPixels() async throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let fixture = try redactedFoldFixture(axis: axis, tool: .filledRectangle, scale: 1)
+            let editor = fixture.editor
+            editor.setAnnotations([])
+            var folded = fixture.document
+            folded.style.visible = true
+            folded.style.transition = .fold
+            folded.style.foldDepth = 80
+            folded.style.foldStrength = 2
+            XCTAssertTrue(editor.applyStitchDocument(folded))
+            let unprotected = try assertFoldRawMatchesCurrentProtection(editor)
+
+            // This later mask reaches the lower crease. Its protected section
+            // also keeps the upper bend straight above the annotation.
+            let nativeMask = axis == .horizontal ? CGRect(x: 48, y: 119, width: 160, height: 3)
+                : CGRect(x: 119, y: 48, width: 3, height: 160)
+            let canvasMask = CGRect(x: nativeMask.minX, y: folded.bounds.integral.height - nativeMask.maxY,
+                width: nativeMask.width, height: nativeMask.height)
+            let mask = Annotation(tool: .filledRectangle, startPoint: canvasMask.origin,
+                endPoint: CGPoint(x: canvasMask.maxX, y: canvasMask.maxY), color: .red, strokeWidth: 1)
+            mask.rectCornerRadius = 0
+            mask.outlineColor = nil
+            editor.setAnnotations([mask])
+            let addedExport = try pixels(XCTUnwrap(editor.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil)))
+            let protected = try assertFoldRawMatchesCurrentProtection(editor)
+            XCTAssertEqual(addedExport, try pixels(XCTUnwrap(editor.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil))), "Export must refresh coverage before the raw-capture entry is called")
+            XCTAssertNotEqual(try pixels(protected), try pixels(unprotected),
+                "Adding a redaction after Fold must refresh the raster above its protected section")
+            let beforeMove = mask.clone()
+            mask.move(dx: axis == .horizontal ? 24 : 0, dy: axis == .horizontal ? 0 : -24)
+            editor.undoStack.append(.propertyChange(annotation: mask, snapshot: beforeMove))
+            let movedExport = try XCTUnwrap(editor.captureSelectedRegion())
+            let movedExportPixels = try pixels(XCTUnwrap(movedExport.cgImage(forProposedRect: nil,
+                context: nil, hints: nil)))
+            let movedRaw = try assertFoldRawMatchesCurrentProtection(editor)
+            XCTAssertNotEqual(try pixels(movedRaw), try pixels(protected))
+            XCTAssertEqual(movedExportPixels, try pixels(XCTUnwrap(editor.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil))))
+            editor.undo()
+            XCTAssertTrue(editor.refreshFoldProtection())
+            XCTAssertEqual(try pixels(assertFoldRawMatchesCurrentProtection(editor)), try pixels(protected))
+            editor.redo()
+            XCTAssertEqual(try pixels(assertFoldRawMatchesCurrentProtection(editor)), try pixels(movedRaw))
+
+            let raw = try XCTUnwrap(editor.captureSelectedRegionRaw())
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let history = ScreenshotHistory(directory: directory)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            withDefaults(["historySize": 10, "historyUnlimited": false]) {
+                history.add(image: movedExport, rawImage: raw, annotations: editor.annotations,
+                    editState: editor.captureEditState())
+            }
+            await history.waitUntilIdle()
+            let editable = try XCTUnwrap(history.loadEditableCapture(for: XCTUnwrap(history.entries.first)))
+            let reopened = EditorView(frame: CGRect(origin: .zero, size: editable.rawImage.size))
+            reopened.screenshotImage = editable.rawImage
+            reopened.applySelection(reopened.bounds)
+            reopened.setAnnotations(editable.annotations)
+            reopened.applyCaptureEditState(try XCTUnwrap(editable.editState))
+            XCTAssertEqual(try pixels(assertFoldRawMatchesCurrentProtection(reopened)), try pixels(movedRaw))
+            XCTAssertEqual(try pixels(XCTUnwrap(reopened.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil))), movedExportPixels,
+                "History must reopen the same protected Fold and annotations seen in the editor export")
+
+            let window = NSWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.contentView = editor
+            defer { window.orderOut(nil) }
+            editor.currentTool = .select
+            let center = CGPoint(x: mask.boundingRect.midX, y: mask.boundingRect.midY)
+            func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
+                try XCTUnwrap(NSEvent.mouseEvent(with: type, location: editor.convert(center, to: nil),
+                    modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                    eventNumber: 1, clickCount: 1, pressure: 1))
+            }
+            editor.mouseDown(with: try mouse(.leftMouseDown))
+            editor.mouseUp(with: try mouse(.leftMouseUp))
+            editor.keyDown(with: TestKeyEvent.keyDown(characters: "\u{8}", keyCode: 51))
+            XCTAssertTrue(editor.annotations.isEmpty)
+            XCTAssertEqual(try pixels(XCTUnwrap(editor.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil))), try pixels(unprotected))
+            XCTAssertEqual(try pixels(assertFoldRawMatchesCurrentProtection(editor)), try pixels(unprotected))
+            editor.undo()
+            XCTAssertEqual(try pixels(XCTUnwrap(editor.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil))), movedExportPixels)
+            XCTAssertEqual(try pixels(assertFoldRawMatchesCurrentProtection(editor)), try pixels(movedRaw))
+            editor.redo()
+            XCTAssertTrue(editor.annotations.isEmpty)
+            XCTAssertEqual(try pixels(XCTUnwrap(editor.captureSelectedRegion()?.cgImage(forProposedRect: nil,
+                context: nil, hints: nil))), try pixels(unprotected))
+            XCTAssertEqual(try pixels(assertFoldRawMatchesCurrentProtection(editor)), try pixels(unprotected))
+        }
+    }
+
+    func testFoldLeavesColoredUncoveredGapsBesideShortJoinsUntouched() throws {
+        let image = try XCTUnwrap(ImageProbe.solidImage(width: 20, height: 20)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        for transposed in [false, true] {
+            let origins = [CGPoint.zero, CGPoint(x: 20, y: 0), CGPoint(x: 2, y: 20)].map {
+                transposed ? CGPoint(x: $0.y, y: $0.x) : $0
+            }
+            var document = StitchDocument(pieces: origins.map { StitchPiece(image: image, origin: $0) },
+                background: .color(.magenta))
+            document.style.transition = .fold
+            document.style.foldDepth = 80
+            document.style.foldStrength = 2
+            for dimension: CGFloat in [40, 20, 19] {
+                document.style.visible = false
+                let before = try pixels(XCTUnwrap(StitchRenderer.render(document,
+                    maximumPreviewDimension: dimension)))
+                document.style.visible = true
+                let after = try pixels(XCTUnwrap(StitchRenderer.render(document,
+                    maximumPreviewDimension: dimension)))
+                var gaps = 0
+                for offset in stride(from: 0, to: before.count, by: 4)
+                    where before[offset] == 255 && before[offset + 1] == 0 && before[offset + 2] == 255 {
+                    gaps += 1
+                    XCTAssertEqual(after[offset..<(offset + 4)], before[offset..<(offset + 4)],
+                        "The fold must not distort or shade the canvas fill beside a short join")
+                }
+                XCTAssertGreaterThan(gaps, 0)
+            }
+        }
+    }
+
+    func testFoldStyleEditsPreserveCanvasAndAnnotationCoordinatesAtBothSourceScales() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            for scale: CGFloat in [1, 2] {
+                var document = try fixture(.wave, axis: axis)
+                for index in document.pieces.indices {
+                    document.pieces[index].origin.x += 0.2
+                    document.pieces[index].origin.y += 0.7
+                }
+                let editor = try makeEditor(document, scale: scale)
+                let mark = Annotation(tool: .filledRectangle, startPoint: CGPoint(x: 90 / scale, y: 110 / scale),
+                    endPoint: CGPoint(x: 140 / scale, y: 116 / scale), color: .red, strokeWidth: 1)
+                editor.setAnnotations([mark])
+                let canvas = editor.bounds, imageSize = editor.screenshotImage?.size
+                let start = mark.startPoint, end = mark.endPoint
+                document.style.transition = .fold
+                document.style.foldDepth = 40
+                document.style.foldStrength = 1
+                XCTAssertTrue(editor.applyStitchDocument(document))
+                XCTAssertEqual(editor.bounds, canvas)
+                XCTAssertEqual(editor.screenshotImage?.size, imageSize)
+                XCTAssertTrue(editor.annotations.first === mark)
+                XCTAssertEqual(mark.startPoint, start)
+                XCTAssertEqual(mark.endPoint, end)
+                XCTAssertEqual(editor.stitchDocument?.pieces.map(\.origin), document.pieces.map(\.origin))
+                XCTAssertEqual(editor.stitchDocument?.pieces.map(\.source), document.pieces.map(\.source))
+            }
         }
     }
 
@@ -217,7 +584,8 @@ final class StitchSeamTransitionTests: XCTestCase {
             let origin = axis == .horizontal ? CGPoint(x: 0, y: 20) : CGPoint(x: 20, y: 0)
             var document = StitchDocument(pieces: [StitchPiece(image: image), StitchPiece(image: image, origin: origin)])
             document.style.transition = .fold
-            document.style.foldDepth = 40
+            document.style.foldDepth = 80
+            document.style.foldStrength = 2
             let folded = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
             document.style.visible = false
             let original = NSBitmapImageRep(cgImage: try XCTUnwrap(StitchRenderer.render(document)))
@@ -240,7 +608,6 @@ final class StitchSeamTransitionTests: XCTestCase {
             if transition == .torn {
                 next.style.tearWidth = 18
                 next.style.tearRoughness = 10
-                next.style.paperColor = NSColor(srgbRed: 0.92, green: 0.84, blue: 0.69, alpha: 0.9)
             } else {
                 next.style.foldDepth = 28
                 next.style.foldStrength = 0.8
@@ -265,6 +632,23 @@ final class StitchSeamTransitionTests: XCTestCase {
         }
     }
 
+    func testLegacyManualPaperColorIsIgnoredAndNewHistoryOmitsIt() throws {
+        let document = try fixture(.torn, dark: true)
+        let saved = try XCTUnwrap(SavedStitchDocument(document))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        XCTAssertNil(object["paperColor"])
+        for legacy in [[1, 0, 0, 0.5], "invalid old paper color"] as [Any] {
+            object["paperColor"] = legacy
+            let restored = try XCTUnwrap(JSONDecoder().decode(SavedStitchDocument.self,
+                from: JSONSerialization.data(withJSONObject: object)).restore())
+            XCTAssertEqual(try pixels(XCTUnwrap(StitchRenderer.render(restored))),
+                           try pixels(XCTUnwrap(StitchRenderer.render(document))))
+            let newObject = try XCTUnwrap(JSONSerialization.jsonObject(with:
+                JSONEncoder().encode(XCTUnwrap(SavedStitchDocument(restored)))) as? [String: Any])
+            XCTAssertNil(newObject["paperColor"])
+        }
+    }
+
     func testAbsentPaperSettingsUseDefaultsAndInvalidSavedSettingsRejectRestore() throws {
         let saved = try XCTUnwrap(SavedStitchDocument(fixture(.torn)))
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
@@ -277,7 +661,7 @@ final class StitchSeamTransitionTests: XCTestCase {
         XCTAssertEqual(restored.style.foldStrength, StitchStyle().foldStrength)
         XCTAssertEqual(restored.style.tearRoughness, 7)
         XCTAssertEqual(restored.style.breakSize, 7)
-        for (key, invalid) in [("tearWidth", -1.0), ("tearRoughness", 101.0), ("foldDepth", 101.0), ("foldStrength", 1.1), ("breakSize", -1.0)] {
+        for (key, invalid) in [("tearWidth", -1.0), ("tearRoughness", 101.0), ("foldDepth", 101.0), ("foldStrength", 2.1), ("breakSize", -1.0)] {
             var broken = object
             broken[key] = invalid
             XCTAssertNil(try JSONDecoder().decode(SavedStitchDocument.self,
@@ -600,6 +984,76 @@ final class StitchSeamTransitionTests: XCTestCase {
         }
     }
 
+    func testNativeCropUndoRedoRebakesRootedLoupeAfterControllerRestoresFinalCanvasBounds() throws {
+        for scale: CGFloat in [1, 2] {
+            let document = try fixture(.fold)
+            let editor = try makeEditor(document, scale: scale)
+            let loupe = Annotation(tool: .loupe, startPoint: CGPoint(x: 170 / scale, y: 150 / scale),
+                endPoint: CGPoint(x: 210 / scale, y: 190 / scale), color: .white, strokeWidth: 1)
+            loupe.loupeSourceRect = CGRect(x: 108 / scale, y: 108 / scale, width: 24 / scale, height: 24 / scale)
+            loupe.loupeMagnification = 2
+            editor.setAnnotations([loupe])
+            let window = NSWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.contentView = editor
+            let controller = StitchEditorController(document: document, window: window)
+            controller.onDocumentChanged = { [weak editor] value, registerUndo in
+                editor?.applyStitchDocument(value, registerUndo: registerUndo) ?? false
+            }
+            var restores = 0
+            editor.onStitchDocumentChanged = { [weak controller, weak editor] in
+                if let value = editor?.stitchDocument {
+                    restores += 1
+                    controller?.restore(value)
+                }
+            }
+            controller.attach(to: editor)
+            defer { controller.suspend(); editor.onStitchDocumentChanged = nil; window.orderOut(nil) }
+            XCTAssertTrue(controller.isAttached)
+
+            func assertCurrentLoupe(size: CGSize) throws {
+                XCTAssertEqual(editor.selectionRect.size, size)
+                XCTAssertEqual(editor.screenshotImage?.size, size)
+                XCTAssertTrue(editor.annotations.first === loupe)
+                XCTAssertTrue(loupe.sourceImage === editor.screenshotImage)
+                XCTAssertEqual(loupe.sourceImageBounds, editor.captureDrawRect)
+                let actual = try pixels(XCTUnwrap(loupe.bakedBlurNSImage?.cgImage(forProposedRect: nil,
+                    context: nil, hints: nil)))
+                let expected = loupe.clone()
+                expected.sourceImage = editor.screenshotImage
+                expected.sourceImageBounds = editor.captureDrawRect
+                expected.bakedBlurNSImage = nil
+                expected.bakeLoupe()
+                XCTAssertEqual(actual, try pixels(XCTUnwrap(expected.bakedBlurNSImage?.cgImage(forProposedRect: nil,
+                    context: nil, hints: nil))),
+                    "The controller must bake the rooted loupe using the final restored canvas bounds")
+            }
+
+            editor.currentTool = .crop
+            func mouse(_ type: NSEvent.EventType, _ point: CGPoint) throws -> NSEvent {
+                try XCTUnwrap(NSEvent.mouseEvent(with: type, location: editor.convert(point, to: nil),
+                    modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                    eventNumber: 1, clickCount: 1, pressure: 1))
+            }
+            editor.mouseDown(with: try mouse(.leftMouseDown, CGPoint(x: 10, y: 10)))
+            editor.mouseDragged(with: try mouse(.leftMouseDragged,
+                CGPoint(x: editor.bounds.maxX - 10, y: editor.bounds.maxY - 10)))
+            editor.mouseUp(with: try mouse(.leftMouseUp,
+                CGPoint(x: editor.bounds.maxX - 10, y: editor.bounds.maxY - 10)))
+            editor.keyDown(with: TestKeyEvent.keyDown(characters: "\r", keyCode: 36))
+            let croppedSize = CGSize(width: 256 / scale - 20, height: 240 / scale - 20)
+            XCTAssertGreaterThan(restores, 0)
+            try assertCurrentLoupe(size: croppedSize)
+            let beforeUndo = restores
+            editor.undo()
+            XCTAssertGreaterThan(restores, beforeUndo)
+            try assertCurrentLoupe(size: CGSize(width: 256 / scale, height: 240 / scale))
+            let beforeRedo = restores
+            editor.redo()
+            XCTAssertGreaterThan(restores, beforeRedo)
+            try assertCurrentLoupe(size: croppedSize)
+        }
+    }
+
     func testChangingTreatmentRefreshesLoupePixelsAndPreservesCensorBake() throws {
         let document = try fixture()
         let editor = try makeEditor(document)
@@ -672,6 +1126,225 @@ final class StitchSeamTransitionTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testOptionalFoldContentFixtures() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let directory = environment["MACSHOT_SEAM_PREVIEW_DIR"]
+            ?? environment["TEST_RUNNER_MACSHOT_SEAM_PREVIEW_DIR"] else { return }
+        for theme in ["light", "dark", "colored"] {
+            for axis in [StitchAxis.horizontal, .vertical] {
+                var fixture = try foldContentFixture(axis: axis, theme: theme)
+                let prefix = "fold-content-\(theme)-\(axis)"
+                try writeFixture(fixture.source, directory: directory, name: "\(prefix)-source.png")
+                try writeFixture(XCTUnwrap(StitchRenderer.render(fixture.document)),
+                    directory: directory, name: "\(prefix)-full.png")
+                for dimension: CGFloat in [256, 127] {
+                    try writeFixture(XCTUnwrap(StitchRenderer.render(fixture.document,
+                        maximumPreviewDimension: dimension)), directory: directory,
+                        name: "\(prefix)-preview-\(Int(dimension)).png")
+                }
+                fixture.document.style.foldDepth = 18
+                fixture.document.style.foldStrength = 2
+                try writeFixture(XCTUnwrap(StitchRenderer.render(fixture.document)),
+                    directory: directory, name: "\(prefix)-strength-2-full.png")
+                fixture.document.style.foldDepth = 80
+                try writeFixture(XCTUnwrap(StitchRenderer.render(fixture.document)),
+                    directory: directory, name: "\(prefix)-max-full.png")
+                for dimension: CGFloat in [256, 127] {
+                    try writeFixture(XCTUnwrap(StitchRenderer.render(fixture.document,
+                        maximumPreviewDimension: dimension)), directory: directory,
+                        name: "\(prefix)-max-preview-\(Int(dimension)).png")
+                }
+                fixture.document.style.visible = false
+                try writeFixture(XCTUnwrap(StitchRenderer.render(fixture.document)),
+                    directory: directory, name: "\(prefix)-unfolded.png")
+            }
+        }
+    }
+
+    private func foldContentFixture(axis: StitchAxis, theme: String) throws
+        -> (source: CGImage, document: StitchDocument) {
+        let background: NSColor, ink: NSColor, secondary: NSColor
+        switch theme {
+        case "dark":
+            background = NSColor(srgbRed: 0.12, green: 0.15, blue: 0.19, alpha: 1)
+            ink = NSColor(srgbRed: 0.88, green: 0.91, blue: 0.96, alpha: 1)
+            secondary = NSColor(srgbRed: 0.57, green: 0.63, blue: 0.71, alpha: 1)
+        case "colored":
+            background = NSColor(srgbRed: 0.18, green: 0.42, blue: 0.36, alpha: 1)
+            ink = NSColor(srgbRed: 0.95, green: 0.96, blue: 0.88, alpha: 1)
+            secondary = NSColor(srgbRed: 0.66, green: 0.83, blue: 0.73, alpha: 1)
+        default:
+            background = NSColor(srgbRed: 0.96, green: 0.96, blue: 0.94, alpha: 1)
+            ink = NSColor(srgbRed: 0.18, green: 0.22, blue: 0.28, alpha: 1)
+            secondary = NSColor(srgbRed: 0.42, green: 0.47, blue: 0.54, alpha: 1)
+        }
+        let source = try XCTUnwrap(ImageProbe.makeImage(width: 512, height: 384) { context in
+            context.translateBy(x: 0, y: 384)
+            context.scaleBy(x: 1, y: -1)
+            context.setFillColor(background.cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: 512, height: 384))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            func text(_ value: String, x: CGFloat, y: CGFloat, width: CGFloat,
+                      size: CGFloat = 16, weight: NSFont.Weight = .regular,
+                      color: NSColor? = nil, alignment: NSTextAlignment = .left) {
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.alignment = alignment
+                (value as NSString).draw(in: CGRect(x: x, y: y, width: width, height: size * 1.6),
+                    withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: weight),
+                        .foregroundColor: color ?? ink, .paragraphStyle: paragraph])
+            }
+            context.setFillColor(secondary.cgColor)
+            if axis == .horizontal {
+                text("Monthly report", x: 24, y: 24, width: 464, size: 24, weight: .semibold)
+                text("Engineering / October 2026", x: 24, y: 58, width: 464, size: 12, color: secondary)
+                text("Project", x: 24, y: 99, width: 260, size: 12, weight: .semibold, color: secondary)
+                text("Captures", x: 354, y: 99, width: 134, size: 12, weight: .semibold,
+                    color: secondary, alignment: .right)
+                context.fill(CGRect(x: 24, y: 121, width: 464, height: 1))
+                text("Workspace", x: 24, y: 133, width: 270)
+                text("12,480", x: 354, y: 133, width: 134, alignment: .right)
+                text("Typography check", x: 24, y: 172, width: 270)
+                text("3,712", x: 354, y: 172, width: 134, alignment: .right)
+                context.fill(CGRect(x: 24, y: 190, width: 464, height: 1))
+                text("Export queue", x: 24, y: 219, width: 270)
+                text("846", x: 354, y: 219, width: 134, alignment: .right)
+                context.fill(CGRect(x: 24, y: 252, width: 464, height: 1))
+                text("All captured details stay editable.", x: 24, y: 278, width: 464,
+                    size: 13, color: secondary)
+            } else {
+                text("Usage", x: 24, y: 24, width: 154, size: 24, weight: .semibold)
+                text("October 2026", x: 24, y: 59, width: 154, size: 12, color: secondary)
+                text("This month", x: 224, y: 24, width: 264, size: 24, weight: .semibold)
+                text("Captured work", x: 224, y: 59, width: 264, size: 12, color: secondary)
+                for (index, label) in ["Workspace", "Capture tools", "Export queue", "History"].enumerated() {
+                    let y = CGFloat(113 + index * 54)
+                    text(label, x: 24, y: y, width: 154, size: 13, color: secondary)
+                    text(["12,480", "3,712", "846", "2,604"][index], x: 24, y: y + 18,
+                        width: 166, size: 16, weight: .medium, alignment: .right)
+                    text(["Active projects", "Screenshots saved", "Ready to share", "Source images retained"][index],
+                        x: 224, y: y + 18, width: 264, size: 15)
+                }
+                context.fill(CGRect(x: 190, y: 106, width: 1, height: 232))
+            }
+        }.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: source)], background: .transparent)
+        XCTAssertTrue(document.collapse(axis: axis, from: 192, to: 208))
+        document.style.transition = .fold
+        return (source, document)
+    }
+
+    private func writeFixture(_ image: CGImage, directory: String, name: String) throws {
+        let url = URL(fileURLWithPath: directory).appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: url)
+    }
+
+    private func redactedFoldFixture(axis: StitchAxis, tool: AnnotationTool, scale: CGFloat) throws
+        -> (document: StitchDocument, editor: EditorView) {
+        let source = try XCTUnwrap(ImageProbe.makeImage(width: 256, height: 256) { context in
+            context.translateBy(x: 0, y: 256)
+            context.scaleBy(x: 1, y: -1)
+            context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+            context.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+            // The long stripe is secret. The short stripe remains visible and
+            // proves that Fold still bends content outside protected sections.
+            for along in [CGRect(x: 16, y: 117, width: 16, height: 1),
+                          CGRect(x: 48, y: 117, width: 160, height: 1)] {
+                let stripe = axis == .horizontal ? along
+                    : CGRect(x: along.minY, y: along.minX, width: along.height, height: along.width)
+                context.fill(stripe)
+            }
+        }.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: source)], background: .transparent)
+        XCTAssertTrue(document.collapse(axis: axis, from: 120, to: 136))
+        document.style.visible = false
+        let editor = try makeEditor(document, scale: scale)
+        editor.beautifyEnabled = false
+        editor.effectsPreset = .none
+        editor.effectsBrightness = 0
+        editor.effectsContrast = 1
+        editor.effectsSaturation = 1
+        editor.effectsSharpness = 0
+        let nativeMask = axis == .horizontal ? CGRect(x: 48, y: 112, width: 160, height: 6)
+            : CGRect(x: 112, y: 48, width: 6, height: 160)
+        let canvasMask = CGRect(x: nativeMask.minX / scale,
+            y: (document.bounds.integral.height - nativeMask.maxY) / scale,
+            width: nativeMask.width / scale, height: nativeMask.height / scale)
+        let mask = Annotation(tool: tool, startPoint: canvasMask.origin,
+            endPoint: CGPoint(x: canvasMask.maxX, y: canvasMask.maxY), color: .red, strokeWidth: 1)
+        mask.rectCornerRadius = 0
+        mask.outlineColor = nil
+        mask.censorMode = tool == .blur ? .blur : .pixelate
+        if tool != .filledRectangle {
+            let baked = ImageProbe.solidImage(width: Int(nativeMask.width), height: Int(nativeMask.height),
+                color: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+            baked.size = canvasMask.size
+            mask.bakedBlurNSImage = baked
+        }
+        editor.setAnnotations([mask])
+        XCTAssertEqual(mask.stitchPixelCoverage(in: document.bounds.integral, scale: scale), nativeMask)
+        return (document, editor)
+    }
+
+    private func assertFoldRedactionCoverage(_ editor: EditorView, axis: StitchAxis, bendsExposedStroke: Bool,
+                                            file: StaticString = #filePath, line: UInt = #line) throws {
+        let output = try XCTUnwrap(editor.captureSelectedRegion(), file: file, line: line)
+        let image = try XCTUnwrap(output.cgImage(forProposedRect: nil, context: nil, hints: nil), file: file, line: line)
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        // NSBitmapImageRep.colorAt returns calibrated colors. Converting those
+        // to sRGB shifts saturated channels on this Mac despite unchanged bytes.
+        let bytes = try pixels(image)
+        func channels(along: Int, normal: Int) -> SIMD4<UInt8> {
+            let x = axis == .horizontal ? along : normal
+            let y = axis == .horizontal ? normal : along
+            let offset = (y * image.width + x) * 4
+            return SIMD4(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3])
+        }
+        let document = try XCTUnwrap(editor.stitchDocument, file: file, line: line)
+        XCTAssertEqual(bitmap.pixelsWide, Int(document.bounds.integral.width), file: file, line: line)
+        XCTAssertEqual(bitmap.pixelsHigh, Int(document.bounds.integral.height), file: file, line: line)
+        for along in 48..<208 {
+            let covered = channels(along: along, normal: 117)
+            guard covered.x >= 253, covered.y <= 2, covered.z <= 2, covered.w == 255 else {
+                XCTFail("The source stripe must stay under its red mask at \(along) along the \(axis) seam: \(covered)",
+                    file: file, line: line)
+                return
+            }
+            let outside = channels(along: along, normal: 118)
+            guard outside.y <= 2 else {
+                XCTFail("Fold pulled the hidden green stripe beyond the redaction's lower edge at \(along) along the \(axis) seam",
+                    file: file, line: line)
+                return
+            }
+        }
+        let exposed = channels(along: 24, normal: 118)
+        if bendsExposedStroke {
+            XCTAssertGreaterThan(exposed.y, 38,
+                "Captured details outside the redaction must continue to bend", file: file, line: line)
+        } else {
+            XCTAssertLessThanOrEqual(exposed.y, 2, file: file, line: line)
+        }
+    }
+
+    @discardableResult
+    private func assertFoldRawMatchesCurrentProtection(_ editor: EditorView,
+        file: StaticString = #filePath, line: UInt = #line) throws -> CGImage {
+        let raw = try XCTUnwrap(editor.captureSelectedRegionRaw(), file: file, line: line)
+        let image = try XCTUnwrap(raw.cgImage(forProposedRect: nil, context: nil, hints: nil), file: file, line: line)
+        let document = try XCTUnwrap(editor.stitchDocument, file: file, line: line)
+        let scale = CGFloat(image.width) / raw.size.width
+        let protection = editor.annotations.filter(\.isStitchRedaction).map {
+            $0.stitchPixelCoverage(in: document.bounds.integral, scale: scale)
+        }
+        let canonical = try XCTUnwrap(StitchRenderer.render(document, protectedRegions: protection), file: file, line: line)
+        XCTAssertEqual(try pixels(image), try pixels(canonical),
+            "The editor capture must refresh Fold from current redaction coverage", file: file, line: line)
+        return image
     }
 
     private func makeEditor(_ document: StitchDocument, scale: CGFloat = 1) throws -> EditorView {

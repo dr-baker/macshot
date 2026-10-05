@@ -14,12 +14,17 @@
 		BB0000012F61B60100B71643 /* PermissionFlow in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000032F61B60100B71643 /* PermissionFlow */; };
 		BB0000022F61B60100B71643 /* PermissionFlow in Frameworks */ = {isa = PBXBuildFile; productRef = BB0000042F61B60100B71643 /* PermissionFlow */; };
 		BB0000062F61B60100B71643 /* PermissionFlow-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BB0000072F61B60100B71643 /* PermissionFlow-LICENSE */; };
+		CC0000072F61B60100B71643 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CC00000C2F61B60100B71643 /* Sparkle */; };
+		CC0000082F61B60100B71643 /* WebP in Frameworks */ = {isa = PBXBuildFile; productRef = CC00000D2F61B60100B71643 /* WebP */; };
+		CC0000092F61B60100B71643 /* PermissionFlow in Frameworks */ = {isa = PBXBuildFile; productRef = CC00000E2F61B60100B71643 /* PermissionFlow */; };
+		CC00000B2F61B60100B71643 /* PermissionFlow-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BB0000072F61B60100B71643 /* PermissionFlow-LICENSE */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2F4EB1222F61B60100B71643 /* macshot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = macshot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAA00012F00000100AA0001 /* macshotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = macshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000072F61B60100B71643 /* PermissionFlow-LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThirdPartyLicenses/PermissionFlow-LICENSE"; sourceTree = SOURCE_ROOT; };
+		CC0000022F61B60100B71643 /* macshot Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "macshot Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -38,6 +43,13 @@
 			);
 			target = 2FAA00042F00000100AA0001 /* macshotTests */;
 		};
+		CC0000032F61B60100B71643 /* Exceptions for "macshot" folder in "macshot Dev" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CC0000012F61B60100B71643 /* macshot Dev */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -46,6 +58,7 @@
 			exceptions = (
 				2F4EB1342F61B65B00B71643 /* Exceptions for "macshot" folder in "macshot" target */,
 				2FAA00032F00000100AA0001 /* Exceptions for "macshot" folder in "macshotTests" target */,
+				CC0000032F61B60100B71643 /* Exceptions for "macshot" folder in "macshot Dev" target */,
 			);
 			path = macshot;
 			sourceTree = "<group>";
@@ -78,6 +91,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CC0000052F61B60100B71643 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CC0000072F61B60100B71643 /* Sparkle in Frameworks */,
+				CC0000082F61B60100B71643 /* WebP in Frameworks */,
+				CC0000092F61B60100B71643 /* PermissionFlow in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -96,6 +119,7 @@
 			children = (
 				2F4EB1222F61B60100B71643 /* macshot.app */,
 				2FAA00012F00000100AA0001 /* macshotTests.xctest */,
+				CC0000022F61B60100B71643 /* macshot Dev.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -154,6 +178,31 @@
 			productReference = 2FAA00012F00000100AA0001 /* macshotTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		CC0000012F61B60100B71643 /* macshot Dev */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CC0000132F61B60100B71643 /* Build configuration list for PBXNativeTarget "macshot Dev" */;
+			buildPhases = (
+				CC0000042F61B60100B71643 /* Sources */,
+				CC0000052F61B60100B71643 /* Frameworks */,
+				CC0000062F61B60100B71643 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2F4EB1242F61B60100B71643 /* macshot */,
+			);
+			name = "macshot Dev";
+			packageProductDependencies = (
+				CC00000C2F61B60100B71643 /* Sparkle */,
+				CC00000D2F61B60100B71643 /* WebP */,
+				CC00000E2F61B60100B71643 /* PermissionFlow */,
+			);
+			productName = "macshot Dev";
+			productReference = CC0000022F61B60100B71643 /* macshot Dev.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -168,6 +217,9 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					2FAA00042F00000100AA0001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					CC0000012F61B60100B71643 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
@@ -232,6 +284,7 @@
 			targets = (
 				2F4EB1212F61B60100B71643 /* macshot */,
 				2FAA00042F00000100AA0001 /* macshotTests */,
+				CC0000012F61B60100B71643 /* macshot Dev */,
 			);
 		};
 /* End PBXProject section */
@@ -252,6 +305,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CC0000062F61B60100B71643 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CC00000B2F61B60100B71643 /* PermissionFlow-LICENSE in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -263,6 +324,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		2FAA00052F00000100AA0001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC0000042F61B60100B71643 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -538,6 +606,96 @@
 			};
 			name = Release;
 		};
+		CC0000112F61B60100B71643 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = macshot/macshot.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3.5.2;
+				DEVELOPMENT_TEAM = 45W5CFCVQF;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = macshot/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "macshot Dev";
+				INFOPLIST_KEY_CFBundleName = "macshot Dev";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 3.5.2;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					ScreenCaptureKit,
+				);
+				MACSHOT_PRODUCT_NAME = "macshot Dev";
+				MACSHOT_BUNDLE_IDENTIFIER = com.drbaker.macshot.dev;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MACSHOT_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = macshotDev;
+				PRODUCT_NAME = "$(MACSHOT_PRODUCT_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LOCAL_DEV";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CC0000122F61B60100B71643 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = macshot/macshot.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3.5.2;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = macshot/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "macshot Dev";
+				INFOPLIST_KEY_CFBundleName = "macshot Dev";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 3.5.2;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					ScreenCaptureKit,
+				);
+				MACSHOT_PRODUCT_NAME = "macshot Dev";
+				MACSHOT_BUNDLE_IDENTIFIER = com.drbaker.macshot.dev;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MACSHOT_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = macshotDev;
+				PRODUCT_NAME = "$(MACSHOT_PRODUCT_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LOCAL_DEV";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -568,7 +726,17 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		CC0000132F61B60100B71643 /* Build configuration list for PBXNativeTarget "macshot Dev" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CC0000112F61B60100B71643 /* Debug */,
+				CC0000122F61B60100B71643 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
 
 /* Begin XCRemoteSwiftPackageReference section */
 		AA0000032F61B60100B71643 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
@@ -624,6 +792,21 @@
 			productName = PermissionFlow;
 		};
 		BB0000042F61B60100B71643 /* PermissionFlow */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB0000052F61B60100B71643 /* XCRemoteSwiftPackageReference "PermissionFlow" */;
+			productName = PermissionFlow;
+		};
+		CC00000C2F61B60100B71643 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000032F61B60100B71643 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		CC00000D2F61B60100B71643 /* WebP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000042F61B60100B71643 /* XCRemoteSwiftPackageReference "Swift-WebP" */;
+			productName = WebP;
+		};
+		CC00000E2F61B60100B71643 /* PermissionFlow */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = BB0000052F61B60100B71643 /* XCRemoteSwiftPackageReference "PermissionFlow" */;
 			productName = PermissionFlow;

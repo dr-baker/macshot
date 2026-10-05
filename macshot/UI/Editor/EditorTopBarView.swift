@@ -2,28 +2,30 @@ import Cocoa
 
 /// Real NSView top bar for the editor window. Pinned to top of container.
 /// Contains: pixel dimensions, crop/flip/add-capture buttons, zoom dropdown.
-class EditorTopBarView: NSView {
+class EditorTopBarView: ScreenshotPanelView {
 
     weak var overlayView: OverlayView?
     private var sizeLabel: NSTextField!
     private var zoomButton: NSButton!
     private var doneButton: NSButton?
+    private let separatorView = NSView()
+    private var commandButtons: [NSButton] = []
     var onDone: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
+        panelCornerRadius = 0
         autoresizingMask = [.width, .minYMargin]  // pin to top, stretch width
-        layer?.backgroundColor = ToolbarLayout.bgColor.cgColor
 
         sizeLabel = makeLabel("")
         sizeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        sizeLabel.textColor = ToolbarLayout.iconColor.withAlphaComponent(0.45)
+        sizeLabel.textColor = panelForegroundColor.withAlphaComponent(0.8)
 
         let cropBtn = makeButton("crop", tooltip: L("Crop"), action: #selector(cropClicked))
         let flipHBtn = makeButton("arrow.left.and.right.righttriangle.left.righttriangle.right", tooltip: L("Flip Horizontal"), action: #selector(flipHClicked))
         let flipVBtn = makeButton("arrow.up.and.down.righttriangle.up.righttriangle.down", tooltip: L("Flip Vertical"), action: #selector(flipVClicked))
         let addCaptureBtn = makeButton("rectangle.badge.plus", tooltip: L("Add Capture"), action: #selector(addCaptureClicked))
+        commandButtons = [cropBtn, flipHBtn, flipVBtn, addCaptureBtn]
 
         // Zoom dropdown button
         zoomButton = NSButton()
@@ -31,16 +33,14 @@ class EditorTopBarView: NSView {
         zoomButton.isBordered = false
         zoomButton.title = "100% ▾"
         zoomButton.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        zoomButton.contentTintColor = ToolbarLayout.iconColor.withAlphaComponent(0.45)
+        zoomButton.contentTintColor = panelForegroundColor.withAlphaComponent(0.8)
         zoomButton.target = self
         zoomButton.action = #selector(zoomButtonClicked)
 
         // Bottom border
-        let border = NSView()
-        border.wantsLayer = true
-        border.layer?.backgroundColor = NSColor(white: 0.25, alpha: 1.0).cgColor
-        border.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(border)
+        separatorView.wantsLayer = true
+        separatorView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(separatorView)
 
         // Layout with constraints
         for v: NSView in [sizeLabel, cropBtn, flipHBtn, flipVBtn, addCaptureBtn, zoomButton] {
@@ -77,14 +77,26 @@ class EditorTopBarView: NSView {
             zoomButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             zoomButton.centerYAnchor.constraint(equalTo: centerYAnchor),
 
-            border.leadingAnchor.constraint(equalTo: leadingAnchor),
-            border.trailingAnchor.constraint(equalTo: trailingAnchor),
-            border.bottomAnchor.constraint(equalTo: bottomAnchor),
-            border.heightAnchor.constraint(equalToConstant: 0.5),
+            separatorView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            separatorView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            separatorView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            separatorView.heightAnchor.constraint(equalToConstant: 0.5),
         ])
+        refreshPanelAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func refreshPanelAppearance() {
+        super.refreshPanelAppearance()
+        sizeLabel?.textColor = panelForegroundColor.withAlphaComponent(0.8)
+        zoomButton?.contentTintColor = panelForegroundColor.withAlphaComponent(0.8)
+        for button in commandButtons {
+            button.contentTintColor = panelForegroundColor.withAlphaComponent(0.85)
+        }
+        doneButton?.contentTintColor = ToolbarLayout.accentColor
+        separatorView.layer?.backgroundColor = panelForegroundColor.withAlphaComponent(0.16).cgColor
+    }
 
     private func makeButton(_ symbol: String, tooltip: String, action: Selector) -> NSButton {
         let btn = NSButton()
@@ -92,7 +104,7 @@ class EditorTopBarView: NSView {
         btn.isBordered = false
         btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
-        btn.contentTintColor = ToolbarLayout.iconColor.withAlphaComponent(0.85)
+        btn.contentTintColor = panelForegroundColor.withAlphaComponent(0.85)
         btn.toolTip = tooltip
         btn.target = self
         btn.action = action
