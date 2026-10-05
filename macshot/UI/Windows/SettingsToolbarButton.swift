@@ -46,6 +46,10 @@ final class SettingsToolbarButton: NSButton {
 
     @objc private func activateFromOverflow(_ sender: NSMenuItem) { performClick(nil) }
 
+    // NSToolbar uses the alignment rect for its native selection background.
+    // NSButton's default top inset excludes part of an image-above-title icon.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+
     override var intrinsicContentSize: NSSize {
         let width = (title as NSString).size(withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 11)]).width
         return NSSize(width: max(58, ceil(width) + 16), height: 54)
