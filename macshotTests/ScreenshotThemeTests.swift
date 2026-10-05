@@ -191,6 +191,26 @@ final class ScreenshotThemeTests: XCTestCase {
 
 @MainActor
 final class ScreenshotThemeColorTests: XCTestCase {
+    func testReadableAccentsKeepHueAndReachCaptionContrast() {
+        let accents = [ScreenshotThemeRGB(red: 1, green: 0.45, blue: 0.15),
+                       .init(red: 0.2, green: 0.7, blue: 0.3),
+                       .init(red: 0.55, green: 0.3, blue: 0.85),
+                       .init(red: 0.48, green: 0.48, blue: 0.48)]
+        for background in [ScreenshotThemeRGB(red: 1, green: 1, blue: 1),
+                           .init(red: 0.15, green: 0.15, blue: 0.15)] {
+            for accent in accents {
+                let result = ScreenshotThemeForeground.readableAccent(accent, on: background)
+                let a = result.relativeLuminance, b = background.relativeLuminance
+                XCTAssertGreaterThanOrEqual((max(a, b) + 0.05) / (min(a, b) + 0.05), 6.99)
+                XCTAssertTrue(result.isInGamut)
+                if accent.oklch.chroma > 0.01 {
+                    XCTAssertEqual(cos(result.oklch.hue - accent.oklch.hue), 1, accuracy: 0.001)
+                }
+                XCTAssertEqual(ScreenshotThemeForeground.readableAccent(result, on: background), result)
+            }
+        }
+    }
+
     func testSRGBRoundTripsThroughOKLCHIncludingPrimariesAndNeutrals() {
         for color in [rgb(0, 0, 0), rgb(1, 1, 1), rgb(1, 0, 0), rgb(0, 1, 0), rgb(0, 0, 1), rgb(0.2, 0.4, 0.8)] {
             let result = color.oklch.sRGB

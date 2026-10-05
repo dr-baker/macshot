@@ -51,8 +51,22 @@ final class SettingsToolbarButton: NSButton {
         return NSSize(width: max(58, ceil(width) + 16), height: 54)
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshAppearance()
+    }
+
     func refreshAppearance() {
-        contentTintColor = isSelectedTab ? ToolbarLayout.accentColor : .labelColor
+        var background = NSColor.windowBackgroundColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            background = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? .windowBackgroundColor
+        }
+        if isSelectedTab, let accent = ScreenshotThemeRGB(color: ToolbarLayout.accentColor),
+           let surface = ScreenshotThemeRGB(color: background) {
+            contentTintColor = ScreenshotThemeForeground.readableAccent(accent, on: surface).nsColor
+        } else {
+            contentTintColor = .secondaryLabelColor
+        }
         setAccessibilityValue(isSelectedTab ? 1 : 0)
         setAccessibilitySelected(isSelectedTab)
         needsDisplay = true

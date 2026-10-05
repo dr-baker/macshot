@@ -116,3 +116,41 @@ enum ScreenshotThemeBackground {
             hue: color.hue).gamutMappedSRGB
     }
 }
+
+/// Text needs a stronger version of an accent than a filled control does.
+/// Keep its hue and change only perceptual lightness, reducing chroma only when
+/// necessary to stay in sRGB. This runs on appearance changes, never in draw().
+enum ScreenshotThemeForeground {
+    static func readableAccent(_ accent: ScreenshotThemeRGB, on background: ScreenshotThemeRGB) -> ScreenshotThemeRGB {
+        let accent = accent.clamped
+        let background = background.clamped
+        func contrast(_ color: ScreenshotThemeRGB) -> Double {
+            let a = color.relativeLuminance, b = background.relativeLuminance
+            return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        }
+        let black = ScreenshotThemeRGB(red: 0, green: 0, blue: 0)
+        let white = ScreenshotThemeRGB(red: 1, green: 1, blue: 1)
+        let endpoint = contrast(white) > contrast(black) ? white : black
+        // Aim for 7:1 for the small toolbar captions. Midtone custom backgrounds
+        // may only permit the stronger of black or white.
+        let target = min(7, contrast(endpoint))
+        guard contrast(accent) < target else { return accent }
+        let color = accent.oklch
+        let endLightness = endpoint.red
+        var lower = 0.0, upper = 1.0
+        var result = endpoint
+        for _ in 0..<18 {
+            let fraction = (lower + upper) / 2
+            let candidate = ScreenshotThemeOKLCH(
+                lightness: color.lightness + (endLightness - color.lightness) * fraction,
+                chroma: color.chroma, hue: color.hue).gamutMappedSRGB
+            if contrast(candidate) >= target {
+                upper = fraction
+                result = candidate
+            } else {
+                lower = fraction
+            }
+        }
+        return result
+    }
+}

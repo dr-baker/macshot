@@ -13,7 +13,7 @@ final class SettingsToolbarButtonTests: XCTestCase {
             let item = button.makeToolbarItem()
             XCTAssertTrue(item.view === button)
             button.isSelectedTab = true
-            XCTAssertEqual(button.contentTintColor, ToolbarLayout.accentColor)
+            assertSelectedContrast(button)
             XCTAssertEqual(button.accessibilityValue() as? Int, 1)
             XCTAssertTrue(button.isAccessibilitySelected())
             button.performClick(nil)
@@ -25,12 +25,40 @@ final class SettingsToolbarButtonTests: XCTestCase {
             XCTAssertEqual(button.itemIdentifier.rawValue, "appearance")
             ToolbarLayout.usesSystemAccent = true
             button.refreshAppearance()
-            XCTAssertEqual(button.contentTintColor, ToolbarLayout.accentColor)
+            assertSelectedContrast(button)
             button.isSelectedTab = false
-            XCTAssertEqual(button.contentTintColor, .labelColor)
+            XCTAssertEqual(button.contentTintColor, .secondaryLabelColor)
             XCTAssertEqual(button.accessibilityValue() as? Int, 0)
             XCTAssertFalse(button.isAccessibilitySelected())
         }
+    }
+
+    func testGraySelectedTabStaysReadableInLightAndDarkAppearances() throws {
+        _ = NSApplication.shared
+        try withDefaults(["toolbarThemePreset": "custom", "toolbarAccentColor":
+            try NSKeyedArchiver.archivedData(withRootObject: NSColor(srgbRed: 0.48, green: 0.48, blue: 0.48, alpha: 1),
+                requiringSecureCoding: false), "toolbarUsesSystemAccent": false]) {
+            let button = SettingsToolbarButton(itemIdentifier: .init("appearance"), title: "Appearance",
+                image: nil, target: nil, action: nil)
+            button.isSelectedTab = true
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                button.appearance = NSAppearance(named: name)
+                button.refreshAppearance()
+                assertSelectedContrast(button)
+            }
+        }
+    }
+
+    private func assertSelectedContrast(_ button: SettingsToolbarButton,
+                                        file: StaticString = #filePath, line: UInt = #line) {
+        var background = NSColor.windowBackgroundColor
+        button.effectiveAppearance.performAsCurrentDrawingAppearance {
+            background = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)!
+        }
+        let foreground = ScreenshotThemeRGB(color: button.contentTintColor!)!.relativeLuminance
+        let surface = ScreenshotThemeRGB(color: background)!.relativeLuminance
+        XCTAssertGreaterThanOrEqual((max(foreground, surface) + 0.05) / (min(foreground, surface) + 0.05),
+            6.99, file: file, line: line)
     }
 
     func testTranslatedTabTitleDeterminesItsWidth() {
