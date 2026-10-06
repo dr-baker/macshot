@@ -1,8 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Macshot Pro</title>
         <link>https://github.com/dr-baker/macshot</link>
         <description>Macshot Pro updates</description>
+        <item>
+            <title>v0.1.0</title>
+            <pubDate>Tue, 06 Oct 2026 06:55:39 +0000</pubDate>
+            <sparkle:version>1791266460</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description>&lt;p&gt;The first Macshot Pro release.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Guided Accessibility setup with PermissionFlow.&lt;/li&gt;&lt;li&gt;Configurable Clear, Regular, and Classic screenshot controls.&lt;/li&gt;&lt;li&gt;Integrated Stitch editing and multi-capture alignment guides.&lt;/li&gt;&lt;li&gt;Faster captures and reliable keyboard commands.&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/dr-baker/macshot/releases/download/v0.1.0/Macshot-Pro.dmg" length="11261735" type="application/octet-stream" sparkle:edSignature="gbb193UUyjhlukpynz5WixlVmMXFuNxX8nb9bu8omH8vR8X64dp3CxQlK/bsE6A3+tQFp3EzID6nw8uMibLUCQ==" />
+        </item>
     </channel>
 </rss>
