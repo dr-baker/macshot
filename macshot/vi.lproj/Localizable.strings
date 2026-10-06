@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "Ghim từ bộ nhớ tạm";
 "Preferences..." = "Tùy chọn...";
 "Check for Updates..." = "Kiểm tra cập nhật...";
-"Quit macshot" = "Thoát macshot";
+"Quit macshot" = "Thoát Macshot Pro";
 "No recent captures" = "Không có ảnh chụp gần đây";
 "Clear History" = "Xóa lịch sử";
 
@@ -210,7 +210,7 @@
 "Copy to clipboard" = "Sao chép vào bộ nhớ tạm";
 
 /* Preferences - General */
-"macshot Preferences" = "Tùy chọn macshot";
+"macshot Preferences" = "Tùy chọn Macshot Pro";
 "General" = "Chung";
 "Tools" = "Công cụ";
 "Recording" = "Quay phim";
@@ -237,13 +237,13 @@
 "Show shortcuts in tooltips" = "Hiển thị phím tắt trong chú giải công cụ";
 "Use window title in saved filename" = "Dùng tiêu đề cửa sổ trong tên tệp";
 "Hide menu bar icon" = "Ẩn biểu tượng thanh menu";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Phím tắt vẫn hoạt động. Để hiện lại biểu tượng, hãy khởi chạy lại macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Phím tắt vẫn hoạt động. Để hiện lại biểu tượng, hãy khởi chạy lại Macshot Pro.";
 "Menu bar icon:" = "Biểu tượng thanh menu:";
 "Default" = "Mặc định";
 "Custom symbol" = "Ký hiệu tùy chỉnh";
 "Enter any SF Symbol name (e.g. camera.fill) or pick a preset. Browse names in Apple's SF Symbols app. Invalid names fall back to the default icon." = "Nhập bất kỳ tên SF Symbol nào (ví dụ: camera.fill) hoặc chọn một cài sẵn. Duyệt tên trong ứng dụng SF Symbols của Apple. Tên không hợp lệ sẽ chuyển về biểu tượng mặc định.";
 "Menu Bar Order" = "Thứ tự thanh menu";
-"Choose the order of capture actions in the macshot menu bar menu." = "Chọn thứ tự các hành động chụp trong menu thanh menu của macshot.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Chọn thứ tự các hành động chụp trong menu thanh menu của Macshot Pro.";
 "Move up" = "Di chuyển lên";
 "Move down" = "Di chuyển xuống";
 "Check for updates automatically" = "Tự động kiểm tra cập nhật";
@@ -371,7 +371,7 @@
 "Video upload requires Google Drive or S3" = "Tải video lên yêu cầu Google Drive hoặc S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Phiên bản %@ (%@)";
 "Made by" = "Được tạo bởi";
 "Licensed under the GPLv3" = "Được cấp phép theo GPLv3";
@@ -384,26 +384,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Sao chép ảnh hoặc văn bản vào bộ nhớ tạm trước, rồi thử lại.";
 "OK" = "OK";
 "Accessibility Access Required" = "Yêu cầu quyền Trợ năng";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot cần quyền Trợ năng để tự động cuộn các ứng dụng khác. Vui lòng cấp quyền trong Cài đặt hệ thống, rồi thử lại.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot cần quyền Trợ năng để chụp cuộn. Vui lòng cấp quyền trong Cài đặt Hệ thống, rồi thử lại.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro cần quyền Trợ năng để tự động cuộn các ứng dụng khác. Vui lòng cấp quyền trong Cài đặt hệ thống, rồi thử lại.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro cần quyền Trợ năng để chụp cuộn. Vui lòng cấp quyền trong Cài đặt Hệ thống, rồi thử lại.";
 "Open Settings" = "Mở Cài đặt";
 "Cancel" = "Hủy";
 "Microphone Access Required" = "Yêu cầu quyền Micro";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot cần quyền micro để ghi âm giọng nói. Mở Cài đặt hệ thống để cấp quyền.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro cần quyền micro để ghi âm giọng nói. Mở Cài đặt hệ thống để cấp quyền.";
 "Upload to Google Drive?" = "Tải lên Google Drive?";
 "Upload to S3?" = "Tải lên S3?";
 "Upload to imgbb.com?" = "Tải lên imgbb.com?";
 "Your screenshot will be uploaded." = "Ảnh chụp của bạn sẽ được tải lên.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Chào mừng đến với macshot";
-"Welcome back to macshot" = "Chào mừng bạn quay lại macshot";
+"Welcome to macshot" = "Chào mừng đến với Macshot Pro";
+"Welcome back to macshot" = "Chào mừng bạn quay lại Macshot Pro";
 "Turn Screen Recording back on" = "Bật lại Ghi màn hình";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Sau một số bản cập nhật, macOS sẽ yêu cầu bạn cho phép macshot lần nữa. Cài đặt và ảnh chụp của bạn vẫn an toàn. Nếu macshot đã có trong danh sách, hãy chọn nó, bấm nút trừ (−) để gỡ bỏ, rồi bấm nút cộng (+) và thêm lại macshot.";
-"macshot needs one permission" = "macshot cần một quyền";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Sau một số bản cập nhật, macOS sẽ yêu cầu bạn cho phép Macshot Pro lần nữa. Cài đặt và ảnh chụp của bạn vẫn an toàn. Nếu Macshot Pro đã có trong danh sách, hãy chọn nó, bấm nút trừ (−) để gỡ bỏ, rồi bấm nút cộng (+) và thêm lại Macshot Pro.";
+"macshot needs one permission" = "Macshot Pro cần một quyền";
 "Screen Recording not yet granted" = "Chưa cấp quyền Quay màn hình";
 "Screen Recording granted!" = "Đã cấp quyền Quay màn hình!";
-"Enable macshot, then try taking a screenshot" = "Bật macshot, rồi thử chụp ảnh màn hình";
+"Enable macshot, then try taking a screenshot" = "Bật Macshot Pro, rồi thử chụp ảnh màn hình";
 "Open Screen Recording Settings" = "Mở Cài đặt Quay màn hình";
 "Continue" = "Tiếp tục";
 
@@ -435,7 +435,7 @@
 "Path copied!" = "Đã sao chép đường dẫn!";
 
 /* Video Editor */
-"macshot Video Editor" = "Trình chỉnh sửa video macshot";
+"macshot Video Editor" = "Trình chỉnh sửa video Macshot Pro";
 "%@ selected" = "%@ đã chọn";
 "Exporting..." = "Đang xuất...";
 "Export failed" = "Xuất thất bại";
@@ -483,8 +483,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Yêu cầu quyền Giám sát đầu vào";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot cần quyền Giám sát đầu vào để làm nổi bật thao tác nhấp chuột hoặc hiển thị phím bấm trong khi ghi. Hãy cấp quyền truy cập trong Cài đặt hệ thống rồi thử lại.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot cần quyền Trợ năng để bám vào từng thành phần giao diện. Vui lòng cấp quyền trong Cài đặt Hệ thống, rồi thử lại.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro cần quyền Giám sát đầu vào để làm nổi bật thao tác nhấp chuột hoặc hiển thị phím bấm trong khi ghi. Hãy cấp quyền truy cập trong Cài đặt hệ thống rồi thử lại.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro cần quyền Trợ năng để bám vào từng thành phần giao diện. Vui lòng cấp quyền trong Cài đặt Hệ thống, rồi thử lại.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Hiển thị phím bấm";
@@ -500,7 +500,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Lớp phủ webcam";
 "Camera Access Required" = "Yêu cầu quyền Camera";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot cần quyền camera để sử dụng lớp phủ webcam. Mở Cài đặt hệ thống để cấp quyền.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro cần quyền camera để sử dụng lớp phủ webcam. Mở Cài đặt hệ thống để cấp quyền.";
 "Webcam" = "Webcam";
 "Bottom Right" = "Dưới phải";
 "Bottom Left" = "Dưới trái";
@@ -521,7 +521,7 @@
 /* New Strings */
 "Settings" = "Cài đặt";
 "Settings..." = "Cài đặt...";
-"macshot Settings" = "Cài đặt macshot";
+"macshot Settings" = "Cài đặt Macshot Pro";
 "Also open in Editor" = "Đồng thời mở trong trình chỉnh sửa";
 "Close editor after copying" = "Đóng trình chỉnh sửa sau khi sao chép";
 "Hide controls" = "Ẩn điều khiển";
@@ -561,7 +561,6 @@
 "Download language packs in System Settings…" = "Tải gói ngôn ngữ trong Cài đặt hệ thống…";
 "Configure S3 in Settings" = "Cấu hình S3 trong Cài đặt";
 "Sign in to Google Drive in Settings" = "Đăng nhập Google Drive trong Cài đặt";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Bản dựng ngoại tuyến: các tích hợp tải lên và lưu trữ đám mây đã bị loại bỏ. Việc kiểm tra cập nhật vẫn có thể kết nối đến máy chủ cập nhật của MacShot. Ảnh chụp màn hình và bản ghi vẫn được lưu cục bộ trừ khi bạn tự chia sẻ hoặc lưu chúng.";
 "Position:" = "Vị trí:";
 "  Position:" = "  Vị trí:";
 "Size:" = "Kích thước:";
@@ -581,7 +580,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Mở video...";
-"Choose a video to open in macshot editor" = "Chọn video để mở trong trình chỉnh sửa macshot";
+"Choose a video to open in macshot editor" = "Chọn video để mở trong trình chỉnh sửa Macshot Pro";
 "Click to add effects" = "Nhấp để thêm hiệu ứng";
 "Add Zoom" = "Thêm thu phóng";
 "Add Censor" = "Thêm che mờ";
@@ -655,7 +654,7 @@
 "Stop the current recording" = "Dừng bản quay hiện tại";
 "Supported URL Scheme Commands" = "Các lệnh URL Scheme được hỗ trợ";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Phần mở rộng tệp sẽ được thêm tự động. Dấu gạch chéo và hai chấm trong {window} sẽ chuyển thành dấu gạch ngang.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Kích hoạt macshot từ Raycast, Alfred, Shortcuts, hoặc bất kỳ công cụ nào mở URL.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Kích hoạt Macshot Pro từ Raycast, Alfred, Shortcuts, hoặc bất kỳ công cụ nào mở URL.";
 "URL scheme info" = "Thông tin URL scheme";
 "Enable macshot:// URL scheme" = "Bật URL scheme macshot://";
 "sec (0 = never)" = "giây (0 = không bao giờ)";
@@ -665,7 +664,7 @@
 "Export Settings…" = "Xuất cài đặt…";
 "Import Settings…" = "Nhập cài đặt…";
 "Reveal Settings File in Finder" = "Hiện tệp cài đặt trong Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Xuất tùy chọn của bạn ra tệp để chuyển sang một máy Mac khác hoặc bản cài đặt mới. Thông tin đăng nhập tải lên, thư mục lưu và lịch sử ảnh chụp màn hình không được bao gồm. Cài đặt được lưu bên trong app container của macshot.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Xuất tùy chọn của bạn ra tệp để chuyển sang một máy Mac khác hoặc bản cài đặt mới. Thông tin đăng nhập tải lên, thư mục lưu và lịch sử ảnh chụp màn hình không được bao gồm. Cài đặt được lưu bên trong app container của Macshot Pro.";
 "Export Settings" = "Xuất cài đặt";
 "Import Settings" = "Nhập cài đặt";
 "Import failed" = "Nhập thất bại";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Khởi động lại ngay";
 "Replace your current settings?" = "Thay thế cài đặt hiện tại của bạn?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Việc nhập sẽ thay thế tùy chọn hiện tại của bạn bằng những tùy chọn trong tệp này. Thư mục lưu, thông tin đăng nhập tải lên và lịch sử ảnh chụp màn hình được giữ lại. Thao tác này không thể hoàn tác.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "Đã áp dụng %d cài đặt. Khởi động lại macshot để áp dụng tất cả thay đổi.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "Đã áp dụng %d cài đặt. Khởi động lại Macshot Pro để áp dụng tất cả thay đổi.";
 "A few large items were too big to include. Everything else was saved." = "Một vài mục lớn quá dung lượng nên không được bao gồm. Mọi thứ còn lại đã được lưu.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Ảnh nền Beautify tùy chỉnh của bạn quá lớn nên không được bao gồm. Mọi thứ còn lại đã được lưu.";
-"This file is not a valid macshot settings file." = "Tệp này không phải là tệp cài đặt macshot hợp lệ.";
+"This file is not a valid macshot settings file." = "Tệp này không phải là tệp cài đặt Macshot Pro hợp lệ.";
 "This settings file contains no settings." = "Tệp cài đặt này không chứa cài đặt nào.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Tệp cài đặt này được tạo bởi một phiên bản macshot mới hơn. Vui lòng cập nhật macshot trước.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Tệp cài đặt này được tạo bởi một phiên bản Macshot Pro mới hơn. Vui lòng cập nhật Macshot Pro trước.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Chụp, dịch và phủ văn bản lên hình ảnh";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Áp dụng thu phóng mặc định cho tất cả";
 "Auto" = "Tự động";
 "Auto Zoom" = "Tự động thu phóng";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Tự động thu phóng cần dữ liệu con trỏ, được macshot ghi lại trong mỗi bản quay mới. Bạn vẫn có thể thêm thu phóng bằng cách nhấp đúp vào làn thu phóng.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Tự động thu phóng cần dữ liệu con trỏ, được Macshot Pro ghi lại trong mỗi bản quay mới. Bạn vẫn có thể thêm thu phóng bằng cách nhấp đúp vào làn thu phóng.";
 "Background blur" = "Làm mờ nền";
 "Background color" = "Màu nền";
 "Background, padding, rounded corners and shadow" = "Nền, đệm, bo góc và bóng";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Thu nhỏ khi thu phóng";
 "Smoothing" = "Làm mượt";
 "Snappy" = "Nhanh nhạy";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Nhận dạng giọng nói đang bị tắt cho macshot trong Cài đặt hệ thống › Quyền riêng tư & Bảo mật.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Nhận dạng giọng nói đang bị tắt cho Macshot Pro trong Cài đặt hệ thống › Quyền riêng tư & Bảo mật.";
 "Speed" = "Tốc độ";
 "Spotlight" = "Đèn chiếu";
 "Square" = "Vuông";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "Không thể đọc âm thanh của bản quay.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Bản quay này đã hiển thị con trỏ trong điểm ảnh nên không thể đổi kiểu. Thu phóng vẫn có thể theo con trỏ.";
 "This recording has no audio to transcribe." = "Bản quay này không có âm thanh để chép lời.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Video này không có dữ liệu con trỏ được ghi lại. Các bản quay bằng macshot được mở trong trình chỉnh sửa cho phép bạn đổi kiểu, làm mượt và đổi kích thước con trỏ sau khi quay.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Video này không có dữ liệu con trỏ được ghi lại. Các bản quay bằng Macshot Pro được mở trong trình chỉnh sửa cho phép bạn đổi kiểu, làm mượt và đổi kích thước con trỏ sau khi quay.";
 "Title" = "Tiêu đề";
 "Transcribing…" = "Đang chép lời…";
 "Transition" = "Chuyển tiếp";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Hãy bật Hiển thị phím bấm trước khi quay. Khi đó macshot sẽ ghi lại phím bấm riêng để bạn có thể tùy chỉnh kiểu tại đây.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Hãy bật camera trước khi quay. macshot ghi camera riêng để bạn có thể di chuyển, đổi kích thước, đổi kiểu hoặc ẩn nó tại đây, và thu nhỏ nó khi thu phóng.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Hãy bật Hiển thị phím bấm trước khi quay. Khi đó Macshot Pro sẽ ghi lại phím bấm riêng để bạn có thể tùy chỉnh kiểu tại đây.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Hãy bật camera trước khi quay. Macshot Pro ghi camera riêng để bạn có thể di chuyển, đổi kích thước, đổi kiểu hoặc ẩn nó tại đây, và thu nhỏ nó khi thu phóng.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Hãy dùng Đặc để che thông tin nhạy cảm: làm mờ và khảm đôi khi có thể bị đảo ngược.";
 "Visibility" = "Hiển thị";
 "Wallpaper" = "Hình nền";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Bản dựng ngoại tuyến: các tích hợp tải lên và lưu trữ đám mây đã bị loại bỏ. Ảnh chụp màn hình và bản ghi vẫn được lưu cục bộ trừ khi bạn tự chia sẻ hoặc lưu chúng.";

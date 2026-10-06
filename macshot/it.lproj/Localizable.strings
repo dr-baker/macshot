@@ -19,7 +19,7 @@
 "Pin from Clipboard" = "Fissa dagli appunti";
 "Preferences..." = "Preferenze...";
 "Check for Updates..." = "Controlla aggiornamenti...";
-"Quit macshot" = "Esci da macshot";
+"Quit macshot" = "Esci da Macshot Pro";
 "No recent captures" = "Nessuna cattura recente";
 "Clear History" = "Cancella cronologia";
 
@@ -192,7 +192,7 @@
 "Copy to clipboard" = "Copia negli appunti";
 
 /* Preferences - General */
-"macshot Preferences" = "Preferenze macshot";
+"macshot Preferences" = "Preferenze Macshot Pro";
 "General" = "Generali";
 "Tools" = "Strumenti";
 "Recording" = "Registrazione";
@@ -219,7 +219,7 @@
 "Show shortcuts in tooltips" = "Mostra le scorciatoie nei suggerimenti";
 "Use window title in saved filename" = "Usa il titolo della finestra nel nome del file";
 "Hide menu bar icon" = "Nascondi icona nella barra dei menu";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Le scorciatoie continuano a funzionare. Per mostrare di nuovo l'icona, riavvia macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Le scorciatoie continuano a funzionare. Per mostrare di nuovo l'icona, riavvia Macshot Pro.";
 "Check for updates automatically" = "Controlla aggiornamenti automaticamente";
 "Check for beta updates" = "Controlla aggiornamenti beta";
 "Thumbnail" = "Miniatura";
@@ -230,7 +230,7 @@
 "Replace (show only latest)" = "Sostituisci (mostra solo l'ultima)";
 "  Position:" = "  Posizione:";
 "Menu Bar Order" = "Ordine barra dei menu";
-"Choose the order of capture actions in the macshot menu bar menu." = "Scegli l'ordine delle azioni di cattura nel menu della barra dei menu di macshot.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Scegli l'ordine delle azioni di cattura nel menu della barra dei menu di Macshot Pro.";
 "Move up" = "Sposta su";
 "Move down" = "Sposta giù";
 "Output" = "Output";
@@ -355,7 +355,7 @@
 "Video upload requires Google Drive or S3" = "Il caricamento video richiede Google Drive o S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Versione %@ (%@)";
 "Made by" = "Creato da";
 "Licensed under the GPLv3" = "Licenza GPLv3";
@@ -368,26 +368,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Copia prima un'immagine o un testo negli appunti, poi riprova.";
 "OK" = "OK";
 "Accessibility Access Required" = "Accesso accessibilità richiesto";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot ha bisogno del permesso Accessibilità per scorrere automaticamente le altre app. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot ha bisogno del permesso Accessibilità per la cattura a scorrimento. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro ha bisogno del permesso Accessibilità per scorrere automaticamente le altre app. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro ha bisogno del permesso Accessibilità per la cattura a scorrimento. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
 "Open Settings" = "Apri Impostazioni";
 "Cancel" = "Annulla";
 "Microphone Access Required" = "Accesso al microfono richiesto";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot ha bisogno del permesso microfono per registrare l'audio vocale. Apri le Impostazioni di Sistema per concedere l'accesso.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro ha bisogno del permesso microfono per registrare l'audio vocale. Apri le Impostazioni di Sistema per concedere l'accesso.";
 "Upload to Google Drive?" = "Caricare su Google Drive?";
 "Upload to S3?" = "Caricare su S3?";
 "Upload to imgbb.com?" = "Caricare su imgbb.com?";
 "Your screenshot will be uploaded." = "Il tuo screenshot verrà caricato.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Benvenuto in macshot";
-"Welcome back to macshot" = "Bentornato in macshot";
+"Welcome to macshot" = "Benvenuto in Macshot Pro";
+"Welcome back to macshot" = "Bentornato in Macshot Pro";
 "Turn Screen Recording back on" = "Riattiva la registrazione dello schermo";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Dopo alcuni aggiornamenti, macOS chiede di consentire di nuovo macshot. Le tue impostazioni e le tue catture sono al sicuro. Se macshot è già nell'elenco, selezionalo, fai clic sul pulsante meno (−) per rimuoverlo, poi fai clic sul pulsante più (+) e aggiungi di nuovo macshot.";
-"macshot needs one permission" = "macshot ha bisogno di un permesso";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Dopo alcuni aggiornamenti, macOS chiede di consentire di nuovo Macshot Pro. Le tue impostazioni e le tue catture sono al sicuro. Se Macshot Pro è già nell'elenco, selezionalo, fai clic sul pulsante meno (−) per rimuoverlo, poi fai clic sul pulsante più (+) e aggiungi di nuovo Macshot Pro.";
+"macshot needs one permission" = "Macshot Pro ha bisogno di un permesso";
 "Screen Recording not yet granted" = "Registrazione schermo non ancora concessa";
 "Screen Recording granted!" = "Registrazione schermo concessa!";
-"Enable macshot, then try taking a screenshot" = "Abilita macshot, poi prova a fare uno screenshot";
+"Enable macshot, then try taking a screenshot" = "Abilita Macshot Pro, poi prova a fare uno screenshot";
 "Open Screen Recording Settings" = "Apri impostazioni Registrazione Schermo";
 "Continue" = "Continua";
 
@@ -418,7 +418,7 @@
 "Path copied!" = "Percorso copiato!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot Editor Video";
+"macshot Video Editor" = "Macshot Pro Editor Video";
 "%@ selected" = "%@ selezionato";
 "Exporting..." = "Esportazione...";
 "Export failed" = "Esportazione fallita";
@@ -464,8 +464,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Monitoraggio input richiesto";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot ha bisogno del permesso Monitoraggio input per evidenziare i clic del mouse o mostrare i tasti premuti durante la registrazione. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot ha bisogno del permesso Accessibilità per agganciarsi ai singoli elementi dell'interfaccia. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro ha bisogno del permesso Monitoraggio input per evidenziare i clic del mouse o mostrare i tasti premuti durante la registrazione. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro ha bisogno del permesso Accessibilità per agganciarsi ai singoli elementi dell'interfaccia. Concedi l'accesso nelle Impostazioni di Sistema, poi riprova.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Mostra tasti premuti";
@@ -481,7 +481,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Sovrapposizione webcam";
 "Camera Access Required" = "Accesso alla fotocamera richiesto";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot ha bisogno del permesso fotocamera per la sovrapposizione webcam. Apri le Impostazioni di Sistema per concedere l'accesso.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro ha bisogno del permesso fotocamera per la sovrapposizione webcam. Apri le Impostazioni di Sistema per concedere l'accesso.";
 "Webcam" = "Webcam";
 "Bottom Right" = "In basso a destra";
 "Bottom Left" = "In basso a sinistra";
@@ -501,9 +501,8 @@
 
 /* New strings */
 "Settings" = "Impostazioni";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Versione offline: le integrazioni di caricamento e archiviazione cloud sono state rimosse. Il controllo degli aggiornamenti potrebbe ancora connettersi al server di aggiornamento di MacShot. Gli screenshot e le registrazioni restano locali a meno che tu non li condivida o li salvi personalmente.";
 "Settings..." = "Impostazioni...";
-"macshot Settings" = "Impostazioni macshot";
+"macshot Settings" = "Impostazioni Macshot Pro";
 "Also open in Editor" = "Apri anche nell'editor";
 "Close editor after copying" = "Chiudi l'editor dopo la copia";
 "Hide controls" = "Nascondi controlli";
@@ -561,7 +560,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Apri video...";
-"Choose a video to open in macshot editor" = "Scegli un video da aprire nell'editor di macshot";
+"Choose a video to open in macshot editor" = "Scegli un video da aprire nell'editor di Macshot Pro";
 "Click to add effects" = "Clicca per aggiungere effetti";
 "Add Zoom" = "Aggiungi Zoom";
 "Add Censor" = "Aggiungi Censura";
@@ -636,7 +635,7 @@
 "Stop the current recording" = "Interrompi la registrazione corrente";
 "Supported URL Scheme Commands" = "Comandi URL Scheme supportati";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "L'estensione del file viene aggiunta automaticamente. Barre e due punti in {window} diventano trattini.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Attiva macshot da Raycast, Alfred, Shortcuts o qualsiasi strumento che apre URL.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Attiva Macshot Pro da Raycast, Alfred, Shortcuts o qualsiasi strumento che apre URL.";
 "URL scheme info" = "Info URL scheme";
 "sec (0 = never)" = "sec (0 = mai)";
 
@@ -648,7 +647,7 @@
 "Export Settings…" = "Esporta impostazioni…";
 "Import Settings…" = "Importa impostazioni…";
 "Reveal Settings File in Finder" = "Mostra il file delle impostazioni nel Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Esporta le tue preferenze in un file per trasferirle su un altro Mac o su un'installazione pulita. Le credenziali di caricamento, la cartella di salvataggio e la cronologia degli screenshot non sono incluse. Le impostazioni sono archiviate nel container dell'app di macshot.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Esporta le tue preferenze in un file per trasferirle su un altro Mac o su un'installazione pulita. Le credenziali di caricamento, la cartella di salvataggio e la cronologia degli screenshot non sono incluse. Le impostazioni sono archiviate nel container dell'app di Macshot Pro.";
 "Export Settings" = "Esporta impostazioni";
 "Import Settings" = "Importa impostazioni";
 "Import failed" = "Importazione non riuscita";
@@ -659,12 +658,12 @@
 "Relaunch Now" = "Riavvia ora";
 "Replace your current settings?" = "Sostituire le impostazioni attuali?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "L'importazione sostituirà le preferenze attuali con quelle contenute in questo file. La cartella di salvataggio, le credenziali di caricamento e la cronologia degli screenshot vengono mantenute. Questa operazione non può essere annullata.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d impostazioni sono state applicate. Riavvia macshot per applicare tutte le modifiche.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d impostazioni sono state applicate. Riavvia Macshot Pro per applicare tutte le modifiche.";
 "A few large items were too big to include. Everything else was saved." = "Alcuni elementi di grandi dimensioni erano troppo grandi per essere inclusi. Tutto il resto è stato salvato.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "L'immagine di sfondo personalizzata di Beautify era troppo grande per essere inclusa. Tutto il resto è stato salvato.";
-"This file is not a valid macshot settings file." = "Questo file non è un file di impostazioni di macshot valido.";
+"This file is not a valid macshot settings file." = "Questo file non è un file di impostazioni di Macshot Pro valido.";
 "This settings file contains no settings." = "Questo file di impostazioni non contiene alcuna impostazione.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Questo file di impostazioni è stato creato da una versione più recente di macshot. Aggiorna prima macshot.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Questo file di impostazioni è stato creato da una versione più recente di Macshot Pro. Aggiorna prima Macshot Pro.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Acquisisci, traduci e sovrapponi il testo sull'immagine";
@@ -709,7 +708,7 @@
 "Apply Default Zoom to All" = "Applica zoom predefinito a tutti";
 "Auto" = "Auto";
 "Auto Zoom" = "Zoom automatico";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Lo zoom automatico richiede i dati del puntatore, che macshot registra a ogni nuova registrazione. Puoi comunque aggiungere zoom facendo doppio clic sulla traccia dello zoom.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Lo zoom automatico richiede i dati del puntatore, che Macshot Pro registra a ogni nuova registrazione. Puoi comunque aggiungere zoom facendo doppio clic sulla traccia dello zoom.";
 "Background blur" = "Sfocatura sfondo";
 "Background color" = "Colore sfondo";
 "Background, padding, rounded corners and shadow" = "Sfondo, margine, angoli arrotondati e ombra";
@@ -810,7 +809,7 @@
 "Shrink during zooms" = "Rimpicciolisci durante gli zoom";
 "Smoothing" = "Smussatura";
 "Snappy" = "Scattante";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Il riconoscimento vocale è disattivato per macshot in Impostazioni di Sistema › Privacy e sicurezza.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Il riconoscimento vocale è disattivato per Macshot Pro in Impostazioni di Sistema › Privacy e sicurezza.";
 "Speed" = "Velocità";
 "Spotlight" = "Riflettore";
 "Square" = "Quadrato";
@@ -820,12 +819,12 @@
 "The recording's audio could not be read." = "Impossibile leggere l'audio della registrazione.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Questa registrazione mostra già il puntatore nei suoi pixel, quindi non è possibile modificarne lo stile. Gli zoom possono comunque seguirlo.";
 "This recording has no audio to transcribe." = "Questa registrazione non ha audio da trascrivere.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Questo video non contiene dati del puntatore registrati. Le registrazioni di macshot che si aprono nell'editor ti permettono di modificare lo stile, smussare e ridimensionare il puntatore dopo la registrazione.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Questo video non contiene dati del puntatore registrati. Le registrazioni di Macshot Pro che si aprono nell'editor ti permettono di modificare lo stile, smussare e ridimensionare il puntatore dopo la registrazione.";
 "Title" = "Titolo";
 "Transcribing…" = "Trascrizione…";
 "Transition" = "Transizione";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Attiva Mostra tasti premuti prima di registrare. macshot li registrerà separatamente così potrai personalizzarne lo stile qui.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Attiva la fotocamera prima di registrare. macshot la registra separatamente così potrai spostarla, ridimensionarla, modificarne lo stile o nasconderla qui, e rimpicciolirla durante gli zoom.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Attiva Mostra tasti premuti prima di registrare. Macshot Pro li registrerà separatamente così potrai personalizzarne lo stile qui.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Attiva la fotocamera prima di registrare. Macshot Pro la registra separatamente così potrai spostarla, ridimensionarla, modificarne lo stile o nasconderla qui, e rimpicciolirla durante gli zoom.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Usa Solido per nascondere le informazioni sensibili: sfocatura e pixelizzazione a volte possono essere invertite.";
 "Visibility" = "Visibilità";
 "Wallpaper" = "Sfondo scrivania";
@@ -843,7 +842,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -898,7 +897,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1035,3 +1034,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Versione offline: le integrazioni di caricamento e archiviazione cloud sono state rimosse. Gli screenshot e le registrazioni restano locali a meno che tu non li condivida o li salvi personalmente.";

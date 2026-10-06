@@ -223,16 +223,16 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         sep.translatesAutoresizingMaskIntoConstraints = false
 
         // Footer labels
-        let madeBy = NSTextField(labelWithString: "\(L("Made by")) sw33tLie")
+        let madeBy = NSTextField(labelWithString: "Built on Macshot by sw33tLie")
         madeBy.font = NSFont.systemFont(ofSize: 11)
         madeBy.textColor = .secondaryLabelColor
         madeBy.translatesAutoresizingMaskIntoConstraints = false
 
-        let linkBtn = NSButton(title: "github.com/sw33tLie/macshot", target: self, action: #selector(openGitHub))
+        let linkBtn = NSButton(title: "github.com/dr-baker/macshot", target: self, action: #selector(openGitHub))
         linkBtn.bezelStyle = .inline
         linkBtn.isBordered = false
         linkBtn.font = NSFont.systemFont(ofSize: 11)
-        linkBtn.attributedTitle = NSAttributedString(string: "github.com/sw33tLie/macshot", attributes: [
+        linkBtn.attributedTitle = NSAttributedString(string: "github.com/dr-baker/macshot", attributes: [
             .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: NSColor.linkColor,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
@@ -516,14 +516,14 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.addArrangedSubview(indented(urlSchemeRow))
         stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
 
-        #if !LOCAL_DEV
-        autoUpdateCheckbox = SettingsAccentStyle.checkbox(title: L("Check for updates automatically"), target: self, action: #selector(autoUpdateChanged(_:)))
-        stack.addArrangedSubview(indented(autoUpdateCheckbox))
-        stack.setCustomSpacing(4, after: stack.arrangedSubviews.last!)
+        if BuildVariant.supportsUpdates {
+            autoUpdateCheckbox = SettingsAccentStyle.checkbox(title: L("Check for updates automatically"), target: self, action: #selector(autoUpdateChanged(_:)))
+            stack.addArrangedSubview(indented(autoUpdateCheckbox))
+            stack.setCustomSpacing(4, after: stack.arrangedSubviews.last!)
 
-        betaUpdateCheckbox = SettingsAccentStyle.checkbox(title: L("Check for beta updates"), target: self, action: #selector(betaUpdateChanged(_:)))
-        stack.addArrangedSubview(indented(betaUpdateCheckbox))
-        #endif
+            betaUpdateCheckbox = SettingsAccentStyle.checkbox(title: L("Check for beta updates"), target: self, action: #selector(betaUpdateChanged(_:)))
+            stack.addArrangedSubview(indented(betaUpdateCheckbox))
+        }
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
 
         // ── Settings Backup ──────────────────────────────────
@@ -735,7 +735,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
     @objc private func revealSettingsFileClicked(_ sender: NSButton) {
         let prefsDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Preferences", isDirectory: true)
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.sw33tlie.macshot.macshot"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.drbaker.macshot.pro"
         let plist = prefsDir.appendingPathComponent("\(bundleID).plist")
         if FileManager.default.fileExists(atPath: plist.path) {
             NSWorkspace.shared.activateFileViewerSelecting([plist])
@@ -2202,7 +2202,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.setCustomSpacing(20, after: desc)
 
         #if OFFLINE
-        let offlineNote = NSTextField(wrappingLabelWithString: L("Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself."))
+        let offlineNote = NSTextField(wrappingLabelWithString: L("Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself."))
         offlineNote.font = NSFont.systemFont(ofSize: 12)
         offlineNote.textColor = .secondaryLabelColor
         offlineNote.alignment = .center
@@ -2210,10 +2210,15 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         stack.setCustomSpacing(20, after: offlineNote)
         #endif
 
-        // License
-        let license = NSTextField(labelWithString: L("Licensed under the GPLv3"))
-        license.font = NSFont.systemFont(ofSize: 11)
-        license.textColor = .tertiaryLabelColor
+        let credit = NSTextField(wrappingLabelWithString: "Original Macshot by sw33tLie and contributors.\nFork maintained by Daniel Baker.")
+        credit.font = .systemFont(ofSize: 11)
+        credit.textColor = .secondaryLabelColor
+        credit.alignment = .center
+        stack.addArrangedSubview(credit)
+
+        let license = NSButton(title: "GPLv3 · No warranty", target: self, action: #selector(openLicense))
+        license.bezelStyle = .inline
+        license.font = .systemFont(ofSize: 11)
         stack.addArrangedSubview(license)
         stack.setCustomSpacing(20, after: license)
 
@@ -2238,7 +2243,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
                 var lines: [String] = []
                 let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
                 let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-                lines.append("macshot \(version) (\(build))")
+                lines.append("\(BuildVariant.displayName) \(version) (\(build))")
                 lines.append("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
                 lines.append("")
                 lines.append("=== NSScreen Info ===")
@@ -2703,12 +2708,12 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         recordingFilenameTemplateField.stringValue = UserDefaults.standard.string(forKey: FilenameFormatter.recordingUserDefaultsKey) ?? FilenameFormatter.defaultRecordingTemplate
         updateRecordingFilenamePreview()
 
-        #if !LOCAL_DEV
-        let autoUpdate = UserDefaults.standard.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? true
-        autoUpdateCheckbox.state = autoUpdate ? .on : .off
+        if BuildVariant.supportsUpdates {
+            let autoUpdate = UserDefaults.standard.object(forKey: "SUEnableAutomaticChecks") as? Bool ?? true
+            autoUpdateCheckbox.state = autoUpdate ? .on : .off
 
-        betaUpdateCheckbox.state = UserDefaults.standard.bool(forKey: "betaUpdatesEnabled") ? .on : .off
-        #endif
+            betaUpdateCheckbox.state = UserDefaults.standard.bool(forKey: "betaUpdatesEnabled") ? .on : .off
+        }
 
         accentColorWell.color = ToolbarLayout.accentColor
         bgColorWell.color = ToolbarLayout.bgColor
@@ -2904,7 +2909,12 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         LanguageManager.shared.currentLanguage = languages[idx].code
     }
     @objc private func openGitHub() {
-        if let url = URL(string: "https://github.com/sw33tLie/macshot") { NSWorkspace.shared.open(url) }
+        NSWorkspace.shared.open(BuildVariant.repositoryURL)
+    }
+
+    @objc private func openLicense() {
+        guard let url = Bundle.main.url(forResource: "LICENSE", withExtension: nil) else { return }
+        NSWorkspace.shared.open(url)
     }
     @objc private func imageFormatChanged(_ sender: NSPopUpButton) {
         guard let raw = sender.selectedItem?.representedObject as? String,

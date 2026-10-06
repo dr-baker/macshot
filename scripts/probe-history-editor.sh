@@ -37,7 +37,7 @@ xcodebuild -project "$probe_directory/macshot.xcodeproj" -scheme macshot -config
   PRODUCT_BUNDLE_IDENTIFIER=com.macshot.history-editor-probe \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) OFFLINE' \
   build > "$probe_directory/build.log" 2>&1
-probe_bundle="$probe_directory/build/Build/Products/Release/macshot.app"
+probe_bundle="$probe_directory/build/Build/Products/Release/Macshot Pro.app"
 /usr/libexec/PlistBuddy -c "Add :HistoryProbeRun string $(basename "$probe_directory")" "$probe_bundle/Contents/Info.plist"
 # Sign after the probe-only Info.plist change. File panels and scoped access
 # need the same sandbox entitlements as the shipping application.

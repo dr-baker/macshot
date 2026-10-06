@@ -18,13 +18,28 @@
 		CC0000082F61B60100B71643 /* WebP in Frameworks */ = {isa = PBXBuildFile; productRef = CC00000D2F61B60100B71643 /* WebP */; };
 		CC0000092F61B60100B71643 /* PermissionFlow in Frameworks */ = {isa = PBXBuildFile; productRef = CC00000E2F61B60100B71643 /* PermissionFlow */; };
 		CC00000B2F61B60100B71643 /* PermissionFlow-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BB0000072F61B60100B71643 /* PermissionFlow-LICENSE */; };
+		DE0000012F61B60100B71643 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000012F61B60100B71643 /* LICENSE */; };
+		DF0000012F61B60100B71643 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000012F61B60100B71643 /* LICENSE */; };
+		DE0000022F61B60100B71643 /* NOTICE.md in Resources */ = {isa = PBXBuildFile; fileRef = DD0000022F61B60100B71643 /* NOTICE.md */; };
+		DF0000022F61B60100B71643 /* NOTICE.md in Resources */ = {isa = PBXBuildFile; fileRef = DD0000022F61B60100B71643 /* NOTICE.md */; };
+		DE0000032F61B60100B71643 /* Sparkle-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000032F61B60100B71643 /* Sparkle-LICENSE */; };
+		DF0000032F61B60100B71643 /* Sparkle-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000032F61B60100B71643 /* Sparkle-LICENSE */; };
+		DE0000042F61B60100B71643 /* Swift-WebP-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000042F61B60100B71643 /* Swift-WebP-LICENSE */; };
+		DF0000042F61B60100B71643 /* Swift-WebP-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000042F61B60100B71643 /* Swift-WebP-LICENSE */; };
+		DE0000052F61B60100B71643 /* libwebp-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000052F61B60100B71643 /* libwebp-LICENSE */; };
+		DF0000052F61B60100B71643 /* libwebp-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = DD0000052F61B60100B71643 /* libwebp-LICENSE */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		2F4EB1222F61B60100B71643 /* macshot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = macshot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F4EB1222F61B60100B71643 /* Macshot Pro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Macshot Pro.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAA00012F00000100AA0001 /* macshotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = macshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000072F61B60100B71643 /* PermissionFlow-LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThirdPartyLicenses/PermissionFlow-LICENSE"; sourceTree = SOURCE_ROOT; };
-		CC0000022F61B60100B71643 /* macshot Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "macshot Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CC0000022F61B60100B71643 /* Macshot Pro Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Macshot Pro Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD0000012F61B60100B71643 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "LICENSE"; sourceTree = SOURCE_ROOT; };
+		DD0000022F61B60100B71643 /* NOTICE.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = "NOTICE.md"; sourceTree = SOURCE_ROOT; };
+		DD0000032F61B60100B71643 /* Sparkle-LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThirdPartyLicenses/Sparkle-LICENSE"; sourceTree = SOURCE_ROOT; };
+		DD0000042F61B60100B71643 /* Swift-WebP-LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThirdPartyLicenses/Swift-WebP-LICENSE"; sourceTree = SOURCE_ROOT; };
+		DD0000052F61B60100B71643 /* libwebp-LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThirdPartyLicenses/libwebp-LICENSE"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -109,6 +124,11 @@
 			children = (
 				2F4EB1242F61B60100B71643 /* macshot */,
 				2FAA00022F00000100AA0001 /* macshotTests */,
+				DD0000012F61B60100B71643 /* LICENSE */,
+				DD0000022F61B60100B71643 /* NOTICE.md */,
+				DD0000032F61B60100B71643 /* Sparkle-LICENSE */,
+				DD0000042F61B60100B71643 /* Swift-WebP-LICENSE */,
+				DD0000052F61B60100B71643 /* libwebp-LICENSE */,
 				BB0000072F61B60100B71643 /* PermissionFlow-LICENSE */,
 				2F4EB1232F61B60100B71643 /* Products */,
 			);
@@ -117,9 +137,9 @@
 		2F4EB1232F61B60100B71643 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2F4EB1222F61B60100B71643 /* macshot.app */,
+				2F4EB1222F61B60100B71643 /* Macshot Pro.app */,
 				2FAA00012F00000100AA0001 /* macshotTests.xctest */,
-				CC0000022F61B60100B71643 /* macshot Dev.app */,
+				CC0000022F61B60100B71643 /* Macshot Pro Dev.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,7 +169,7 @@
 				BB0000032F61B60100B71643 /* PermissionFlow */,
 			);
 			productName = macshot;
-			productReference = 2F4EB1222F61B60100B71643 /* macshot.app */;
+			productReference = 2F4EB1222F61B60100B71643 /* Macshot Pro.app */;
 			productType = "com.apple.product-type.application";
 		};
 		2FAA00042F00000100AA0001 /* macshotTests */ = {
@@ -200,7 +220,7 @@
 				CC00000E2F61B60100B71643 /* PermissionFlow */,
 			);
 			productName = "macshot Dev";
-			productReference = CC0000022F61B60100B71643 /* macshot Dev.app */;
+			productReference = CC0000022F61B60100B71643 /* Macshot Pro Dev.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -294,6 +314,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DE0000012F61B60100B71643 /* LICENSE in Resources */,
+				DE0000022F61B60100B71643 /* NOTICE.md in Resources */,
+				DE0000032F61B60100B71643 /* Sparkle-LICENSE in Resources */,
+				DE0000042F61B60100B71643 /* Swift-WebP-LICENSE in Resources */,
+				DE0000052F61B60100B71643 /* libwebp-LICENSE in Resources */,
 				BB0000062F61B60100B71643 /* PermissionFlow-LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -309,6 +334,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DF0000012F61B60100B71643 /* LICENSE in Resources */,
+				DF0000022F61B60100B71643 /* NOTICE.md in Resources */,
+				DF0000032F61B60100B71643 /* Sparkle-LICENSE in Resources */,
+				DF0000042F61B60100B71643 /* Swift-WebP-LICENSE in Resources */,
+				DF0000052F61B60100B71643 /* libwebp-LICENSE in Resources */,
 				CC00000B2F61B60100B71643 /* PermissionFlow-LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -467,12 +497,14 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 3.5.2;
-				DEVELOPMENT_TEAM = ZPSG2DNYFC;
+				DEVELOPMENT_TEAM = 45W5CFCVQF;
 				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = macshot/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(MACSHOT_PRODUCT_NAME)";
+				INFOPLIST_KEY_CFBundleName = "$(MACSHOT_PRODUCT_NAME)";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Original Macshot by sw33tLie and contributors. Fork modifications © 2026 Daniel Richard Baker. GPLv3.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -484,8 +516,10 @@
 					"-weak_framework",
 					ScreenCaptureKit,
 				);
-				MACSHOT_PRODUCT_NAME = "$(TARGET_NAME)";
-				MACSHOT_BUNDLE_IDENTIFIER = com.sw33tlie.macshot.macshot;
+				MACSHOT_PRODUCT_NAME = "Macshot Pro";
+				MACSHOT_UPDATE_FEED_URL = "https://raw.githubusercontent.com/dr-baker/macshot/main/appcast.xml";
+				MACSHOT_BUNDLE_IDENTIFIER = com.drbaker.macshot.pro;
+				PRODUCT_MODULE_NAME = macshot;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MACSHOT_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(MACSHOT_PRODUCT_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -511,8 +545,10 @@
 				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = macshot/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(MACSHOT_PRODUCT_NAME)";
+				INFOPLIST_KEY_CFBundleName = "$(MACSHOT_PRODUCT_NAME)";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Original Macshot by sw33tLie and contributors. Fork modifications © 2026 Daniel Richard Baker. GPLv3.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -524,8 +560,10 @@
 					"-weak_framework",
 					ScreenCaptureKit,
 				);
-				MACSHOT_PRODUCT_NAME = "$(TARGET_NAME)";
-				MACSHOT_BUNDLE_IDENTIFIER = com.sw33tlie.macshot.macshot;
+				MACSHOT_PRODUCT_NAME = "Macshot Pro";
+				MACSHOT_UPDATE_FEED_URL = "https://raw.githubusercontent.com/dr-baker/macshot/main/appcast.xml";
+				MACSHOT_BUNDLE_IDENTIFIER = com.drbaker.macshot.pro;
+				PRODUCT_MODULE_NAME = macshot;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MACSHOT_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(MACSHOT_PRODUCT_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -619,10 +657,10 @@
 				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = macshot/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "macshot Dev";
-				INFOPLIST_KEY_CFBundleName = "macshot Dev";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(MACSHOT_PRODUCT_NAME)";
+				INFOPLIST_KEY_CFBundleName = "$(MACSHOT_PRODUCT_NAME)";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Original Macshot by sw33tLie and contributors. Fork modifications © 2026 Daniel Richard Baker. GPLv3.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -635,7 +673,8 @@
 					"-weak_framework",
 					ScreenCaptureKit,
 				);
-				MACSHOT_PRODUCT_NAME = "macshot Dev";
+				MACSHOT_PRODUCT_NAME = "Macshot Pro Dev";
+				MACSHOT_UPDATE_FEED_URL = "https://raw.githubusercontent.com/dr-baker/macshot/main/appcast.xml";
 				MACSHOT_BUNDLE_IDENTIFIER = com.drbaker.macshot.dev;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MACSHOT_BUNDLE_IDENTIFIER)";
 				PRODUCT_MODULE_NAME = macshotDev;
@@ -664,10 +703,10 @@
 				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = macshot/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "macshot Dev";
-				INFOPLIST_KEY_CFBundleName = "macshot Dev";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(MACSHOT_PRODUCT_NAME)";
+				INFOPLIST_KEY_CFBundleName = "$(MACSHOT_PRODUCT_NAME)";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Original Macshot by sw33tLie and contributors. Fork modifications © 2026 Daniel Richard Baker. GPLv3.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -680,7 +719,8 @@
 					"-weak_framework",
 					ScreenCaptureKit,
 				);
-				MACSHOT_PRODUCT_NAME = "macshot Dev";
+				MACSHOT_PRODUCT_NAME = "Macshot Pro Dev";
+				MACSHOT_UPDATE_FEED_URL = "https://raw.githubusercontent.com/dr-baker/macshot/main/appcast.xml";
 				MACSHOT_BUNDLE_IDENTIFIER = com.drbaker.macshot.dev;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MACSHOT_BUNDLE_IDENTIFIER)";
 				PRODUCT_MODULE_NAME = macshotDev;

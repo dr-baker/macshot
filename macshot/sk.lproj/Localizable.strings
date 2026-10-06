@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "Pripnúť zo schránky";
 "Preferences..." = "Predvoľby...";
 "Check for Updates..." = "Skontrolovať aktualizácie...";
-"Quit macshot" = "Ukončiť macshot";
+"Quit macshot" = "Ukončiť Macshot Pro";
 "No recent captures" = "Žiadne posledné zachytenia";
 "Clear History" = "Vymazať históriu";
 
@@ -139,7 +139,7 @@
 "Move up" = "Presunúť nahor";
 "Move down" = "Presunúť nadol";
 "Menu Bar Order" = "Poradie v lište menu";
-"Choose the order of capture actions in the macshot menu bar menu." = "Vyberte poradie akcií snímania v menu macshot v lište menu.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Vyberte poradie akcií snímania v menu Macshot Pro v lište menu.";
 
 /* Toolbar - Recording */
 "Start Recording" = "Spustiť nahrávanie";
@@ -213,7 +213,7 @@
 "Copy to clipboard" = "Kopírovať do schránky";
 
 /* Preferences - General */
-"macshot Preferences" = "Predvoľby macshot";
+"macshot Preferences" = "Predvoľby Macshot Pro";
 "General" = "Všeobecné";
 "Tools" = "Nástroje";
 "Recording" = "Nahrávanie";
@@ -238,7 +238,7 @@
 "Hide capture instructions" = "Skryť pokyny pri snímaní";
 "Use window title in saved filename" = "Použiť názov okna v názve súboru";
 "Hide menu bar icon" = "Skryť ikonu v lište menu";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Klávesové skratky stále fungujú. Pre opätovné zobrazenie ikony znovu spusťte macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Klávesové skratky stále fungujú. Pre opätovné zobrazenie ikony znovu spusťte Macshot Pro.";
 "Check for updates automatically" = "Automaticky kontrolovať aktualizácie";
 "Check for beta updates" = "Kontrolovať beta aktualizácie";
 "Thumbnail" = "Náhľad";
@@ -372,7 +372,7 @@
 "Video upload requires Google Drive or S3" = "Nahrávanie videa vyžaduje Google Drive alebo S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Verzia %@ (%@)";
 "Made by" = "Vytvoril";
 "Licensed under the GPLv3" = "Licencované pod GPLv3";
@@ -385,26 +385,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Najprv skopírujte obrázok alebo text do schránky a skúste to znova.";
 "OK" = "OK";
 "Accessibility Access Required" = "Vyžaduje sa prístup k prístupnosti";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot potrebuje povolenie prístupnosti na automatické posúvanie v iných aplikáciách. Udeľte prístup v Nastaveniach systému a skúste to znova.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot potrebuje povolenie Prístupnosti pre snímanie posúvaním. Udeľte prístup v Nastaveniach systému a skúste to znova.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro potrebuje povolenie prístupnosti na automatické posúvanie v iných aplikáciách. Udeľte prístup v Nastaveniach systému a skúste to znova.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro potrebuje povolenie Prístupnosti pre snímanie posúvaním. Udeľte prístup v Nastaveniach systému a skúste to znova.";
 "Open Settings" = "Otvoriť nastavenia";
 "Cancel" = "Zrušiť";
 "Microphone Access Required" = "Vyžaduje sa prístup k mikrofónu";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot potrebuje povolenie mikrofónu na nahrávanie hlasového zvuku. Otvorte Nastavenia systému pre udelenie prístupu.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro potrebuje povolenie mikrofónu na nahrávanie hlasového zvuku. Otvorte Nastavenia systému pre udelenie prístupu.";
 "Upload to Google Drive?" = "Nahrať na Google Drive?";
 "Upload to S3?" = "Nahrať na S3?";
 "Upload to imgbb.com?" = "Nahrať na imgbb.com?";
 "Your screenshot will be uploaded." = "Vaša snímka obrazovky bude nahraná.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Vitajte v macshot";
-"Welcome back to macshot" = "Vitajte späť v macshote";
+"Welcome to macshot" = "Vitajte v Macshot Pro";
+"Welcome back to macshot" = "Vitajte späť v aplikácii Macshot Pro";
 "Turn Screen Recording back on" = "Znova zapnite nahrávanie obrazovky";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Po niektorých aktualizáciách vás macOS požiada, aby ste macshotu znova udelili povolenie. Vaše nastavenia a snímky sú v bezpečí. Ak je macshot už v zozname, vyberte ho, kliknite na tlačidlo mínus (−) a odstráňte ho, potom kliknite na tlačidlo plus (+) a macshot znova pridajte.";
-"macshot needs one permission" = "macshot potrebuje jedno povolenie";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Po niektorých aktualizáciách vás macOS požiada, aby ste aplikácii Macshot Pro znova udelili povolenie. Vaše nastavenia a snímky sú v bezpečí. Ak je Macshot Pro už v zozname, vyberte ho, kliknite na tlačidlo mínus (−) a odstráňte ho, potom kliknite na tlačidlo plus (+) a Macshot Pro znova pridajte.";
+"macshot needs one permission" = "Macshot Pro potrebuje jedno povolenie";
 "Screen Recording not yet granted" = "Nahrávanie obrazovky ešte nie je povolené";
 "Screen Recording granted!" = "Nahrávanie obrazovky povolené!";
-"Enable macshot, then try taking a screenshot" = "Povolte macshot a skúste urobiť snímku obrazovky";
+"Enable macshot, then try taking a screenshot" = "Povolte Macshot Pro a skúste urobiť snímku obrazovky";
 "Open Screen Recording Settings" = "Otvoriť nastavenia nahrávania obrazovky";
 "Continue" = "Pokračovať";
 
@@ -435,7 +435,7 @@
 "Path copied!" = "Cesta skopírovaná!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot Video Editor";
+"macshot Video Editor" = "Macshot Pro Video Editor";
 "%@ selected" = "%@ vybraných";
 "Exporting..." = "Exportovanie...";
 "Export failed" = "Export zlyhal";
@@ -483,8 +483,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Vyžaduje sa monitorovanie vstupu";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot potrebuje povolenie na monitorovanie vstupu na zvýraznenie kliknutí myšou alebo zobrazenie stlačení klávesov počas nahrávania. Udeľte prístup v Systémových nastaveniach a skúste to znova.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot potrebuje povolenie Prístupnosti pre prichytávanie k jednotlivým prvkom rozhrania. Udeľte prístup v Nastaveniach systému a skúste to znova.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro potrebuje povolenie na monitorovanie vstupu na zvýraznenie kliknutí myšou alebo zobrazenie stlačení klávesov počas nahrávania. Udeľte prístup v Systémových nastaveniach a skúste to znova.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro potrebuje povolenie Prístupnosti pre prichytávanie k jednotlivým prvkom rozhrania. Udeľte prístup v Nastaveniach systému a skúste to znova.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Zobraziť stlačenia kláves";
@@ -500,7 +500,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Prekrytie webkamery";
 "Camera Access Required" = "Vyžaduje sa prístup ku kamere";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot potrebuje povolenie kamery pre prekrytie webkamery. Otvorte Nastavenia systému pre udelenie prístupu.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro potrebuje povolenie kamery pre prekrytie webkamery. Otvorte Nastavenia systému pre udelenie prístupu.";
 "Webcam" = "Webkamera";
 "Bottom Right" = "Vpravo dole";
 "Bottom Left" = "Vľavo dole";
@@ -521,7 +521,7 @@
 /* New Strings */
 "Settings..." = "Nastavenia...";
 "Settings" = "Nastavenia";
-"macshot Settings" = "Nastavenia macshot";
+"macshot Settings" = "Nastavenia Macshot Pro";
 "Also open in Editor" = "Otvoriť aj v editore";
 "Close editor after copying" = "Zavrieť editor po skopírovaní";
 "Hide controls" = "Skryť ovládacie prvky";
@@ -561,7 +561,6 @@
 "Download language packs in System Settings…" = "Stiahnite jazykové balíčky v Nastaveniach systému…";
 "Configure S3 in Settings" = "Nastavte S3 v Nastaveniach";
 "Sign in to Google Drive in Settings" = "Prihláste sa do Google Drive v Nastaveniach";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Offline zostava: integrácie nahrávania a cloudového úložiska sú odstránené. Kontrola aktualizácií sa stále môže pripájať k aktualizačnému serveru MacShotu. Snímky obrazovky a nahrávky zostávajú lokálne, kým ich sami nezdieľate alebo neuložíte.";
 "Position:" = "Pozícia:";
 "  Position:" = "  Pozícia:";
 "Size:" = "Veľkosť:";
@@ -581,7 +580,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Otvoriť video...";
-"Choose a video to open in macshot editor" = "Vyberte video na otvorenie v editore macshot";
+"Choose a video to open in macshot editor" = "Vyberte video na otvorenie v editore Macshot Pro";
 "Click to add effects" = "Kliknutím pridáte efekty";
 "Add Zoom" = "Pridať priblíženie";
 "Add Censor" = "Pridať cenzúru";
@@ -655,7 +654,7 @@
 "Stop the current recording" = "Zastaviť aktuálne nahrávanie";
 "Supported URL Scheme Commands" = "Podporované príkazy URL schémy";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Prípona súboru sa pridá automaticky. Lomky a dvojbodky v {window} sa zmenia na pomlčky.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Spustite macshot z Raycast, Alfred, Shortcuts alebo akéhokoľvek nástroja, ktorý otvára URL.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Spustite Macshot Pro z Raycast, Alfred, Shortcuts alebo akéhokoľvek nástroja, ktorý otvára URL.";
 "Enable macshot:// URL scheme" = "Povoliť URL schému macshot://";
 "URL scheme info" = "Informácie o URL schéme";
 "sec (0 = never)" = "sek (0 = nikdy)";
@@ -665,7 +664,7 @@
 "Export Settings…" = "Exportovať nastavenia…";
 "Import Settings…" = "Importovať nastavenia…";
 "Reveal Settings File in Finder" = "Zobraziť súbor nastavení vo Finderi";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exportujte svoje predvoľby do súboru, aby ste ich preniesli na iný Mac alebo do čistej inštalácie. Prihlasovacie údaje na nahrávanie, priečinok na ukladanie a história snímok obrazovky nie sú zahrnuté. Nastavenia sú uložené v kontajneri aplikácie macshot.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exportujte svoje predvoľby do súboru, aby ste ich preniesli na iný Mac alebo do čistej inštalácie. Prihlasovacie údaje na nahrávanie, priečinok na ukladanie a história snímok obrazovky nie sú zahrnuté. Nastavenia sú uložené v kontajneri aplikácie Macshot Pro.";
 "Export Settings" = "Exportovať nastavenia";
 "Import Settings" = "Importovať nastavenia";
 "Import failed" = "Import zlyhal";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Reštartovať teraz";
 "Replace your current settings?" = "Nahradiť aktuálne nastavenia?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Import nahradí vaše aktuálne predvoľby tými zo súboru. Priečinok na ukladanie, prihlasovacie údaje na nahrávanie a história snímok obrazovky zostanú zachované. Túto akciu nie je možné vrátiť späť.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "Počet použitých nastavení: %d. Reštartujte macshot, aby sa prejavili všetky zmeny.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "Počet použitých nastavení: %d. Reštartujte Macshot Pro, aby sa prejavili všetky zmeny.";
 "A few large items were too big to include. Everything else was saved." = "Niekoľko veľkých položiek bolo príliš veľkých na zahrnutie. Všetko ostatné bolo uložené.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Váš vlastný obrázok pozadia Beautify bol príliš veľký na zahrnutie. Všetko ostatné bolo uložené.";
-"This file is not a valid macshot settings file." = "Tento súbor nie je platným súborom nastavení macshot.";
+"This file is not a valid macshot settings file." = "Tento súbor nie je platným súborom nastavení Macshot Pro.";
 "This settings file contains no settings." = "Tento súbor nastavení neobsahuje žiadne nastavenia.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Tento súbor nastavení bol vytvorený novšou verziou aplikácie macshot. Najprv aktualizujte macshot.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Tento súbor nastavení bol vytvorený novšou verziou aplikácie Macshot Pro. Najprv aktualizujte Macshot Pro.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Zachytiť, preložiť a prekryť text na obrázku";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Použiť predvolené priblíženie na všetky";
 "Auto" = "Auto";
 "Auto Zoom" = "Automatické priblíženie";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Automatické priblíženie potrebuje údaje o ukazovateli, ktoré macshot zaznamenáva pri každom novom nahrávaní. Priblíženia môžete stále pridávať dvojklikom na stopu priblíženia.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Automatické priblíženie potrebuje údaje o ukazovateli, ktoré Macshot Pro zaznamenáva pri každom novom nahrávaní. Priblíženia môžete stále pridávať dvojklikom na stopu priblíženia.";
 "Background blur" = "Rozostrenie pozadia";
 "Background color" = "Farba pozadia";
 "Background, padding, rounded corners and shadow" = "Pozadie, odsadenie, zaoblené rohy a tieň";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Zmenšiť pri priblížení";
 "Smoothing" = "Vyhladzovanie";
 "Snappy" = "Svižný";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Rozpoznávanie reči je pre macshot vypnuté v Nastaveniach systému › Súkromie a bezpečnosť.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Rozpoznávanie reči je pre Macshot Pro vypnuté v Nastaveniach systému › Súkromie a bezpečnosť.";
 "Speed" = "Rýchlosť";
 "Spotlight" = "Reflektor";
 "Square" = "Štvorec";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "Zvuk nahrávky sa nepodarilo prečítať.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Táto nahrávka už obsahuje ukazovateľ v obraze, takže jeho štýl nemožno zmeniť. Priblíženia ho však môžu sledovať.";
 "This recording has no audio to transcribe." = "Táto nahrávka nemá žiadny zvuk na prepis.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Toto video neobsahuje zaznamenané údaje ukazovateľa. Nahrávky vytvorené v macshote, ktoré sa otvoria v editore, umožňujú po nahraní meniť štýl, vyhladenie a veľkosť ukazovateľa.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Toto video neobsahuje zaznamenané údaje ukazovateľa. Nahrávky vytvorené v aplikácii Macshot Pro, ktoré sa otvoria v editore, umožňujú po nahraní meniť štýl, vyhladenie a veľkosť ukazovateľa.";
 "Title" = "Nadpis";
 "Transcribing…" = "Prepisuje sa…";
 "Transition" = "Prechod";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Pred nahrávaním zapnite Zobraziť stlačenia klávesov. macshot ich potom zaznamená samostatne, aby ste im tu mohli upraviť štýl.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Pred nahrávaním zapnite kameru. macshot ju zaznamená samostatne, takže ju tu môžete presúvať, meniť jej veľkosť a štýl, skryť ju, a zmenšiť ju počas priblížení.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Pred nahrávaním zapnite Zobraziť stlačenia klávesov. Macshot Pro ich potom zaznamená samostatne, aby ste im tu mohli upraviť štýl.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Pred nahrávaním zapnite kameru. Macshot Pro ju zaznamená samostatne, takže ju tu môžete presúvať, meniť jej veľkosť a štýl, skryť ju, a zmenšiť ju počas priblížení.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Na skrytie citlivých údajov použite Plná: rozostrenie a pixelovanie sa niekedy dá zvrátiť.";
 "Visibility" = "Viditeľnosť";
 "Wallpaper" = "Tapeta";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Offline zostava: integrácie nahrávania a cloudového úložiska sú odstránené. Snímky obrazovky a nahrávky zostávajú lokálne, kým ich sami nezdieľate alebo neuložíte.";

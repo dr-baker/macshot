@@ -215,7 +215,7 @@ final class LocalizationTests: XCTestCase {
     /// ban. A locale that climbs above its budget has almost certainly been
     /// re-damaged; the fix is to repair the strings, not to raise the number.
     private static let diacriticSuspectBudget: [String: Int] = [
-        "ca": 2, "cs": 17, "es": 0, "fr": 6, "hr": 1, "pl": 1,
+        "ca": 2, "cs": 14, "es": 0, "fr": 6, "hr": 1, "pl": 1,
         "pt": 1, "pt-BR": 1, "ro": 45, "sk": 3, "sv": 1, "tr": 6, "vi": 43,
     ]
 
@@ -249,6 +249,10 @@ final class LocalizationTests: XCTestCase {
         let validPlainWords: Set<String>
         switch locale {
         case "vi": validPlainWords = ["trong"]
+        // "aplikaci" is dative/accusative/locative; "aplikací" is
+        // instrumental or plural genitive. Both spellings are correct.
+        // https://prirucka.ujc.cas.cz/?slovo=aplikace
+        case "cs": validPlainWords = ["aplikaci"]
         // "esta" (this) and "está" (is) are different words.
         case "es": validPlainWords = ["video", "esta"]
         case "pt", "pt-BR": validPlainWords = ["esta"]
@@ -305,6 +309,12 @@ final class LocalizationTests: XCTestCase {
         XCTAssertNil(suspects["trong"])
         XCTAssertEqual(suspects["binh"], 1)
         XCTAssertEqual(suspects["thuong"], 1)
+    }
+
+    func testCzechApplicationCasesDoNotImplyDiacriticDamage() {
+        let suspects = Self.diacriticSuspects(in: ["a": "aplikaci aplikací", "b": "pořídit poridit"], locale: "cs")
+        XCTAssertNil(suspects["aplikaci"])
+        XCTAssertEqual(suspects["poridit"], 1)
     }
 
     func testSpanishVideoSpellingsAreValidWithoutMaskingOtherDamage() {

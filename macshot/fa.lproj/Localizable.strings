@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -33,7 +33,7 @@
 "Pin from Clipboard" = "سنجاق کردن از کلیپ‌بورد";
 "Preferences..." = "تنظیمات...";
 "Check for Updates..." = "بررسی به‌روزرسانی‌ها...";
-"Quit macshot" = "خروج از macshot";
+"Quit macshot" = "خروج از Macshot Pro";
 "No recent captures" = "ضبط اخیری وجود ندارد";
 "Clear History" = "پاک کردن تاریخچه";
 
@@ -194,7 +194,7 @@
 "Copy to clipboard" = "کپی به کلیپ‌بورد";
 
 /* Preferences - General */
-"macshot Preferences" = "تنظیمات macshot";
+"macshot Preferences" = "تنظیمات Macshot Pro";
 "General" = "عمومی";
 "Tools" = "ابزارها";
 "Recording" = "ضبط ویدیو";
@@ -219,7 +219,7 @@
 "Show shortcuts in tooltips" = "نمایش میانبرها در راهنمای ابزار";
 "Use window title in saved filename" = "استفاده از عنوان پنجره در نام فایل ذخیره‌شده";
 "Hide menu bar icon" = "پنهان کردن آیکون نوار منو";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "کلیدهای میانبر همچنان کار می‌کنند. برای نمایش مجدد آیکون، macshot را دوباره اجرا کنید.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "کلیدهای میانبر همچنان کار می‌کنند. برای نمایش مجدد آیکون، Macshot Pro را دوباره اجرا کنید.";
 "Menu bar icon:" = "آیکون نوار منو:";
 "Default" = "پیش‌فرض";
 "Custom symbol" = "نماد سفارشی";
@@ -234,7 +234,7 @@
 "Stack (keep all)" = "روی هم (نگه‌داشتن همه)";
 "Replace (show only latest)" = "جایگزینی (فقط نمایش آخرین)";
 "Menu Bar Order" = "ترتیب نوار منو";
-"Choose the order of capture actions in the macshot menu bar menu." = "ترتیب اقدامات ضبط را در منوی نوار منوی macshot انتخاب کنید.";
+"Choose the order of capture actions in the macshot menu bar menu." = "ترتیب اقدامات ضبط را در منوی نوار منوی Macshot Pro انتخاب کنید.";
 "Move up" = "انتقال به بالا";
 "Move down" = "انتقال به پایین";
 "Output" = "خروجی";
@@ -365,7 +365,7 @@
 "Video upload requires Google Drive or S3" = "بارگذاری ویدیو نیاز به Google Drive یا S3 دارد";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "نسخه %@ (%@)";
 "Made by" = "ساخته شده توسط";
 "Licensed under the GPLv3" = "تحت مجوز GPLv3";
@@ -378,26 +378,26 @@
 "Copy an image or text to the clipboard first, then try again." = "ابتدا یک تصویر یا متن را به کلیپ‌بورد کپی کنید، سپس دوباره تلاش کنید.";
 "OK" = "تایید";
 "Accessibility Access Required" = "دسترسی به قابلیت‌های دسترسی‌پذیری لازم است";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot برای پیمایش خودکار سایر برنامه‌ها به مجوز دسترسی‌پذیری نیاز دارد. لطفا دسترسی را در تنظیمات سیستم اعطا کنید و دوباره تلاش کنید.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot برای ثبت پیمایشی به مجوز دسترس‌پذیری نیاز دارد. لطفاً در تنظیمات سیستم دسترسی بدهید و دوباره امتحان کنید.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro برای پیمایش خودکار سایر برنامه‌ها به مجوز دسترسی‌پذیری نیاز دارد. لطفا دسترسی را در تنظیمات سیستم اعطا کنید و دوباره تلاش کنید.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro برای ثبت پیمایشی به مجوز دسترس‌پذیری نیاز دارد. لطفاً در تنظیمات سیستم دسترسی بدهید و دوباره امتحان کنید.";
 "Open Settings" = "باز کردن تنظیمات";
 "Cancel" = "لغو";
 "Microphone Access Required" = "دسترسی به میکروفون لازم است";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot برای ضبط صدای میکروفون به مجوز میکروفون نیاز دارد. تنظیمات سیستم را باز کنید تا دسترسی اعطا شود.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro برای ضبط صدای میکروفون به مجوز میکروفون نیاز دارد. تنظیمات سیستم را باز کنید تا دسترسی اعطا شود.";
 "Upload to Google Drive?" = "بارگذاری به Google Drive؟";
 "Upload to S3?" = "بارگذاری به S3؟";
 "Upload to imgbb.com?" = "بارگذاری به imgbb.com؟";
 "Your screenshot will be uploaded." = "تصویر صفحه شما بارگذاری خواهد شد.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "به macshot خوش آمدید";
-"Welcome back to macshot" = "به macshot خوش برگشتید";
+"Welcome to macshot" = "به Macshot Pro خوش آمدید";
+"Welcome back to macshot" = "به Macshot Pro خوش برگشتید";
 "Turn Screen Recording back on" = "ضبط صفحه را دوباره روشن کنید";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "پس از برخی به‌روزرسانی‌ها، macOS دوباره از شما می‌خواهد به macshot اجازه دهید. تنظیمات و تصاویر شما امن هستند. اگر macshot از قبل در فهرست هست، آن را انتخاب کنید، روی دکمهٔ منها (−) بزنید تا حذف شود، سپس روی دکمهٔ به‌علاوه (+) بزنید و macshot را دوباره اضافه کنید.";
-"macshot needs one permission" = "macshot به یک مجوز نیاز دارد";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "پس از برخی به‌روزرسانی‌ها، macOS دوباره از شما می‌خواهد به Macshot Pro اجازه دهید. تنظیمات و تصاویر شما امن هستند. اگر Macshot Pro از قبل در فهرست هست، آن را انتخاب کنید، روی دکمهٔ منها (−) بزنید تا حذف شود، سپس روی دکمهٔ به‌علاوه (+) بزنید و Macshot Pro را دوباره اضافه کنید.";
+"macshot needs one permission" = "Macshot Pro به یک مجوز نیاز دارد";
 "Screen Recording not yet granted" = "مجوز ضبط صفحه هنوز اعطا نشده";
 "Screen Recording granted!" = "مجوز ضبط صفحه اعطا شد!";
-"Enable macshot, then try taking a screenshot" = "macshot را فعال کنید، سپس تصویربرداری از صفحه را امتحان کنید";
+"Enable macshot, then try taking a screenshot" = "Macshot Pro را فعال کنید، سپس تصویربرداری از صفحه را امتحان کنید";
 "Open Screen Recording Settings" = "باز کردن تنظیمات ضبط صفحه";
 "Continue" = "ادامه";
 
@@ -428,7 +428,7 @@
 "Path copied!" = "مسیر کپی شد!";
 
 /* Video Editor */
-"macshot Video Editor" = "ویرایشگر ویدیوی macshot";
+"macshot Video Editor" = "ویرایشگر ویدیوی Macshot Pro";
 "%@ selected" = "%@ انتخاب شده";
 "Exporting..." = "در حال خروجی گرفتن...";
 "Export failed" = "خروجی گرفتن ناموفق بود";
@@ -476,8 +476,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "نظارت بر ورودی لازم است";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot برای برجسته کردن کلیک‌های ماوس یا نمایش کلیدهای فشرده‌شده هنگام ضبط به مجوز نظارت بر ورودی نیاز دارد. لطفاً دسترسی را در تنظیمات سیستم اعطا کنید و دوباره تلاش کنید.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot برای چسبیدن به عناصر جداگانهٔ رابط کاربری به مجوز دسترس‌پذیری نیاز دارد. لطفاً در تنظیمات سیستم دسترسی بدهید و دوباره امتحان کنید.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro برای برجسته کردن کلیک‌های ماوس یا نمایش کلیدهای فشرده‌شده هنگام ضبط به مجوز نظارت بر ورودی نیاز دارد. لطفاً دسترسی را در تنظیمات سیستم اعطا کنید و دوباره تلاش کنید.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro برای چسبیدن به عناصر جداگانهٔ رابط کاربری به مجوز دسترس‌پذیری نیاز دارد. لطفاً در تنظیمات سیستم دسترسی بدهید و دوباره امتحان کنید.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "نمایش کلیدهای فشرده‌شده";
@@ -493,7 +493,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "همپوشانی وب‌کم";
 "Camera Access Required" = "دسترسی به دوربین لازم است";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot برای همپوشانی وب‌کم به مجوز دوربین نیاز دارد. تنظیمات سیستم را باز کنید تا دسترسی اعطا شود.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro برای همپوشانی وب‌کم به مجوز دوربین نیاز دارد. تنظیمات سیستم را باز کنید تا دسترسی اعطا شود.";
 "Webcam" = "وب‌کم";
 "Bottom Right" = "پایین راست";
 "Bottom Left" = "پایین چپ";
@@ -513,7 +513,7 @@
 
 /* Settings */
 "Settings..." = "تنظیمات...";
-"macshot Settings" = "تنظیمات macshot";
+"macshot Settings" = "تنظیمات Macshot Pro";
 "Also open in Editor" = "باز کردن در ویرایشگر نیز";
 "Close editor after copying" = "بستن ویرایشگر پس از کپی";
 "Hide controls" = "پنهان کردن کنترل‌ها";
@@ -581,7 +581,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "باز کردن ویدیو...";
-"Choose a video to open in macshot editor" = "ویدیویی را برای باز کردن در ویرایشگر macshot انتخاب کنید";
+"Choose a video to open in macshot editor" = "ویدیویی را برای باز کردن در ویرایشگر Macshot Pro انتخاب کنید";
 "Click to add effects" = "برای افزودن افکت کلیک کنید";
 "Add Zoom" = "افزودن زوم";
 "Add Censor" = "افزودن سانسور";
@@ -656,18 +656,17 @@
 "Stop the current recording" = "توقف ضبط ویدیوی جاری";
 "Supported URL Scheme Commands" = "دستورات پشتیبانی‌شده طرح URL";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "پسوند فایل به طور خودکار افزوده می‌شود. اسلش و دونقطه در {window} به خط تیره تبدیل می‌شوند.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "macshot را از Raycast، Alfred، Shortcuts یا هر ابزاری که URL باز می‌کند فعال کنید.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Macshot Pro را از Raycast، Alfred، Shortcuts یا هر ابزاری که URL باز می‌کند فعال کنید.";
 "URL scheme info" = "اطلاعات طرح URL";
 "sec (0 = never)" = "ثانیه (0 = هرگز)";
 "Settings" = "تنظیمات";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "نسخهٔ آفلاین: یکپارچه‌سازی‌های بارگذاری و فضای ابری حذف شده‌اند. بررسی به‌روزرسانی‌ها ممکن است همچنان به سرور به‌روزرسانی MacShot متصل شود. اسکرین‌شات‌ها و ضبط‌ها محلی می‌مانند مگر اینکه خودتان آن‌ها را به اشتراک بگذارید یا ذخیره کنید.";
 
 /* Settings import/export (issues #265, #280) */
 "Settings Backup" = "پشتیبان‌گیری تنظیمات";
 "Export Settings…" = "برون‌بری تنظیمات…";
 "Import Settings…" = "درون‌ری تنظیمات…";
 "Reveal Settings File in Finder" = "نمایش فایل تنظیمات در Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "ترجیحات خود را به یک فایل برون‌بری کنید تا آن‌ها را به Mac دیگری یا یک نصب تازه منتقل کنید. اطلاعات ورود بارگذاری، پوشه‌ی ذخیره و تاریخچه‌ی اسکرین‌شات‌ها گنجانده نمی‌شوند. تنظیمات درون کانتینر برنامه‌ی macshot ذخیره می‌شوند.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "ترجیحات خود را به یک فایل برون‌بری کنید تا آن‌ها را به Mac دیگری یا یک نصب تازه منتقل کنید. اطلاعات ورود بارگذاری، پوشه‌ی ذخیره و تاریخچه‌ی اسکرین‌شات‌ها گنجانده نمی‌شوند. تنظیمات درون کانتینر برنامه‌ی Macshot Pro ذخیره می‌شوند.";
 "Export Settings" = "برون‌بری تنظیمات";
 "Import Settings" = "درون‌ری تنظیمات";
 "Import failed" = "درون‌ری ناموفق بود";
@@ -678,12 +677,12 @@
 "Relaunch Now" = "اکنون راه‌اندازی مجدد";
 "Replace your current settings?" = "تنظیمات فعلی خود را جایگزین می‌کنید؟";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "درون‌ری، ترجیحات فعلی شما را با ترجیحات موجود در این فایل جایگزین می‌کند. پوشه‌ی ذخیره، اطلاعات ورود بارگذاری و تاریخچه‌ی اسکرین‌شات‌های شما حفظ می‌شوند. این عمل قابل بازگردانی نیست.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d تنظیم اعمال شد. برای اعمال همه‌ی تغییرات، macshot را دوباره راه‌اندازی کنید.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d تنظیم اعمال شد. برای اعمال همه‌ی تغییرات، Macshot Pro را دوباره راه‌اندازی کنید.";
 "A few large items were too big to include. Everything else was saved." = "چند مورد حجیم برای گنجاندن بسیار بزرگ بودند. باقی موارد ذخیره شدند.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "تصویر پس‌زمینه‌ی سفارشی Beautify شما برای گنجاندن بسیار بزرگ بود. باقی موارد ذخیره شدند.";
-"This file is not a valid macshot settings file." = "این فایل یک فایل تنظیمات معتبر macshot نیست.";
+"This file is not a valid macshot settings file." = "این فایل یک فایل تنظیمات معتبر Macshot Pro نیست.";
 "This settings file contains no settings." = "این فایل تنظیمات حاوی هیچ تنظیمی نیست.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "این فایل تنظیمات توسط نسخه‌ی جدیدتری از macshot ساخته شده است. لطفاً ابتدا macshot را به‌روزرسانی کنید.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "این فایل تنظیمات توسط نسخه‌ی جدیدتری از Macshot Pro ساخته شده است. لطفاً ابتدا Macshot Pro را به‌روزرسانی کنید.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "متن را ثبت، ترجمه و روی تصویر هم‌پوشانی کنید";
@@ -728,7 +727,7 @@
 "Apply Default Zoom to All" = "اعمال بزرگ‌نمایی پیش‌فرض بر همه";
 "Auto" = "خودکار";
 "Auto Zoom" = "بزرگ‌نمایی خودکار";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "بزرگ‌نمایی خودکار به داده‌های نشانگر نیاز دارد که macshot در هر ضبط جدید ثبت می‌کند. همچنان می‌توانید با دوبار کلیک روی مسیر بزرگ‌نمایی، بزرگ‌نمایی اضافه کنید.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "بزرگ‌نمایی خودکار به داده‌های نشانگر نیاز دارد که Macshot Pro در هر ضبط جدید ثبت می‌کند. همچنان می‌توانید با دوبار کلیک روی مسیر بزرگ‌نمایی، بزرگ‌نمایی اضافه کنید.";
 "Background blur" = "تاری پس‌زمینه";
 "Background color" = "رنگ پس‌زمینه";
 "Background, padding, rounded corners and shadow" = "پس‌زمینه، فاصله داخلی، گوشه‌های گرد و سایه";
@@ -829,7 +828,7 @@
 "Shrink during zooms" = "کوچک شدن هنگام بزرگ‌نمایی";
 "Smoothing" = "هموارسازی";
 "Snappy" = "سریع";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "تشخیص گفتار برای macshot در تنظیمات سیستم › حریم خصوصی و امنیت خاموش است.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "تشخیص گفتار برای Macshot Pro در تنظیمات سیستم › حریم خصوصی و امنیت خاموش است.";
 "Speed" = "سرعت";
 "Spotlight" = "نورافکن";
 "Square" = "مربع";
@@ -839,12 +838,12 @@
 "The recording's audio could not be read." = "صدای ضبط خوانده نشد.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "این ضبط از قبل نشانگر را در پیکسل‌های خود دارد، بنابراین سبک آن قابل تغییر نیست. بزرگ‌نمایی‌ها همچنان می‌توانند آن را دنبال کنند.";
 "This recording has no audio to transcribe." = "این ضبط صدایی برای رونویسی ندارد.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "این ویدیو داده‌ی ضبط‌شده‌ی نشانگر ندارد. ضبط‌هایی که با macshot انجام شده و در ویرایشگر باز می‌شوند، امکان تغییر سبک، هموارسازی و تغییر اندازه نشانگر را پس از ضبط فراهم می‌کنند.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "این ویدیو داده‌ی ضبط‌شده‌ی نشانگر ندارد. ضبط‌هایی که با Macshot Pro انجام شده و در ویرایشگر باز می‌شوند، امکان تغییر سبک، هموارسازی و تغییر اندازه نشانگر را پس از ضبط فراهم می‌کنند.";
 "Title" = "عنوان";
 "Transcribing…" = "در حال رونویسی…";
 "Transition" = "گذار";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "پیش از ضبط «نمایش کلیدهای فشرده‌شده» را روشن کنید. سپس macshot آن‌ها را جداگانه ضبط می‌کند تا بتوانید در اینجا سبکشان را تنظیم کنید.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "پیش از ضبط دوربین را روشن کنید. macshot آن را جداگانه ضبط می‌کند تا بتوانید آن را در اینجا جابه‌جا کنید، اندازه یا سبکش را تغییر دهید یا پنهانش کنید, و هنگام بزرگ‌نمایی کوچکش کنید.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "پیش از ضبط «نمایش کلیدهای فشرده‌شده» را روشن کنید. سپس Macshot Pro آن‌ها را جداگانه ضبط می‌کند تا بتوانید در اینجا سبکشان را تنظیم کنید.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "پیش از ضبط دوربین را روشن کنید. Macshot Pro آن را جداگانه ضبط می‌کند تا بتوانید آن را در اینجا جابه‌جا کنید، اندازه یا سبکش را تغییر دهید یا پنهانش کنید, و هنگام بزرگ‌نمایی کوچکش کنید.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "برای پنهان کردن اطلاعات حساس از «توپر» استفاده کنید: تاری و پیکسلی کردن گاهی قابل بازگردانی هستند.";
 "Visibility" = "نمایان بودن";
 "Wallpaper" = "تصویر زمینه";
@@ -862,7 +861,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -917,7 +916,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1054,3 +1053,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "نسخهٔ آفلاین: یکپارچه‌سازی‌های بارگذاری و فضای ابری حذف شده‌اند. اسکرین‌شات‌ها و ضبط‌ها محلی می‌مانند مگر اینکه خودتان آن‌ها را به اشتراک بگذارید یا ذخیره کنید.";

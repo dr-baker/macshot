@@ -1,6 +1,7 @@
-# Contributing to macshot
+# Contributing to Macshot Pro
 
-Thanks for your interest in contributing! macshot is open to bug fixes, improvements, and new features.
+Macshot Pro is an independently maintained fork of Macshot. Report bugs and send
+pull requests to [this repository](https://github.com/dr-baker/macshot).
 
 ## Before you start
 
@@ -11,7 +12,7 @@ Thanks for your interest in contributing! macshot is open to bug fixes, improvem
 ## Development setup
 
 1. Open `macshot.xcodeproj` in Xcode
-2. Build & Run (Cmd+R)
+2. Select the `macshot` scheme, choose your signing team, and build and run (Cmd+R).
 3. Grant Screen Recording permission when prompted
 
 The project uses synchronized file groups — just create `.swift` files in `macshot/` and Xcode picks them up.
@@ -46,7 +47,8 @@ comparing every stored property of a value at once.
 
 ## Guidelines
 
-- **AppKit UI.** App windows use AppKit. SwiftUI is limited to `BeautifyRenderer` for mesh gradients and PermissionFlow's packaged Accessibility guide. No Electron, no web views.
+- **Native UI.** AppKit owns windows, controls, and input. SwiftUI renders glass,
+  appearance previews, mesh gradients, and PermissionFlow's Accessibility guide.
 - **No new dependencies** unless absolutely necessary. Prefer Apple frameworks.
 - **Minimum target is macOS 13.0.** Use `@available` guards for newer APIs.
 - **Test on single and multi-monitor setups** if your change touches coordinates, overlays, or screen capture.
@@ -61,6 +63,11 @@ comparing every stored property of a value at once.
 - [ ] Doesn't break existing behavior
 - [ ] Commit message describes *what* and *why*
 
+## License
+
+Contributions are distributed under the project's [GPLv3 license](LICENSE).
+Preserve upstream attribution and include notices for third-party code.
+
 ## Questions?
 
-Open an issue or start a discussion.
+Open an issue in [this repository](https://github.com/dr-baker/macshot/issues).

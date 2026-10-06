@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -37,7 +37,7 @@
 "Pin from Clipboard" = "ஒட்டுப்பலகையிலிருந்து பொருத்து";
 "Preferences..." = "விருப்பங்கள்...";
 "Check for Updates..." = "புதுப்பிப்புகளைச் சரிபார்...";
-"Quit macshot" = "macshot-ஐ நிறுத்து";
+"Quit macshot" = "Macshot Pro-ஐ நிறுத்து";
 "No recent captures" = "சமீபத்திய பிடிப்புகள் இல்லை";
 "Clear History" = "வரலாற்றை அழி";
 
@@ -198,7 +198,7 @@
 "Copy to clipboard" = "ஒட்டுப்பலகையில் நகலெடு";
 
 /* Preferences - General */
-"macshot Preferences" = "macshot விருப்பங்கள்";
+"macshot Preferences" = "Macshot Pro விருப்பங்கள்";
 "General" = "பொது";
 "Tools" = "கருவிகள்";
 "Recording" = "பதிவு";
@@ -231,7 +231,7 @@
 "Units" = "அலகுகள்";
 "Keep ratio for next captures" = "அடுத்த பிடிப்புகளுக்கு விகிதத்தை வைத்திரு";
 "Hide menu bar icon" = "பட்டிப்பட்டை ஐகானை மறை";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "விரைவு விசைகள் செயல்படும். ஐகானை மீண்டும் காட்ட, macshot-ஐ மறுதொடக்கம் செய்யுங்கள்.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "விரைவு விசைகள் செயல்படும். ஐகானை மீண்டும் காட்ட, Macshot Pro-ஐ மறுதொடக்கம் செய்யுங்கள்.";
 "Check for updates automatically" = "புதுப்பிப்புகளைத் தானாகச் சரிபார்";
 "Check for beta updates" = "பீட்டா புதுப்பிப்புகளைச் சரிபார்";
 "Thumbnail" = "சிறுபடம்";
@@ -242,7 +242,7 @@
 "Stack (keep all)" = "அடுக்கு (அனைத்தையும் வை)";
 "Replace (show only latest)" = "மாற்று (சமீபத்தியதை மட்டும் காட்டு)";
 "Menu Bar Order" = "மெனு பட்டி வரிசை";
-"Choose the order of capture actions in the macshot menu bar menu." = "macshot மெனு பட்டி மெனுவில் படமெடுப்பு செயல்களின் வரிசையைத் தேர்வு செய்க.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Macshot Pro மெனு பட்டி மெனுவில் படமெடுப்பு செயல்களின் வரிசையைத் தேர்வு செய்க.";
 "Move up" = "மேலே நகர்த்து";
 "Move down" = "கீழே நகர்த்து";
 "Output" = "வெளியீடு";
@@ -370,7 +370,7 @@
 "Video upload requires Google Drive or S3" = "காணொளி பதிவேற்றத்திற்கு Google Drive அல்லது S3 தேவை";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "பதிப்பு %@ (%@)";
 "Made by" = "உருவாக்கியவர்";
 "Licensed under the GPLv3" = "GPLv3 உரிமத்தின் கீழ் வழங்கப்பட்டது";
@@ -383,26 +383,26 @@
 "Copy an image or text to the clipboard first, then try again." = "முதலில் ஒட்டுப்பலகையில் ஒரு படம் அல்லது உரையை நகலெடுத்து, பின்னர் மீண்டும் முயற்சிக்கவும்.";
 "OK" = "சரி";
 "Accessibility Access Required" = "அணுகல்தன்மை அனுமதி தேவை";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot பிற பயன்பாடுகளை தானாக உருட்ட அணுகல்தன்மை அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "ஸ்க்ரோல் கேப்சருக்கு macshot-க்கு அணுகல்தன்மை அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro பிற பயன்பாடுகளை தானாக உருட்ட அணுகல்தன்மை அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "ஸ்க்ரோல் கேப்சருக்கு Macshot Pro-க்கு அணுகல்தன்மை அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
 "Open Settings" = "அமைப்புகளைத் திற";
 "Cancel" = "ரத்துசெய்";
 "Microphone Access Required" = "ஒலிவாங்கி அணுகல் தேவை";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot குரல் ஒலியைப் பதிவு செய்ய ஒலிவாங்கி அனுமதி தேவை. அணுகலை வழங்க கணினி அமைப்புகளைத் திறக்கவும்.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro குரல் ஒலியைப் பதிவு செய்ய ஒலிவாங்கி அனுமதி தேவை. அணுகலை வழங்க கணினி அமைப்புகளைத் திறக்கவும்.";
 "Upload to Google Drive?" = "Google Drive இல் பதிவேற்றவா?";
 "Upload to S3?" = "S3 இல் பதிவேற்றவா?";
 "Upload to imgbb.com?" = "imgbb.com இல் பதிவேற்றவா?";
 "Your screenshot will be uploaded." = "உங்கள் திரைப்பிடிப்பு பதிவேற்றப்படும்.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "macshot க்கு வரவேற்கிறோம்";
-"Welcome back to macshot" = "macshot-க்கு மீண்டும் வரவேற்கிறோம்";
+"Welcome to macshot" = "Macshot Pro க்கு வரவேற்கிறோம்";
+"Welcome back to macshot" = "Macshot Pro-க்கு மீண்டும் வரவேற்கிறோம்";
 "Turn Screen Recording back on" = "திரைப் பதிவை மீண்டும் இயக்கவும்";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "சில புதுப்பிப்புகளுக்குப் பிறகு, macshot-ஐ மீண்டும் அனுமதிக்குமாறு macOS கேட்கும். உங்கள் அமைப்புகளும் பிடிப்புகளும் பாதுகாப்பாக உள்ளன. பட்டியலில் macshot ஏற்கனவே இருந்தால், அதைத் தேர்ந்தெடுத்து கழித்தல் பொத்தானை (−) அழுத்தி நீக்கவும், பிறகு கூட்டல் பொத்தானை (+) அழுத்தி macshot-ஐ மீண்டும் சேர்க்கவும்.";
-"macshot needs one permission" = "macshot க்கு ஒரு அனுமதி தேவை";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "சில புதுப்பிப்புகளுக்குப் பிறகு, Macshot Pro-ஐ மீண்டும் அனுமதிக்குமாறு macOS கேட்கும். உங்கள் அமைப்புகளும் பிடிப்புகளும் பாதுகாப்பாக உள்ளன. பட்டியலில் Macshot Pro ஏற்கனவே இருந்தால், அதைத் தேர்ந்தெடுத்து கழித்தல் பொத்தானை (−) அழுத்தி நீக்கவும், பிறகு கூட்டல் பொத்தானை (+) அழுத்தி Macshot Pro-ஐ மீண்டும் சேர்க்கவும்.";
+"macshot needs one permission" = "Macshot Pro க்கு ஒரு அனுமதி தேவை";
 "Screen Recording not yet granted" = "திரைப் பதிவு இன்னும் வழங்கப்படவில்லை";
 "Screen Recording granted!" = "திரைப் பதிவு வழங்கப்பட்டது!";
-"Enable macshot, then try taking a screenshot" = "macshot ஐ இயக்கி, திரைப்பிடிப்பு எடுக்க முயற்சிக்கவும்";
+"Enable macshot, then try taking a screenshot" = "Macshot Pro ஐ இயக்கி, திரைப்பிடிப்பு எடுக்க முயற்சிக்கவும்";
 "Open Screen Recording Settings" = "திரைப் பதிவு அமைப்புகளைத் திற";
 "Continue" = "தொடரவும்";
 
@@ -436,7 +436,7 @@
 "Path copied!" = "பாதை நகலெடுக்கப்பட்டது!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot காணொளி திருத்தி";
+"macshot Video Editor" = "Macshot Pro காணொளி திருத்தி";
 "%@ selected" = "%@ தேர்ந்தெடுக்கப்பட்டது";
 "Exporting..." = "ஏற்றுமதி செய்கிறது...";
 "Export failed" = "ஏற்றுமதி தோல்வி";
@@ -484,8 +484,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "உள்ளீட்டு கண்காணிப்பு தேவை";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "பதிவின்போது மவுஸ் கிளிக்குகளை முன்னிலைப்படுத்த அல்லது விசை அழுத்தங்களைக் காட்ட macshot க்கு உள்ளீட்டு கண்காணிப்பு அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "தனித்தனி இடைமுக உறுப்புகளுடன் ஸ்நாப் செய்ய macshot-க்கு அணுகல்தன்மை அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "பதிவின்போது மவுஸ் கிளிக்குகளை முன்னிலைப்படுத்த அல்லது விசை அழுத்தங்களைக் காட்ட Macshot Pro க்கு உள்ளீட்டு கண்காணிப்பு அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "தனித்தனி இடைமுக உறுப்புகளுடன் ஸ்நாப் செய்ய Macshot Pro-க்கு அணுகல்தன்மை அனுமதி தேவை. கணினி அமைப்புகளில் அணுகலை வழங்கி, மீண்டும் முயற்சிக்கவும்.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "விசை அழுத்தங்களைக் காட்டு";
@@ -501,7 +501,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "வெப்கேம் மேலடுக்கு";
 "Camera Access Required" = "கேமரா அணுகல் தேவை";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "வெப்கேம் மேலடுக்குக்கு macshot க்கு கேமரா அனுமதி தேவை. அணுகலை வழங்க System Settings ஐ திறக்கவும்.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "வெப்கேம் மேலடுக்குக்கு Macshot Pro க்கு கேமரா அனுமதி தேவை. அணுகலை வழங்க System Settings ஐ திறக்கவும்.";
 "Webcam" = "வெப்கேம்";
 "Bottom Right" = "கீழ் வலது";
 "Bottom Left" = "கீழ் இடது";
@@ -522,7 +522,7 @@
 /* Settings */
 "Settings" = "அமைப்புகள்";
 "Settings..." = "அமைப்புகள்...";
-"macshot Settings" = "macshot அமைப்புகள்";
+"macshot Settings" = "Macshot Pro அமைப்புகள்";
 "Also open in Editor" = "எடிட்டரிலும் திற";
 "Close editor after copying" = "நகலெடுத்த பிறகு எடிட்டரை மூடு";
 "Hide controls" = "கட்டுப்பாடுகளை மறை";
@@ -564,7 +564,6 @@
 "Download language packs in System Settings…" = "கணினி அமைப்புகளில் மொழி தொகுப்புகளைப் பதிவிறக்கவும்…";
 "Configure S3 in Settings" = "அமைப்புகளில் S3 கட்டமைக்கவும்";
 "Sign in to Google Drive in Settings" = "அமைப்புகளில் Google Drive-இல் உள்நுழையவும்";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "ஆஃப்லைன் பதிப்பு: பதிவேற்றம் மற்றும் கிளவுட் சேமிப்பக ஒருங்கிணைப்புகள் அகற்றப்பட்டுள்ளன. புதுப்பிப்புச் சரிபார்ப்புகள் இன்னும் MacShot-இன் புதுப்பிப்பு சேவையகத்துடன் இணையலாம். நீங்களே பகிர்ந்தாலோ சேமித்தாலோ தவிர, திரைப்பிடிப்புகளும் பதிவுகளும் உள்ளூரிலேயே இருக்கும்.";
 "Position:" = "நிலை:";
 "Size:" = "அளவு:";
 "Shape:" = "வடிவம்:";
@@ -583,7 +582,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "காணொளியைத் திற...";
-"Choose a video to open in macshot editor" = "macshot திருத்தியில் திறக்க காணொளியைத் தேர்வுசெய்";
+"Choose a video to open in macshot editor" = "Macshot Pro திருத்தியில் திறக்க காணொளியைத் தேர்வுசெய்";
 "Click to add effects" = "விளைவுகளைச் சேர்க்க கிளிக் செய்";
 "Add Zoom" = "பெரிதாக்கலைச் சேர்";
 "Add Censor" = "மறைப்பைச் சேர்";
@@ -658,7 +657,7 @@
 "Stop the current recording" = "தற்போதைய பதிவை நிறுத்து";
 "Supported URL Scheme Commands" = "ஆதரிக்கப்படும் URL திட்ட கட்டளைகள்";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "கோப்பு நீட்டிப்பு தானாகவே சேர்க்கப்படும். {window} இல் உள்ள சாய்வுக் கோடுகள் மற்றும் முக்காற்புள்ளிகள் இடைக்கோடுகளாக மாறும்.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Raycast, Alfred, Shortcuts அல்லது URL-களைத் திறக்கும் எந்தக் கருவியிலிருந்தும் macshot-ஐத் தூண்டவும்.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Raycast, Alfred, Shortcuts அல்லது URL-களைத் திறக்கும் எந்தக் கருவியிலிருந்தும் Macshot Pro-ஐத் தூண்டவும்.";
 "URL scheme info" = "URL திட்ட தகவல்";
 "sec (0 = never)" = "வி (0 = ஒருபோதும் இல்லை)";
 
@@ -667,7 +666,7 @@
 "Export Settings…" = "அமைப்புகளை ஏற்றுமதி செய்…";
 "Import Settings…" = "அமைப்புகளை இறக்குமதி செய்…";
 "Reveal Settings File in Finder" = "அமைப்புகள் கோப்பை Finder இல் காட்டு";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "உங்கள் விருப்பங்களை மற்றொரு Mac அல்லது புதிய நிறுவலுக்கு நகர்த்த ஒரு கோப்பிற்கு ஏற்றுமதி செய்யுங்கள். பதிவேற்ற சான்றுகள், உங்கள் சேமிப்புக் கோப்புறை மற்றும் திரைப்பிடிப்பு வரலாறு சேர்க்கப்படவில்லை. அமைப்புகள் macshot இன் ஆப் கன்டெய்னருக்குள் சேமிக்கப்படுகின்றன.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "உங்கள் விருப்பங்களை மற்றொரு Mac அல்லது புதிய நிறுவலுக்கு நகர்த்த ஒரு கோப்பிற்கு ஏற்றுமதி செய்யுங்கள். பதிவேற்ற சான்றுகள், உங்கள் சேமிப்புக் கோப்புறை மற்றும் திரைப்பிடிப்பு வரலாறு சேர்க்கப்படவில்லை. அமைப்புகள் Macshot Pro இன் ஆப் கன்டெய்னருக்குள் சேமிக்கப்படுகின்றன.";
 "Export Settings" = "அமைப்புகளை ஏற்றுமதி செய்";
 "Import Settings" = "அமைப்புகளை இறக்குமதி செய்";
 "Import failed" = "இறக்குமதி தோல்வியடைந்தது";
@@ -678,12 +677,12 @@
 "Relaunch Now" = "இப்போதே மீண்டும் தொடங்கு";
 "Replace your current settings?" = "உங்கள் தற்போதைய அமைப்புகளை மாற்றவா?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "இறக்குமதி செய்வது உங்கள் தற்போதைய விருப்பங்களை இந்தக் கோப்பில் உள்ளவற்றால் மாற்றிவிடும். உங்கள் சேமிப்புக் கோப்புறை, பதிவேற்ற சான்றுகள் மற்றும் திரைப்பிடிப்பு வரலாறு தக்கவைக்கப்படும். இதைச் செயல்தவிர்க்க முடியாது.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d அமைப்புகள் பயன்படுத்தப்பட்டன. அனைத்து மாற்றங்களையும் பயன்படுத்த macshot ஐ மீண்டும் தொடங்குங்கள்.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d அமைப்புகள் பயன்படுத்தப்பட்டன. அனைத்து மாற்றங்களையும் பயன்படுத்த Macshot Pro ஐ மீண்டும் தொடங்குங்கள்.";
 "A few large items were too big to include. Everything else was saved." = "சில பெரிய உருப்படிகள் சேர்க்க முடியாத அளவுக்குப் பெரியதாக இருந்தன. மற்ற அனைத்தும் சேமிக்கப்பட்டன.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "உங்கள் தனிப்பயன் Beautify பின்னணிப் படம் சேர்க்க முடியாத அளவுக்குப் பெரியதாக இருந்தது. மற்ற அனைத்தும் சேமிக்கப்பட்டன.";
-"This file is not a valid macshot settings file." = "இந்தக் கோப்பு செல்லுபடியாகும் macshot அமைப்புகள் கோப்பு அல்ல.";
+"This file is not a valid macshot settings file." = "இந்தக் கோப்பு செல்லுபடியாகும் Macshot Pro அமைப்புகள் கோப்பு அல்ல.";
 "This settings file contains no settings." = "இந்த அமைப்புகள் கோப்பில் எந்த அமைப்புகளும் இல்லை.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "இந்த அமைப்புகள் கோப்பு macshot இன் புதிய பதிப்பால் உருவாக்கப்பட்டது. முதலில் macshot ஐப் புதுப்பிக்கவும்.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "இந்த அமைப்புகள் கோப்பு Macshot Pro இன் புதிய பதிப்பால் உருவாக்கப்பட்டது. முதலில் Macshot Pro ஐப் புதுப்பிக்கவும்.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "படத்தைப் பிடித்து, மொழிபெயர்த்து, உரையைப் படத்தின் மேல் இடுக";
@@ -728,7 +727,7 @@
 "Apply Default Zoom to All" = "இயல்புநிலை பெரிதாக்கத்தை அனைத்திற்கும் பயன்படுத்து";
 "Auto" = "தானியங்கு";
 "Auto Zoom" = "தானியங்கு பெரிதாக்கம்";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "தானியங்கு பெரிதாக்கத்திற்கு சுட்டி தரவு தேவை, அதை macshot ஒவ்வொரு புதிய பதிவிலும் பதிவுசெய்கிறது. பெரிதாக்கப் பாதையில் இருமுறை கிளிக் செய்து இப்போதும் பெரிதாக்கங்களைச் சேர்க்கலாம்.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "தானியங்கு பெரிதாக்கத்திற்கு சுட்டி தரவு தேவை, அதை Macshot Pro ஒவ்வொரு புதிய பதிவிலும் பதிவுசெய்கிறது. பெரிதாக்கப் பாதையில் இருமுறை கிளிக் செய்து இப்போதும் பெரிதாக்கங்களைச் சேர்க்கலாம்.";
 "Background blur" = "பின்னணி மங்கல்";
 "Background color" = "பின்னணி நிறம்";
 "Background, padding, rounded corners and shadow" = "பின்னணி, இடைவெளி, வட்டமான மூலைகள் மற்றும் நிழல்";
@@ -829,7 +828,7 @@
 "Shrink during zooms" = "பெரிதாக்கத்தின்போது சுருக்கு";
 "Smoothing" = "மென்மையாக்கல்";
 "Snappy" = "விரைவான";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "macshot-க்கான பேச்சு அறிதல் கணினி அமைப்புகள் › தனியுரிமை & பாதுகாப்பு என்பதில் முடக்கப்பட்டுள்ளது.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Macshot Pro-க்கான பேச்சு அறிதல் கணினி அமைப்புகள் › தனியுரிமை & பாதுகாப்பு என்பதில் முடக்கப்பட்டுள்ளது.";
 "Speed" = "வேகம்";
 "Spotlight" = "ஸ்பாட்லைட்";
 "Square" = "சதுரம்";
@@ -839,12 +838,12 @@
 "The recording's audio could not be read." = "பதிவின் ஒலியைப் படிக்க முடியவில்லை.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "இந்தப் பதிவு ஏற்கனவே அதன் பிக்சல்களில் சுட்டியைக் காட்டுகிறது, எனவே அதன் பாணியை மாற்ற முடியாது. பெரிதாக்கங்கள் இன்னும் அதைப் பின்தொடரலாம்.";
 "This recording has no audio to transcribe." = "இந்தப் பதிவில் எழுத்தாக்க ஒலி எதுவும் இல்லை.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "இந்த வீடியோவில் பதிவுசெய்யப்பட்ட சுட்டி தரவு இல்லை. macshot மூலம் எடுக்கப்பட்டு எடிட்டரில் திறக்கும் பதிவுகளில், பதிவுக்குப் பிறகு சுட்டியின் பாணி, மென்மை மற்றும் அளவை மாற்றலாம்.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "இந்த வீடியோவில் பதிவுசெய்யப்பட்ட சுட்டி தரவு இல்லை. Macshot Pro மூலம் எடுக்கப்பட்டு எடிட்டரில் திறக்கும் பதிவுகளில், பதிவுக்குப் பிறகு சுட்டியின் பாணி, மென்மை மற்றும் அளவை மாற்றலாம்.";
 "Title" = "தலைப்பு";
 "Transcribing…" = "எழுத்தாக்குகிறது…";
 "Transition" = "மாறுதல்";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "பதிவுசெய்வதற்கு முன் \"விசை அழுத்தங்களைக் காட்டு\" என்பதை இயக்கவும். பின்னர் macshot அவற்றைத் தனியாகப் பதிவுசெய்யும், எனவே அவற்றை இங்கே வடிவமைக்கலாம்.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "பதிவுசெய்வதற்கு முன் கேமராவை இயக்கவும். macshot அதைத் தனியாகப் பதிவுசெய்வதால், அதை இங்கே நகர்த்தலாம், அளவு மாற்றலாம், பாணி மாற்றலாம் அல்லது மறைக்கலாம், மேலும் பெரிதாக்கத்தின்போது சுருக்கலாம்.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "பதிவுசெய்வதற்கு முன் \"விசை அழுத்தங்களைக் காட்டு\" என்பதை இயக்கவும். பின்னர் Macshot Pro அவற்றைத் தனியாகப் பதிவுசெய்யும், எனவே அவற்றை இங்கே வடிவமைக்கலாம்.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "பதிவுசெய்வதற்கு முன் கேமராவை இயக்கவும். Macshot Pro அதைத் தனியாகப் பதிவுசெய்வதால், அதை இங்கே நகர்த்தலாம், அளவு மாற்றலாம், பாணி மாற்றலாம் அல்லது மறைக்கலாம், மேலும் பெரிதாக்கத்தின்போது சுருக்கலாம்.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "முக்கியமான தகவலை மறைக்க திடமான என்பதைப் பயன்படுத்தவும்: மங்கலாக்கலையும் பிக்சலேஷனையும் சில நேரங்களில் மீட்டெடுக்க முடியும்.";
 "Visibility" = "தெரிவுநிலை";
 "Wallpaper" = "வால்பேப்பர்";
@@ -862,7 +861,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -917,7 +916,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1054,3 +1053,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "ஆஃப்லைன் பதிப்பு: பதிவேற்றம் மற்றும் கிளவுட் சேமிப்பக ஒருங்கிணைப்புகள் அகற்றப்பட்டுள்ளன. நீங்களே பகிர்ந்தாலோ சேமித்தாலோ தவிர, திரைப்பிடிப்புகளும் பதிவுகளும் உள்ளூரிலேயே இருக்கும்.";

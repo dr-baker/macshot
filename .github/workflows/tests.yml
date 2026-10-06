@@ -122,6 +122,7 @@ jobs:
             -scheme macshot \
             -configuration Release \
             -destination 'platform=macOS' \
+            -derivedDataPath NormalBuild \
             CODE_SIGNING_ALLOWED=NO \
             | { grep -E "error:|\*\* BUILD" || true; }
           exit ${PIPESTATUS[0]}
@@ -133,8 +134,14 @@ jobs:
             -scheme macshot \
             -configuration Release \
             -destination 'platform=macOS' \
+            -derivedDataPath OfflineBuild \
             CODE_SIGNING_ALLOWED=NO \
             SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) OFFLINE' \
+            MACSHOT_BUNDLE_IDENTIFIER='com.drbaker.macshot.pro.offline' \
+            MACSHOT_PRODUCT_NAME='Macshot Pro Offline' \
+            INFOPLIST_KEY_CFBundleDisplayName='Macshot Pro Offline' \
+            INFOPLIST_KEY_CFBundleName='Macshot Pro Offline' \
+            MACSHOT_UPDATE_FEED_URL='https://raw.githubusercontent.com/dr-baker/macshot/main/appcast-offline.xml' \
             | { grep -E "error:|\*\* BUILD" || true; }
           exit ${PIPESTATUS[0]}
 
@@ -150,3 +157,34 @@ jobs:
             | { grep -E "error:|\*\* BUILD" || true; }
           build_status=${PIPESTATUS[0]}
           [ "$build_status" -eq 0 ] || exit "$build_status"
+
+      - name: Verify Release product identities
+        run: |
+          python3 << 'PYEOF'
+          import plistlib
+          from pathlib import Path
+
+          normal_feed = "https://raw.githubusercontent.com/dr-baker/macshot/main/appcast.xml"
+          offline_feed = "https://raw.githubusercontent.com/dr-baker/macshot/main/appcast-offline.xml"
+          variants = (
+              ("NormalBuild", "Macshot Pro", "com.drbaker.macshot.pro", "13.0", normal_feed),
+              ("OfflineBuild", "Macshot Pro Offline", "com.drbaker.macshot.pro.offline", "13.0", offline_feed),
+              ("DevBuild", "Macshot Pro Dev", "com.drbaker.macshot.dev", "26.0", normal_feed),
+          )
+          for build_directory, product_name, bundle_id, minimum_system, feed_url in variants:
+              app = Path(build_directory) / "Build/Products/Release" / f"{product_name}.app"
+              plist = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+              expected = {
+                  "CFBundleIdentifier": bundle_id,
+                  "CFBundleDisplayName": product_name,
+                  "CFBundleName": product_name,
+                  "LSMinimumSystemVersion": minimum_system,
+                  "SUFeedURL": feed_url,
+              }
+              for key, value in expected.items():
+                  if plist.get(key) != value:
+                      raise SystemExit(f"{app}: expected {key}={value}, got {plist.get(key)!r}")
+              if "SUPublicEDKey" in plist:
+                  raise SystemExit(f"{app}: source products must not contain a Sparkle signing key")
+              print(f"Verified {product_name}: {bundle_id}, macOS {minimum_system}+")
+          PYEOF

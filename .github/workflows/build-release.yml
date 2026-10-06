@@ -24,6 +24,9 @@ jobs:
   release:
     runs-on: macos-26        # Xcode 26 + macOS 26 SDK (needed for NSGlassEffectView / Liquid Glass)
     timeout-minutes: 360
+    env:
+      NORMAL_FEED_URL: https://raw.githubusercontent.com/dr-baker/macshot/main/appcast.xml
+      OFFLINE_FEED_URL: https://raw.githubusercontent.com/dr-baker/macshot/main/appcast-offline.xml
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────────────────
@@ -31,7 +34,36 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Require fork release configuration
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          python3 << 'PYEOF'
+          import base64
+          import binascii
+          import os
+
+          if os.environ["GITHUB_REPOSITORY"] != "dr-baker/macshot":
+              raise SystemExit("This workflow publishes Macshot Pro releases from dr-baker/macshot")
+          for name in ("SPARKLE_PUBLIC_KEY", "SPARKLE_PRIVATE_KEY"):
+              if not os.environ.get(name, "").strip():
+                  raise SystemExit(f"Configure the fork's {name} repository secret before releasing")
+          try:
+              public_key = base64.b64decode(os.environ["SPARKLE_PUBLIC_KEY"], validate=True)
+          except (binascii.Error, ValueError):
+              raise SystemExit("SPARKLE_PUBLIC_KEY must be a base64-encoded Ed25519 public key")
+          if len(public_key) != 32:
+              raise SystemExit("SPARKLE_PUBLIC_KEY must decode to a 32-byte Ed25519 public key")
+          try:
+              private_key = base64.b64decode(os.environ["SPARKLE_PRIVATE_KEY"].strip(), validate=True)
+          except (binascii.Error, ValueError):
+              raise SystemExit("SPARKLE_PRIVATE_KEY must be a base64-encoded Sparkle signing key")
+          if len(private_key) not in (32, 96):
+              raise SystemExit("SPARKLE_PRIVATE_KEY must decode to a 32-byte seed or a 96-byte legacy key")
+          PYEOF
 
       # ── 1b. Select Xcode 26 (macOS 26 SDK) ─────────────────────────────────
       - name: Select Xcode
@@ -46,9 +78,14 @@ jobs:
 
       # ── 2. Parse version from tag ──────────────────────────────────────────
       - name: Set version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           # Use manual input tag if workflow_dispatch, otherwise use the pushed tag
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+            echo "::error::Expected a release tag such as v1.0.0 or v1.0.0-beta.1"
+            exit 1
+          fi
           VERSION="${TAG#v}"   # strip leading 'v'
           BUILD_NUMBER="${{ github.run_number }}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -133,34 +170,52 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            SWIFT_ACTIVE_COMPILATION_CONDITIONS="OFFLINE" \
-            MACSHOT_BUNDLE_IDENTIFIER="com.sw33tlie.macshot.offline" \
-            MACSHOT_PRODUCT_NAME="macshot Offline" \
-            INFOPLIST_KEY_CFBundleDisplayName="macshot Offline" \
-            INFOPLIST_KEY_CFBundleName="macshot Offline" \
-            INFOPLIST_KEY_SUFeedURL="https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast-offline.xml" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) OFFLINE' \
+            MACSHOT_BUNDLE_IDENTIFIER="com.drbaker.macshot.pro.offline" \
+            MACSHOT_PRODUCT_NAME="Macshot Pro Offline" \
+            INFOPLIST_KEY_CFBundleDisplayName="Macshot Pro Offline" \
+            INFOPLIST_KEY_CFBundleName="Macshot Pro Offline" \
+            MACSHOT_UPDATE_FEED_URL="$OFFLINE_FEED_URL" \
             build
 
+      - name: Configure release updater metadata
+        if: ${{ !inputs.resume_run }}
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+        run: |
           python3 << 'PYEOF'
+          import os
           import plistlib
           from pathlib import Path
 
-          plist_path = Path("build-offline/Build/Products/Release/macshot Offline.app/Contents/Info.plist")
-          plist = plistlib.loads(plist_path.read_bytes())
-          expected_bundle_id = "com.sw33tlie.macshot.offline"
-          expected_feed_url = "https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast-offline.xml"
-          plist["SUFeedURL"] = expected_feed_url
-          plist["CFBundleURLTypes"] = [
-              item for item in plist.get("CFBundleURLTypes", [])
-              if item.get("CFBundleURLName") != "Google OAuth"
-          ]
-          if plist.get("CFBundleIdentifier") != expected_bundle_id:
-              raise SystemExit(f"Offline bundle id mismatch: {plist.get('CFBundleIdentifier')}")
-          if plist.get("SUFeedURL") != expected_feed_url:
-              raise SystemExit(f"Offline Sparkle feed mismatch: {plist.get('SUFeedURL')}")
-          if any(item.get("CFBundleURLName") == "Google OAuth" for item in plist.get("CFBundleURLTypes", [])):
-              raise SystemExit("Offline build still contains Google OAuth URL scheme")
-          plist_path.write_bytes(plistlib.dumps(plist))
+          public_key = os.environ["SPARKLE_PUBLIC_KEY"]
+          variants = (
+              ("build", "Macshot Pro", "com.drbaker.macshot.pro", os.environ["NORMAL_FEED_URL"]),
+              ("build-offline", "Macshot Pro Offline", "com.drbaker.macshot.pro.offline", os.environ["OFFLINE_FEED_URL"]),
+          )
+          for build_directory, product_name, bundle_id, feed_url in variants:
+              plist_path = Path(build_directory) / "Build/Products/Release" / f"{product_name}.app/Contents/Info.plist"
+              plist = plistlib.loads(plist_path.read_bytes())
+              expected = {
+                  "CFBundleIdentifier": bundle_id,
+                  "CFBundleDisplayName": product_name,
+                  "CFBundleName": product_name,
+                  "LSMinimumSystemVersion": "13.0",
+              }
+              for key, value in expected.items():
+                  if plist.get(key) != value:
+                      raise SystemExit(f"{product_name}: expected {key}={value}, got {plist.get(key)!r}")
+              plist["SUPublicEDKey"] = public_key
+              plist["SUFeedURL"] = feed_url
+              plist["SUEnableAutomaticChecks"] = True
+              if bundle_id.endswith(".offline"):
+                  plist["CFBundleURLTypes"] = [
+                      item for item in plist.get("CFBundleURLTypes", [])
+                      if item.get("CFBundleURLName") != "Google OAuth"
+                  ]
+              plist_path.write_bytes(plistlib.dumps(plist))
+          # A resumed run must use the same key as the signed app bundles.
+          Path("sparkle-public-key.txt").write_text(public_key + "\n")
           PYEOF
 
       # ── 5. Sign the .apps with Developer ID ───────────────────────────────
@@ -172,9 +227,16 @@ jobs:
           from pathlib import Path
 
           entitlements = plistlib.loads(Path("macshot/macshot.entitlements").read_bytes())
-          entitlements["com.apple.security.temporary-exception.mach-lookup.global-name"] = [
-              "com.sw33tlie.macshot.offline-spks",
-              "com.sw33tlie.macshot.offline-spki",
+          lookup_key = "com.apple.security.temporary-exception.mach-lookup.global-name"
+          names = entitlements[lookup_key]
+          normal_prefix = "com.drbaker.macshot.pro"
+          offline_prefix = "com.drbaker.macshot.pro.offline"
+          services = {f"{normal_prefix}-spks", f"{normal_prefix}-spki"}
+          if not services.issubset(names) or "com.apple.axserver" not in names:
+              raise SystemExit("Normal entitlements must contain Sparkle services and Accessibility lookup")
+          entitlements[lookup_key] = [
+              name.replace(normal_prefix, offline_prefix, 1) if name in services else name
+              for name in names
           ]
           Path("/tmp/macshot-offline.entitlements").write_bytes(plistlib.dumps(entitlements))
           PYEOF
@@ -247,8 +309,8 @@ jobs:
             done < <(find "$APP/Contents" -name "*.xpc" -print0)
           }
 
-          sign_app "build/Build/Products/Release/macshot.app" "macshot/macshot.entitlements"
-          sign_app "build-offline/Build/Products/Release/macshot Offline.app" "/tmp/macshot-offline.entitlements"
+          sign_app "build/Build/Products/Release/Macshot Pro.app" "macshot/macshot.entitlements"
+          sign_app "build-offline/Build/Products/Release/Macshot Pro Offline.app" "/tmp/macshot-offline.entitlements"
 
       # ── 6. Package into DMGs ───────────────────────────────────────────────
       - name: Package DMGs
@@ -285,8 +347,8 @@ jobs:
               || [ $? -eq 2 ]
           }
 
-          package_dmg "build/Build/Products/Release/macshot.app" "MacShot.dmg" "macshot" "/tmp/dmg-staging-normal"
-          package_dmg "build-offline/Build/Products/Release/macshot Offline.app" "MacShot-Offline.dmg" "macshot Offline" "/tmp/dmg-staging-offline"
+          package_dmg "build/Build/Products/Release/Macshot Pro.app" "Macshot-Pro.dmg" "Macshot Pro" "/tmp/dmg-staging-normal"
+          package_dmg "build-offline/Build/Products/Release/Macshot Pro Offline.app" "Macshot-Pro-Offline.dmg" "Macshot Pro Offline" "/tmp/dmg-staging-offline"
 
       # ── 7. Notarize ────────────────────────────────────────────────────────
       # A new developer team's first submissions can take hours at Apple. The
@@ -308,8 +370,8 @@ jobs:
             xcrun notarytool submit "$1" "${AUTH[@]}" --output-format json \
               | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
           }
-          echo "MAIN=$(submit MacShot.dmg)" > notarization-ids.txt
-          echo "OFFLINE=$(submit MacShot-Offline.dmg)" >> notarization-ids.txt
+          echo "MAIN=$(submit Macshot-Pro.dmg)" > notarization-ids.txt
+          echo "OFFLINE=$(submit Macshot-Pro-Offline.dmg)" >> notarization-ids.txt
           echo "$BUILD_NUMBER" > build-number.txt
           cat notarization-ids.txt
 
@@ -319,10 +381,11 @@ jobs:
         with:
           name: notarization-${{ env.VERSION }}
           path: |
-            MacShot.dmg
-            MacShot-Offline.dmg
+            Macshot-Pro.dmg
+            Macshot-Pro-Offline.dmg
             notarization-ids.txt
             build-number.txt
+            sparkle-public-key.txt
           retention-days: 14
 
       - name: Restore images from the earlier run
@@ -333,9 +396,20 @@ jobs:
           run-id: ${{ inputs.resume_run }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Use the earlier run's build number
+      - name: Verify restored signing metadata and build number
         if: ${{ inputs.resume_run }}
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
         run: |
+          python3 << 'PYEOF'
+          import os
+          from pathlib import Path
+
+          if Path("sparkle-public-key.txt").read_text().strip() != os.environ["SPARKLE_PUBLIC_KEY"]:
+              raise SystemExit("The restored apps use a different Sparkle key; resume with that key or rebuild")
+          if not Path("build-number.txt").read_text().strip().isdigit():
+              raise SystemExit("The restored app build number is invalid")
+          PYEOF
           # The appcast must carry the build number baked into these images.
           echo "BUILD_NUMBER=$(cat build-number.txt)" >> $GITHUB_ENV
           cat notarization-ids.txt
@@ -361,7 +435,7 @@ jobs:
           wait "$PID_OFFLINE" || true
 
           pending=0
-          for pair in "MacShot.dmg:$MAIN" "MacShot-Offline.dmg:$OFFLINE"; do
+          for pair in "Macshot-Pro.dmg:$MAIN" "Macshot-Pro-Offline.dmg:$OFFLINE"; do
             dmg=${pair%%:*}; id=${pair#*:}
             # Retry: a brief network drop on the runner must not fail the run.
             status=""
@@ -385,7 +459,7 @@ jobs:
             exit 1
           fi
 
-          for dmg in MacShot.dmg MacShot-Offline.dmg; do
+          for dmg in Macshot-Pro.dmg Macshot-Pro-Offline.dmg; do
             # Apple's ticket service sometimes throttles right after acceptance
             # (stapler error 68 with a retry-after); the ticket still exists.
             for attempt in 1 2 3 4 5 6 7 8; do
@@ -399,24 +473,14 @@ jobs:
           echo "✅ Notarization complete"
           rm -f "$KEY"
 
-      # ── 8. Get SHA256 for Homebrew ─────────────────────────────────────────
-      - name: Compute SHA256
-        run: |
-          SHA256=$(shasum -a 256 MacShot.dmg | awk '{print $1}')
-          OFFLINE_SHA256=$(shasum -a 256 MacShot-Offline.dmg | awk '{print $1}')
-          echo "SHA256=$SHA256" >> $GITHUB_ENV
-          echo "OFFLINE_SHA256=$OFFLINE_SHA256" >> $GITHUB_ENV
-          echo "SHA256: $SHA256"
-          echo "OFFLINE_SHA256: $OFFLINE_SHA256"
-
-      # ── 9. Extract changelog entry for this version ───────────────────────
+      # ── 8. Extract changelog entry for this version ───────────────────────
       - name: Extract release notes
         run: |
           awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" \
             CHANGELOG.md > release_notes.md
           cat release_notes.md
 
-      # ── 10. Sign DMG for Sparkle and update appcast ───────────────────────
+      # ── 9. Sign DMG for Sparkle and update appcast ───────────────────────
       - name: Write appcast helper scripts
         run: |
           python3 << 'PYEOF'
@@ -481,7 +545,7 @@ jobs:
               <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
                   <channel>
                       <title>{title}</title>
-                      <link>https://github.com/sw33tLie/macshot</link>
+                      <link>https://github.com/{os.environ["GITHUB_REPOSITORY"]}</link>
                       <description>{description}</description>
               {items}
                   </channel>
@@ -490,18 +554,46 @@ jobs:
           """))
           PYEOF
 
+          cat > /tmp/verify_sparkle_update.swift << 'SWIFTEOF'
+          import CryptoKit
+          import Darwin
+          import Foundation
+
+          func fail(_ message: String) -> Never {
+              fputs(message + "\n", stderr)
+              exit(1)
+          }
+
+          let arguments = CommandLine.arguments
+          guard arguments.count == 4,
+                let signature = Data(base64Encoded: arguments[2]), signature.count == 64,
+                let publicKeyData = Data(base64Encoded: arguments[3]), publicKeyData.count == 32 else {
+              fail("Expected an archive, a 64-byte Ed25519 signature, and a 32-byte public key")
+          }
+          // CryptoKit's Curve25519.Signing uses the same Ed25519 signatures as Sparkle.
+          let publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: publicKeyData)
+          let archive = try Data(contentsOf: URL(fileURLWithPath: arguments[1]), options: .mappedIfSafe)
+          guard publicKey.isValidSignature(signature, for: archive) else {
+              fail("Sparkle DMG signature does not match the configured SPARKLE_PUBLIC_KEY")
+          }
+          SWIFTEOF
+          xcrun swiftc -O /tmp/verify_sparkle_update.swift -o /tmp/verify_sparkle_update
+
       - name: Update Sparkle appcasts
         env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           # Download Sparkle tools
-          SPARKLE_VERSION="2.6.4"
+          SPARKLE_VERSION="2.9.0"
           curl -L -o /tmp/Sparkle.tar.xz \
             "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
           mkdir -p /tmp/sparkle
           tar -xf /tmp/Sparkle.tar.xz -C /tmp/sparkle
 
-          echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_key
+          umask 077
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_key
+          trap 'rm -f /tmp/sparkle_key' EXIT
           DATE=$(date -R)
 
           if [ "$IS_BETA" = "true" ]; then
@@ -540,12 +632,10 @@ jobs:
             local ITEM_PATH="/tmp/new_item_${VARIANT}.xml"
             local STABLE_PATH="/tmp/stable_items_${VARIANT}.xml"
 
-            SIGN_OUTPUT=$(/tmp/sparkle/bin/sign_update "$DMG" --ed-key-file /tmp/sparkle_key)
-            echo "Sparkle signature output for $DMG: $SIGN_OUTPUT"
-
-            ED_SIG=$(echo "$SIGN_OUTPUT" | sed -n 's/.*edSignature="\([^"]*\)".*/\1/p')
+            ED_SIG=$(/tmp/sparkle/bin/sign_update -p "$DMG" --ed-key-file /tmp/sparkle_key)
+            /tmp/verify_sparkle_update "$DMG" "$ED_SIG" "$SPARKLE_PUBLIC_KEY"
             FILESIZE=$(stat -f%z "$DMG")
-            DOWNLOAD_URL="https://github.com/sw33tLie/macshot/releases/download/v${VERSION}/${DMG}"
+            DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DMG}"
 
             python3 /tmp/build_item.py "$ITEM_PATH" "$VERSION" "$BUILD_NUMBER" "$DATE" "$CHANNEL" "$RELEASE_HTML" "$DOWNLOAD_URL" "$FILESIZE" "$ED_SIG"
 
@@ -565,11 +655,11 @@ jobs:
             cat "$APPCAST"
           }
 
-          update_appcast "normal" "MacShot.dmg" "appcast.xml" "macshot" "macshot updates"
-          update_appcast "offline" "MacShot-Offline.dmg" "appcast-offline.xml" "macshot Offline" "macshot Offline updates"
+          update_appcast "normal" "Macshot-Pro.dmg" "appcast.xml" "Macshot Pro" "Macshot Pro updates"
+          update_appcast "offline" "Macshot-Pro-Offline.dmg" "appcast-offline.xml" "Macshot Pro Offline" "Macshot Pro Offline updates"
           rm -f /tmp/sparkle_key
 
-      # ── 11. Create GitHub Release ──────────────────────────────────────────
+      # ── 10. Create GitHub Release ──────────────────────────────────────────
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -579,20 +669,20 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then
-            gh release upload "v$VERSION" MacShot.dmg MacShot-Offline.dmg --clobber
+            gh release upload "v$VERSION" Macshot-Pro.dmg Macshot-Pro-Offline.dmg --clobber
             gh release edit "v$VERSION" \
               --title "v$VERSION" \
               --notes-file release_notes.md \
               $PRERELEASE_FLAG
           else
-            gh release create "v$VERSION" MacShot.dmg MacShot-Offline.dmg \
+            gh release create "v$VERSION" Macshot-Pro.dmg Macshot-Pro-Offline.dmg \
               --title "v$VERSION" \
               --notes-file release_notes.md \
               $PRERELEASE_FLAG
           fi
 
-      # ── 12. Commit appcasts to main ────────────────────────────────────────
-      - name: Commit appcasts + update website version
+      # ── 11. Commit appcasts to main ────────────────────────────────────────
+      - name: Commit appcasts
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -607,86 +697,13 @@ jobs:
           git checkout -f -B main origin/main
           cp /tmp/appcast.xml appcast.xml
           cp /tmp/appcast-offline.xml appcast-offline.xml
-          if [ "$IS_BETA" = "false" ]; then
-            sed -i '' "s/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/v${VERSION}/" website/index.html
-            git add website/index.html
-          fi
           git add appcast.xml appcast-offline.xml
           git diff --cached --quiet && echo "No changes" || {
             git commit -m "ci: update appcasts for v${VERSION}"
             git push origin main
           }
 
-      # ── 13. Update Homebrew casks (personal tap) ───────────────────────────
-      - name: Update Homebrew casks
-        if: env.IS_BETA == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          git clone https://x-access-token:${GH_TOKEN}@github.com/sw33tLie/homebrew-macshot.git /tmp/tap
-
-          sed -i '' \
-            -e "s/version \".*\"/version \"$VERSION\"/" \
-            -e "s/sha256 \".*\"/sha256 \"$SHA256\"/" \
-            -e 's/depends_on macos: :[a-z_]*/depends_on macos: :ventura/' \
-            /tmp/tap/Casks/macshot.rb
-
-          OFFLINE_CASK="/tmp/tap/Casks/macshot-offline.rb"
-          cat > "$OFFLINE_CASK" <<EOF
-          cask "macshot-offline" do
-            version "$VERSION"
-            sha256 "$OFFLINE_SHA256"
-
-            url "https://github.com/sw33tLie/macshot/releases/download/v#{version}/MacShot-Offline.dmg"
-            name "macshot Offline"
-            desc "Native macOS screenshot tool without upload integrations"
-            homepage "https://github.com/sw33tLie/macshot"
-
-            livecheck do
-              url "https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast-offline.xml"
-              strategy :sparkle do |items|
-                items.find { |item| item.channel.nil? }&.short_version
-              end
-            end
-
-            auto_updates true
-            depends_on macos: :ventura
-
-            app "macshot Offline.app"
-
-            uninstall quit: "com.sw33tlie.macshot.offline"
-
-            zap trash: [
-              "~/Library/Application Scripts/com.sw33tlie.macshot.offline",
-              "~/Library/Containers/com.sw33tlie.macshot.offline",
-              "~/Library/Preferences/com.sw33tlie.macshot.offline.plist",
-            ]
-          end
-          EOF
-
-          cd /tmp/tap
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/macshot.rb Casks/macshot-offline.rb
-          git diff --cached --quiet && echo "No Homebrew changes" || {
-            git commit -m "macshot $VERSION"
-            git push
-          }
-
-      # ── 14. Bump homebrew-cask (official) ──────────────────────────────────
-      - name: Bump homebrew-cask
-        if: env.IS_BETA == 'false'
-        env:
-          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          brew tap homebrew/cask 2>/dev/null || true
-          brew bump-cask-pr macshot \
-            --version "$VERSION" \
-            --sha256 "$SHA256" \
-            --no-browse \
-            || echo "⚠️ homebrew-cask bump failed (cask may not exist yet or is already up to date)"
-
-      # ── 15. Cleanup keychain ────────────────────────────────────────────────
+      # ── 12. Cleanup keychain ────────────────────────────────────────────────
       - name: Cleanup keychain
         if: always()
         run: |

@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -33,7 +33,7 @@
 "Pin from Clipboard" = "Panodan Sabitle";
 "Preferences..." = "Tercihler...";
 "Check for Updates..." = "Güncellemeleri Denetle...";
-"Quit macshot" = "macshot'tan Çık";
+"Quit macshot" = "Macshot Pro'tan Çık";
 "No recent captures" = "Son yakalama yok";
 "Clear History" = "Geçmişi Temizle";
 
@@ -194,7 +194,7 @@
 "Copy to clipboard" = "Panoya kopyala";
 
 /* Preferences - General */
-"macshot Preferences" = "macshot Tercihleri";
+"macshot Preferences" = "Macshot Pro Tercihleri";
 "General" = "Genel";
 "Tools" = "Araçlar";
 "Recording" = "Kayıt";
@@ -219,7 +219,7 @@
 "Show shortcuts in tooltips" = "Kısayolları ipuçlarında göster";
 "Use window title in saved filename" = "Kaydedilen dosya adında pencere başlığını kullan";
 "Hide menu bar icon" = "Menü çubuğu simgesini gizle";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Kısayol tuşları çalışmaya devam eder. Simgeyi tekrar göstermek için macshot'u yeniden başlatın.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Kısayol tuşları çalışmaya devam eder. Simgeyi tekrar göstermek için Macshot Pro'u yeniden başlatın.";
 "Menu bar icon:" = "Menü çubuğu simgesi:";
 "Default" = "Varsayılan";
 "Custom symbol" = "Özel sembol";
@@ -234,7 +234,7 @@
 "Stack (keep all)" = "Yığınla (tümünü tut)";
 "Replace (show only latest)" = "Değiştir (yalnızca son)";
 "Menu Bar Order" = "Menü Çubuğu Sırası";
-"Choose the order of capture actions in the macshot menu bar menu." = "macshot menü çubuğu menüsündeki yakalama eylemlerinin sırasını seçin.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Macshot Pro menü çubuğu menüsündeki yakalama eylemlerinin sırasını seçin.";
 "Move up" = "Yukarı taşı";
 "Move down" = "Aşağı taşı";
 "Output" = "Çıktı";
@@ -365,7 +365,7 @@
 "Video upload requires Google Drive or S3" = "Video yüklemek için Google Drive veya S3 gereklidir";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Sürüm %@ (%@)";
 "Made by" = "Yapımcı";
 "Licensed under the GPLv3" = "GPLv3 lisansı altında";
@@ -378,26 +378,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Önce panoya bir görsel veya metin kopyalayın, ardından tekrar deneyin.";
 "OK" = "Tamam";
 "Accessibility Access Required" = "Erişilebilirlik İzni Gerekli";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot, diğer uygulamaları otomatik kaydırmak için Erişilebilirlik iznine ihtiyaç duyar. Lütfen Sistem Ayarları'ndan izin verin ve tekrar deneyin.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot, kaydırmalı yakalama için Erişilebilirlik iznine ihtiyaç duyuyor. Lütfen Sistem Ayarları'ndan erişim verin ve tekrar deneyin.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro, diğer uygulamaları otomatik kaydırmak için Erişilebilirlik iznine ihtiyaç duyar. Lütfen Sistem Ayarları'ndan izin verin ve tekrar deneyin.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro, kaydırmalı yakalama için Erişilebilirlik iznine ihtiyaç duyuyor. Lütfen Sistem Ayarları'ndan erişim verin ve tekrar deneyin.";
 "Open Settings" = "Ayarları Aç";
 "Cancel" = "İptal";
 "Microphone Access Required" = "Mikrofon Erişimi Gerekli";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot, ses kaydetmek için mikrofon iznine ihtiyaç duyar. İzin vermek için Sistem Ayarları'nı açın.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro, ses kaydetmek için mikrofon iznine ihtiyaç duyar. İzin vermek için Sistem Ayarları'nı açın.";
 "Upload to Google Drive?" = "Google Drive'a yüklensin mi?";
 "Upload to S3?" = "S3'e yüklensin mi?";
 "Upload to imgbb.com?" = "imgbb.com'a yüklensin mi?";
 "Your screenshot will be uploaded." = "Ekran görüntünüz yüklenecek.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "macshot'a Hoş Geldiniz";
-"Welcome back to macshot" = "macshot'a tekrar hoş geldin";
+"Welcome to macshot" = "Macshot Pro'a Hoş Geldiniz";
+"Welcome back to macshot" = "Macshot Pro'a tekrar hoş geldin";
 "Turn Screen Recording back on" = "Ekran Kaydı'nı yeniden aç";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Bazı güncellemelerden sonra macOS, macshot için erişimi yeniden onaylamanı ister. Ayarların ve görüntülerin güvende. macshot listede zaten varsa seç, kaldırmak için eksi düğmesine (−) tıkla, ardından artı düğmesine (+) tıklayıp macshot'u yeniden ekle.";
-"macshot needs one permission" = "macshot bir izne ihtiyaç duyar";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Bazı güncellemelerden sonra macOS, Macshot Pro için erişimi yeniden onaylamanı ister. Ayarların ve görüntülerin güvende. Macshot Pro listede zaten varsa seç, kaldırmak için eksi düğmesine (−) tıkla, ardından artı düğmesine (+) tıklayıp Macshot Pro'u yeniden ekle.";
+"macshot needs one permission" = "Macshot Pro bir izne ihtiyaç duyar";
 "Screen Recording not yet granted" = "Ekran Kaydı izni henüz verilmedi";
 "Screen Recording granted!" = "Ekran Kaydı izni verildi!";
-"Enable macshot, then try taking a screenshot" = "macshot'u etkinleştirin, ardından ekran görüntüsü almayı deneyin";
+"Enable macshot, then try taking a screenshot" = "Macshot Pro'u etkinleştirin, ardından ekran görüntüsü almayı deneyin";
 "Open Screen Recording Settings" = "Ekran Kaydı Ayarlarını Aç";
 "Continue" = "Devam";
 
@@ -428,7 +428,7 @@
 "Path copied!" = "Yol kopyalandı!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot Video Düzenleyici";
+"macshot Video Editor" = "Macshot Pro Video Düzenleyici";
 "%@ selected" = "%@ seçili";
 "Exporting..." = "Dışa aktarılıyor...";
 "Export failed" = "Dışa aktarma başarısız";
@@ -476,8 +476,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Giriş İzleme Gerekli";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot, kayıt sırasında fare tıklamalarını vurgulamak veya tuş vuruşlarını göstermek için Giriş İzleme iznine ihtiyaç duyar. Sistem Ayarları'ndan erişim izni verin ve tekrar deneyin.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot, tek tek arayüz öğelerine hizalanmak için Erişilebilirlik iznine ihtiyaç duyuyor. Lütfen Sistem Ayarları'ndan erişim verin ve tekrar deneyin.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro, kayıt sırasında fare tıklamalarını vurgulamak veya tuş vuruşlarını göstermek için Giriş İzleme iznine ihtiyaç duyar. Sistem Ayarları'ndan erişim izni verin ve tekrar deneyin.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro, tek tek arayüz öğelerine hizalanmak için Erişilebilirlik iznine ihtiyaç duyuyor. Lütfen Sistem Ayarları'ndan erişim verin ve tekrar deneyin.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Tuş Vuruşlarını Göster";
@@ -493,7 +493,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Web Kamerası Katmanı";
 "Camera Access Required" = "Kamera Erişimi Gerekli";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot, web kamerası katmanı için kamera iznine ihtiyaç duyar. İzin vermek için Sistem Ayarları'nı açın.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro, web kamerası katmanı için kamera iznine ihtiyaç duyar. İzin vermek için Sistem Ayarları'nı açın.";
 "Webcam" = "Web Kamerası";
 "Bottom Right" = "Sağ Alt";
 "Bottom Left" = "Sol Alt";
@@ -514,7 +514,7 @@
 /* New Strings */
 "Settings" = "Ayarlar";
 "Settings..." = "Ayarlar...";
-"macshot Settings" = "macshot Ayarları";
+"macshot Settings" = "Macshot Pro Ayarları";
 "Also open in Editor" = "Düzenleyicide de aç";
 "Close editor after copying" = "Kopyaladıktan sonra düzenleyiciyi kapat";
 "Hide controls" = "Kontrolleri gizle";
@@ -556,7 +556,6 @@
 "Download language packs in System Settings…" = "Sistem Ayarları'ndan dil paketlerini indirin…";
 "Configure S3 in Settings" = "Ayarlar'da S3'ü yapılandırın";
 "Sign in to Google Drive in Settings" = "Ayarlar'da Google Drive'a giriş yapın";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Çevrimdışı sürüm: yükleme ve bulut depolama entegrasyonları kaldırıldı. Güncelleme denetimleri yine de MacShot'ın güncelleme sunucusuna bağlanabilir. Ekran görüntüleri ve kayıtlar, siz kendiniz paylaşmadıkça veya kaydetmedikçe yerel kalır.";
 "Position:" = "Konum:";
 "Size:" = "Boyut:";
 "Shape:" = "Şekil:";
@@ -583,7 +582,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Video Aç...";
-"Choose a video to open in macshot editor" = "macshot düzenleyicisinde açmak için bir video seçin";
+"Choose a video to open in macshot editor" = "Macshot Pro düzenleyicisinde açmak için bir video seçin";
 "Click to add effects" = "Efekt eklemek için tıklayın";
 "Add Zoom" = "Yakınlaştırma Ekle";
 "Add Censor" = "Sansür Ekle";
@@ -658,7 +657,7 @@
 "Stop the current recording" = "Geçerli kaydı durdur";
 "Supported URL Scheme Commands" = "Desteklenen URL Şeması Komutları";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Dosya uzantısı otomatik olarak eklenir. {window} içindeki eğik çizgiler ve iki nokta tire olur.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "macshot'u Raycast, Alfred, Shortcuts veya URL açan herhangi bir araçtan tetikleyin.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Macshot Pro'u Raycast, Alfred, Shortcuts veya URL açan herhangi bir araçtan tetikleyin.";
 "URL scheme info" = "URL şeması bilgisi";
 "sec (0 = never)" = "sn (0 = asla)";
 
@@ -667,7 +666,7 @@
 "Export Settings…" = "Ayarları Dışa Aktar…";
 "Import Settings…" = "Ayarları İçe Aktar…";
 "Reveal Settings File in Finder" = "Ayar Dosyasını Finder'da Göster";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Tercihlerinizi başka bir Mac'e ya da temiz bir kuruluma taşımak için bir dosyaya dışa aktarın. Yükleme kimlik bilgileri, kayıt klasörünüz ve ekran görüntüsü geçmişi dahil edilmez. Ayarlar macshot'un uygulama kapsayıcısında saklanır.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Tercihlerinizi başka bir Mac'e ya da temiz bir kuruluma taşımak için bir dosyaya dışa aktarın. Yükleme kimlik bilgileri, kayıt klasörünüz ve ekran görüntüsü geçmişi dahil edilmez. Ayarlar Macshot Pro'un uygulama kapsayıcısında saklanır.";
 "Export Settings" = "Ayarları Dışa Aktar";
 "Import Settings" = "Ayarları İçe Aktar";
 "Import failed" = "İçe aktarma başarısız oldu";
@@ -678,12 +677,12 @@
 "Relaunch Now" = "Şimdi Yeniden Başlat";
 "Replace your current settings?" = "Mevcut ayarlarınız değiştirilsin mi?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "İçe aktarma, mevcut tercihlerinizi bu dosyadakilerle değiştirir. Kayıt klasörünüz, yükleme kimlik bilgileriniz ve ekran görüntüsü geçmişiniz korunur. Bu işlem geri alınamaz.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d ayar uygulandı. Tüm değişiklikleri uygulamak için macshot'u yeniden başlatın.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d ayar uygulandı. Tüm değişiklikleri uygulamak için Macshot Pro'u yeniden başlatın.";
 "A few large items were too big to include. Everything else was saved." = "Birkaç büyük öğe dahil edilemeyecek kadar büyüktü. Diğer her şey kaydedildi.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Özel Beautify arka plan görüntünüz dahil edilemeyecek kadar büyüktü. Diğer her şey kaydedildi.";
-"This file is not a valid macshot settings file." = "Bu dosya geçerli bir macshot ayar dosyası değil.";
+"This file is not a valid macshot settings file." = "Bu dosya geçerli bir Macshot Pro ayar dosyası değil.";
 "This settings file contains no settings." = "Bu ayar dosyası hiçbir ayar içermiyor.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Bu ayar dosyası macshot'un daha yeni bir sürümüyle oluşturulmuş. Lütfen önce macshot'u güncelleyin.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Bu ayar dosyası Macshot Pro'un daha yeni bir sürümüyle oluşturulmuş. Lütfen önce Macshot Pro'u güncelleyin.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Metni yakalayın, çevirin ve görüntünün üzerine yerleştirin";
@@ -728,7 +727,7 @@
 "Apply Default Zoom to All" = "Varsayılan Yakınlaştırmayı Tümüne Uygula";
 "Auto" = "Otomatik";
 "Auto Zoom" = "Otomatik Yakınlaştırma";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Otomatik Yakınlaştırma, macshot'ın her yeni kayıtta kaydettiği imleç verilerine ihtiyaç duyar. Yakınlaştırma şeridine çift tıklayarak yine de yakınlaştırma ekleyebilirsiniz.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Otomatik Yakınlaştırma, Macshot Pro'ın her yeni kayıtta kaydettiği imleç verilerine ihtiyaç duyar. Yakınlaştırma şeridine çift tıklayarak yine de yakınlaştırma ekleyebilirsiniz.";
 "Background blur" = "Arka plan bulanıklığı";
 "Background color" = "Arka plan rengi";
 "Background, padding, rounded corners and shadow" = "Arka plan, dolgu, yuvarlatılmış köşeler ve gölge";
@@ -829,7 +828,7 @@
 "Shrink during zooms" = "Yakınlaştırmalarda küçült";
 "Smoothing" = "Yumuşatma";
 "Snappy" = "Çevik";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "macshot için konuşma tanıma Sistem Ayarları › Gizlilik ve Güvenlik'te kapalı.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Macshot Pro için konuşma tanıma Sistem Ayarları › Gizlilik ve Güvenlik'te kapalı.";
 "Speed" = "Hız";
 "Spotlight" = "Spot ışığı";
 "Square" = "Kare";
@@ -839,12 +838,12 @@
 "The recording's audio could not be read." = "Kaydın sesi okunamadı.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Bu kayıt imleci zaten piksellerinde gösteriyor, bu yüzden stili değiştirilemez. Yakınlaştırmalar yine de onu izleyebilir.";
 "This recording has no audio to transcribe." = "Bu kayıtta yazıya dökülecek ses yok.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Bu videoda kaydedilmiş imleç verisi yok. macshot ile yapılan ve düzenleyicide açılan kayıtlar, kayıttan sonra imlecin stilini, yumuşaklığını ve boyutunu değiştirmenize olanak tanır.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Bu videoda kaydedilmiş imleç verisi yok. Macshot Pro ile yapılan ve düzenleyicide açılan kayıtlar, kayıttan sonra imlecin stilini, yumuşaklığını ve boyutunu değiştirmenize olanak tanır.";
 "Title" = "Başlık";
 "Transcribing…" = "Yazıya dökülüyor…";
 "Transition" = "Geçiş";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Kayıttan önce Tuş Vuruşlarını Göster'i açın. macshot bunları ayrı olarak kaydeder, böylece burada stillerini ayarlayabilirsiniz.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Kayıttan önce kamerayı açın. macshot onu ayrı olarak kaydeder, böylece burada taşıyabilir, yeniden boyutlandırabilir, stilini değiştirebilir veya gizleyebilirsiniz, ve yakınlaştırmalar sırasında küçültebilirsiniz.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Kayıttan önce Tuş Vuruşlarını Göster'i açın. Macshot Pro bunları ayrı olarak kaydeder, böylece burada stillerini ayarlayabilirsiniz.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Kayıttan önce kamerayı açın. Macshot Pro onu ayrı olarak kaydeder, böylece burada taşıyabilir, yeniden boyutlandırabilir, stilini değiştirebilir veya gizleyebilirsiniz, ve yakınlaştırmalar sırasında küçültebilirsiniz.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Hassas bilgileri gizlemek için Düz'ü kullanın: bulanıklaştırma ve pikselleştirme bazen geri alınabilir.";
 "Visibility" = "Görünürlük";
 "Wallpaper" = "Duvar kağıdı";
@@ -862,7 +861,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -917,7 +916,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1054,3 +1053,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Çevrimdışı sürüm: yükleme ve bulut depolama entegrasyonları kaldırıldı. Ekran görüntüleri ve kayıtlar, siz kendiniz paylaşmadıkça veya kaydetmedikçe yerel kalır.";

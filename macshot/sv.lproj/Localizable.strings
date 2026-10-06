@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "F\U00E4st fr\U00E5n urklipp";
 "Preferences..." = "Inst\U00E4llningar...";
 "Check for Updates..." = "S\U00F6k efter uppdateringar...";
-"Quit macshot" = "Avsluta macshot";
+"Quit macshot" = "Avsluta Macshot Pro";
 "No recent captures" = "Inga senaste f\U00E5ngster";
 "Clear History" = "Rensa historik";
 
@@ -207,7 +207,7 @@
 "Copy to clipboard" = "Kopiera till urklipp";
 
 /* Preferences - General */
-"macshot Preferences" = "macshot-inst\U00E4llningar";
+"macshot Preferences" = "Macshot Pro-inst\U00E4llningar";
 "General" = "Allm\U00E4nt";
 "Tools" = "Verktyg";
 "Recording" = "Inspelning";
@@ -232,7 +232,7 @@
 "Hide capture instructions" = "D\U00F6lj instruktioner vid sk\U00E4rmbild";
 "Use window title in saved filename" = "Anv\U00E4nd f\U00F6nstertitel i filnamn";
 "Hide menu bar icon" = "D\U00F6lj menyradsikon";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Kortkommandon fungerar fortfarande. F\U00F6r att visa ikonen igen, starta om macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Kortkommandon fungerar fortfarande. F\U00F6r att visa ikonen igen, starta om Macshot Pro.";
 "Check for updates automatically" = "S\U00F6k efter uppdateringar automatiskt";
 "Check for beta updates" = "S\U00F6k efter betauppdateringar";
 "Thumbnail" = "Miniatyrbild";
@@ -295,7 +295,7 @@
 "Hidden tools are removed from the bottom toolbar." = "Dolda verktyg tas bort fr\U00E5n det nedre verktygsf\U00E4ltet.";
 "Capture Actions" = "F\U00E5ngst\U00E5tg\U00E4rder";
 "Menu Bar Order" = "Menyradens ordning";
-"Choose the order of capture actions in the macshot menu bar menu." = "V\U00E4lj ordningen p\U00E5 f\U00E5ngst\U00E5tg\U00E4rderna i menyn p\U00E5 macshot-menyraden.";
+"Choose the order of capture actions in the macshot menu bar menu." = "V\U00E4lj ordningen p\U00E5 f\U00E5ngst\U00E5tg\U00E4rderna i menyn p\U00E5 Macshot Pro-menyraden.";
 "Move up" = "Flytta upp";
 "Move down" = "Flytta ned";
 "Bottom Toolbar Actions" = "\U00C5tg\U00E4rder i nedre verktygsf\U00E4ltet";
@@ -370,7 +370,7 @@
 "Video upload requires Google Drive or S3" = "Videouppladdning kr\U00E4ver Google Drive eller S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Version %@ (%@)";
 "Made by" = "Skapad av";
 "Licensed under the GPLv3" = "Licensierad under GPLv3";
@@ -383,26 +383,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Kopiera en bild eller text till urklipp f\U00F6rst och f\U00F6rs\U00F6k sedan igen.";
 "OK" = "OK";
 "Accessibility Access Required" = "Tillg\U00E4nglighets\U00E5tkomst kr\U00E4vs";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot beh\U00F6ver tillg\U00E4nglighetsbeh\U00F6righet f\U00F6r att auto-rulla andra appar. Ge \U00E5tkomst i Systeminst\U00E4llningar och f\U00F6rs\U00F6k sedan igen.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot behöver behörighet för Tillgänglighet för rullningsfångst. Ge åtkomst i Systeminställningar och försök igen.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro beh\U00F6ver tillg\U00E4nglighetsbeh\U00F6righet f\U00F6r att auto-rulla andra appar. Ge \U00E5tkomst i Systeminst\U00E4llningar och f\U00F6rs\U00F6k sedan igen.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro behöver behörighet för Tillgänglighet för rullningsfångst. Ge åtkomst i Systeminställningar och försök igen.";
 "Open Settings" = "\U00D6ppna Inst\U00E4llningar";
 "Cancel" = "Avbryt";
 "Microphone Access Required" = "Mikrofon\U00E5tkomst kr\U00E4vs";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot beh\U00F6ver mikrofonbeh\U00F6righet f\U00F6r att spela in r\U00F6stljud. \U00D6ppna Systeminst\U00E4llningar f\U00F6r att ge \U00E5tkomst.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro beh\U00F6ver mikrofonbeh\U00F6righet f\U00F6r att spela in r\U00F6stljud. \U00D6ppna Systeminst\U00E4llningar f\U00F6r att ge \U00E5tkomst.";
 "Upload to Google Drive?" = "Ladda upp till Google Drive?";
 "Upload to S3?" = "Ladda upp till S3?";
 "Upload to imgbb.com?" = "Ladda upp till imgbb.com?";
 "Your screenshot will be uploaded." = "Din sk\U00E4rmbild kommer att laddas upp.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "V\U00E4lkommen till macshot";
-"Welcome back to macshot" = "Välkommen tillbaka till macshot";
+"Welcome to macshot" = "V\U00E4lkommen till Macshot Pro";
+"Welcome back to macshot" = "Välkommen tillbaka till Macshot Pro";
 "Turn Screen Recording back on" = "Slå på skärminspelning igen";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Efter vissa uppdateringar ber macOS dig att tillåta macshot igen. Dina inställningar och bilder finns kvar. Om macshot redan finns i listan markerar du det, klickar på minusknappen (−) för att ta bort det och klickar sedan på plusknappen (+) och lägger till macshot igen.";
-"macshot needs one permission" = "macshot beh\U00F6ver en beh\U00F6righet";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Efter vissa uppdateringar ber macOS dig att tillåta Macshot Pro igen. Dina inställningar och bilder finns kvar. Om Macshot Pro redan finns i listan markerar du det, klickar på minusknappen (−) för att ta bort det och klickar sedan på plusknappen (+) och lägger till Macshot Pro igen.";
+"macshot needs one permission" = "Macshot Pro beh\U00F6ver en beh\U00F6righet";
 "Screen Recording not yet granted" = "Sk\U00E4rminspelning \U00E4nnu inte beviljad";
 "Screen Recording granted!" = "Sk\U00E4rminspelning beviljad!";
-"Enable macshot, then try taking a screenshot" = "Aktivera macshot och ta sedan en sk\U00E4rmbild";
+"Enable macshot, then try taking a screenshot" = "Aktivera Macshot Pro och ta sedan en sk\U00E4rmbild";
 "Open Screen Recording Settings" = "\U00D6ppna inst\U00E4llningar f\U00F6r sk\U00E4rminspelning";
 "Continue" = "Forts\U00E4tt";
 
@@ -433,7 +433,7 @@
 "Path copied!" = "S\U00F6kv\U00E4g kopierad!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot Videoredigerare";
+"macshot Video Editor" = "Macshot Pro Videoredigerare";
 "%@ selected" = "%@ markerat";
 "Exporting..." = "Exporterar...";
 "Export failed" = "Export misslyckades";
@@ -481,8 +481,8 @@
 
 /* Recording \U2014 Input Monitoring Permission */
 "Input Monitoring Required" = "Inmatnings\U00F6vervakning kr\U00E4vs";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot behöver behörighet för inmatningsövervakning för att markera musklick eller visa tangenttryckningar under inspelning. Ge åtkomst i Systeminställningar och försök igen.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot behöver behörighet för Tillgänglighet för att fästa mot enskilda gränssnittselement. Ge åtkomst i Systeminställningar och försök igen.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro behöver behörighet för inmatningsövervakning för att markera musklick eller visa tangenttryckningar under inspelning. Ge åtkomst i Systeminställningar och försök igen.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro behöver behörighet för Tillgänglighet för att fästa mot enskilda gränssnittselement. Ge åtkomst i Systeminställningar och försök igen.";
 
 /* Recording \U2014 Keystroke Overlay */
 "Show Keystrokes" = "Visa tangenttryckningar";
@@ -498,7 +498,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Webbkamera\U00F6verlagring";
 "Camera Access Required" = "Kamera\U00E5tkomst kr\U00E4vs";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot beh\U00F6ver kamerabeh\U00F6righet f\U00F6r webbkamera\U00F6verlagringen. \U00D6ppna Systeminst\U00E4llningar f\U00F6r att ge \U00E5tkomst.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro beh\U00F6ver kamerabeh\U00F6righet f\U00F6r webbkamera\U00F6verlagringen. \U00D6ppna Systeminst\U00E4llningar f\U00F6r att ge \U00E5tkomst.";
 "Webcam" = "Webbkamera";
 "Bottom Right" = "Nedre h\U00F6ger";
 "Bottom Left" = "Nedre v\U00E4nster";
@@ -520,7 +520,7 @@
 /* New Strings */
 "Settings" = "Inställningar";
 "Settings..." = "Inst\U00E4llningar...";
-"macshot Settings" = "macshot-inst\U00E4llningar";
+"macshot Settings" = "Macshot Pro-inst\U00E4llningar";
 "Also open in Editor" = "\U00D6ppna \U00E4ven i redigeraren";
 "Close editor after copying" = "Stäng redigeraren efter kopiering";
 "Hide controls" = "D\U00F6lj kontroller";
@@ -562,7 +562,6 @@
 "Download language packs in System Settings\U2026" = "Ladda ner spr\U00E5kpaket i Systeminst\U00E4llningar\U2026";
 "Configure S3 in Settings" = "Konfigurera S3 i Inst\U00E4llningar";
 "Sign in to Google Drive in Settings" = "Logga in p\U00E5 Google Drive i Inst\U00E4llningar";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Offline-version: integrationer för uppladdning och molnlagring är borttagna. Sökning efter uppdateringar kan fortfarande ansluta till MacShots uppdateringsserver. Skärmbilder och inspelningar förblir lokala om du inte delar eller sparar dem själv.";
 "Position:" = "Position:";
 "Size:" = "Storlek:";
 "Shape:" = "Form:";
@@ -581,7 +580,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Öppna video...";
-"Choose a video to open in macshot editor" = "Välj en video att öppna i macshot-redigeraren";
+"Choose a video to open in macshot editor" = "Välj en video att öppna i Macshot Pro-redigeraren";
 "Click to add effects" = "Klicka för att lägga till effekter";
 "Add Zoom" = "Lägg till zoom";
 "Add Censor" = "Lägg till censur";
@@ -655,7 +654,7 @@
 "Stop the current recording" = "Stoppa aktuell inspelning";
 "Supported URL Scheme Commands" = "Kommandon som stöds av URL-schemat";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Filändelsen läggs till automatiskt. Snedstreck och kolon i {window} blir bindestreck.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Utlös macshot från Raycast, Alfred, Shortcuts eller valfritt verktyg som öppnar URL:er.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Utlös Macshot Pro från Raycast, Alfred, Shortcuts eller valfritt verktyg som öppnar URL:er.";
 "URL scheme info" = "URL-scheminfo";
 "Enable macshot:// URL scheme" = "Aktivera macshot://-URL-schema";
 "sec (0 = never)" = "sek (0 = aldrig)";
@@ -665,7 +664,7 @@
 "Export Settings…" = "Exportera inställningar…";
 "Import Settings…" = "Importera inställningar…";
 "Reveal Settings File in Finder" = "Visa inställningsfilen i Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exportera dina inställningar till en fil för att flytta dem till en annan Mac eller en ren installation. Uppladdningsuppgifter, din sparmapp och skärmbildshistorik ingår inte. Inställningarna lagras i macshots appcontainer.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exportera dina inställningar till en fil för att flytta dem till en annan Mac eller en ren installation. Uppladdningsuppgifter, din sparmapp och skärmbildshistorik ingår inte. Inställningarna lagras i appcontainern för Macshot Pro.";
 "Export Settings" = "Exportera inställningar";
 "Import Settings" = "Importera inställningar";
 "Import failed" = "Importen misslyckades";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Starta om nu";
 "Replace your current settings?" = "Ersätt dina nuvarande inställningar?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Importen ersätter dina nuvarande inställningar med de i den här filen. Din sparmapp, uppladdningsuppgifter och skärmbildshistorik behålls. Detta kan inte ångras.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d inställningar tillämpades. Starta om macshot för att verkställa alla ändringar.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d inställningar tillämpades. Starta om Macshot Pro för att verkställa alla ändringar.";
 "A few large items were too big to include. Everything else was saved." = "Några stora objekt var för stora för att inkluderas. Allt annat sparades.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Din anpassade Beautify-bakgrundsbild var för stor för att inkluderas. Allt annat sparades.";
-"This file is not a valid macshot settings file." = "Den här filen är inte en giltig inställningsfil för macshot.";
+"This file is not a valid macshot settings file." = "Den här filen är inte en giltig inställningsfil för Macshot Pro.";
 "This settings file contains no settings." = "Den här inställningsfilen innehåller inga inställningar.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Den här inställningsfilen skapades av en nyare version av macshot. Uppdatera macshot först.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Den här inställningsfilen skapades av en nyare version av Macshot Pro. Uppdatera Macshot Pro först.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Fånga, översätt och lägg texten över bilden";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Använd standardzoom på alla";
 "Auto" = "Auto";
 "Auto Zoom" = "Autozoom";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Autozoom behöver pekardata, som macshot spelar in vid varje ny inspelning. Du kan fortfarande lägga till zoomningar genom att dubbelklicka på zoomspåret.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Autozoom behöver pekardata, som Macshot Pro spelar in vid varje ny inspelning. Du kan fortfarande lägga till zoomningar genom att dubbelklicka på zoomspåret.";
 "Background blur" = "Bakgrundsoskärpa";
 "Background color" = "Bakgrundsfärg";
 "Background, padding, rounded corners and shadow" = "Bakgrund, utfyllnad, rundade hörn och skugga";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Krymp vid zoomning";
 "Smoothing" = "Utjämning";
 "Snappy" = "Kvick";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Taligenkänning är avstängd för macshot i Systeminställningar › Integritet och säkerhet.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Taligenkänning är avstängd för Macshot Pro i Systeminställningar › Integritet och säkerhet.";
 "Speed" = "Hastighet";
 "Spotlight" = "Spotlight";
 "Square" = "Kvadrat";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "Inspelningens ljud kunde inte läsas.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Den här inspelningen visar redan pekaren i sina pixlar, så dess stil kan inte ändras. Zoomningar kan fortfarande följa den.";
 "This recording has no audio to transcribe." = "Den här inspelningen har inget ljud att transkribera.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Den här videon har ingen inspelad pekardata. Inspelningar gjorda med macshot som öppnas i redigeraren låter dig ändra pekarens stil, jämna ut den och ändra dess storlek efter inspelningen.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Den här videon har ingen inspelad pekardata. Inspelningar gjorda med Macshot Pro som öppnas i redigeraren låter dig ändra pekarens stil, jämna ut den och ändra dess storlek efter inspelningen.";
 "Title" = "Rubrik";
 "Transcribing…" = "Transkriberar…";
 "Transition" = "Övergång";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Slå på Visa tangenttryckningar före inspelningen. macshot spelar då in dem separat så att du kan ändra deras stil här.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Slå på kameran före inspelningen. macshot spelar in den separat så att du kan flytta, ändra storlek på, ändra stil på eller dölja den här, och krympa den vid zoomning.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Slå på Visa tangenttryckningar före inspelningen. Macshot Pro spelar då in dem separat så att du kan ändra deras stil här.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Slå på kameran före inspelningen. Macshot Pro spelar in den separat så att du kan flytta, ändra storlek på, ändra stil på eller dölja den här, och krympa den vid zoomning.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Använd Solid för att dölja känslig information: oskärpa och pixelering kan ibland återställas.";
 "Visibility" = "Synlighet";
 "Wallpaper" = "Skrivbordsbild";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Offline-version: integrationer för uppladdning och molnlagring är borttagna. Skärmbilder och inspelningar förblir lokala om du inte delar eller sparar dem själv.";

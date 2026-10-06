@@ -260,12 +260,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Prevent multiple instances — if already running, activate the existing one and quit
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.sw33tlie.macshot.macshot"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.drbaker.macshot.pro"
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
         if running.count > 1 {
             // Tell the existing instance to show its icon and open Settings
             DistributedNotificationCenter.default().postNotificationName(
-                .init("com.sw33tlie.macshot.showAndOpenPrefs"),
+                .init("\(bundleID).showAndOpenPrefs"),
                 object: nil, userInfo: nil, deliverImmediately: true
             )
             NSApp.terminate(nil)
@@ -315,13 +315,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // something references ScreenshotHistory.shared.
         _ = ScreenshotHistory.shared
 
-        #if !LOCAL_DEV
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
-        // Disable silent update downloads — updates should only apply
-        // via explicit user action ("Check for Updates..." / Install),
-        // so an automatic update can't be mistaken for a silent crash.
-        updaterController.updater.automaticallyDownloadsUpdates = false
-        #endif
+        if BuildVariant.supportsUpdates {
+            updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
+            // Installing an update requires an explicit user action.
+            updaterController.updater.automaticallyDownloadsUpdates = false
+        }
         setupMainMenu()
         setupStatusBar()
         DistributedNotificationCenter.default().addObserver(
@@ -344,7 +342,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Listen for duplicate-launch notification to restore icon
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(handleShowAndOpenPrefs),
-            name: .init("com.sw33tlie.macshot.showAndOpenPrefs"), object: nil
+            name: .init("\(bundleID).showAndOpenPrefs"), object: nil
         )
 
         // Dismiss overlays when the user switches spaces
@@ -583,7 +581,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Move to Applications folder?"
-        alert.informativeText = "\(BuildVariant.displayName) is running from a disk image. Move it to your Applications folder for auto-updates and best experience."
+        alert.informativeText = "\(BuildVariant.displayName) is running from a disk image. Move it to your Applications folder to keep it installed."
         alert.addButton(withTitle: "Move to Applications")
         alert.addButton(withTitle: "Not Now")
         alert.showsSuppressionButton = true
@@ -616,7 +614,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         } catch {
             let errAlert = NSAlert()
             errAlert.messageText = "Could not move to Applications"
-            errAlert.informativeText = "Please drag macshot to your Applications folder manually.\n\n\(error.localizedDescription)"
+            errAlert.informativeText = "Please drag \(BuildVariant.displayName) to your Applications folder manually.\n\n\(error.localizedDescription)"
             errAlert.runModal()
         }
     }
@@ -678,9 +676,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About macshot", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About \(BuildVariant.displayName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit macshot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit \(BuildVariant.displayName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
 
         let fileMenuItem = NSMenuItem()
@@ -754,11 +752,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// the chosen SF Symbol as a 22pt template image; anything else — including an empty or
     /// invalid symbol name — falls back to the bundled icon so the item is never blank.
     private func applyPreferredIconImage(to button: NSStatusBarButton) {
+        button.setAccessibilityLabel(BuildVariant.displayName)
         let mode = UserDefaults.standard.string(forKey: Self.statusBarIconModeKey) ?? "default"
         let symbolName = UserDefaults.standard.string(forKey: Self.statusBarIconSymbolNameKey) ?? ""
 
         if mode == "symbol", !symbolName.isEmpty,
-           let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "macshot") {
+           let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: BuildVariant.displayName) {
             symbol.isTemplate = true
             symbol.size = NSSize(width: 22, height: 22)
             button.image = symbol
@@ -770,7 +769,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             button.title = ""
         } else {
             button.image = nil
-            button.title = "macshot"
+            button.title = BuildVariant.displayName
         }
     }
 
@@ -922,12 +921,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         menu.addItem(prefsItem)
 
 
-        #if !LOCAL_DEV
-        let updateItem = NSMenuItem(title: L("Check for Updates..."), action: #selector(checkForUpdates), keyEquivalent: "")
-        updateItem.target = self
-        updateItem.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
-        menu.addItem(updateItem)
-        #endif
+        if BuildVariant.supportsUpdates {
+            let updateItem = NSMenuItem(title: L("Check for Updates..."), action: #selector(checkForUpdates), keyEquivalent: "")
+            updateItem.target = self
+            updateItem.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
+            menu.addItem(updateItem)
+        }
 
         menu.addItem(NSMenuItem.separator())
 
@@ -2348,7 +2347,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.png, .jpeg, .tiff, .bmp, .gif, .heic, .webP, .image]
-        panel.message = "Choose an image to open in macshot editor"
+        panel.message = "Choose an image to open in \(BuildVariant.brandName)"
 
         NSApp.activate(ignoringOtherApps: true)
         panel.begin { response in
@@ -2539,7 +2538,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     @objc private func checkForUpdates() {
         NSApp.activate(ignoringOtherApps: true)
-        updaterController.checkForUpdates(nil)
+        updaterController?.checkForUpdates(nil)
     }
 
     @objc private func quitApp() {

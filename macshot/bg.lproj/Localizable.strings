@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "Закачане от клипборда";
 "Preferences..." = "Настройки...";
 "Check for Updates..." = "Проверка за обновления...";
-"Quit macshot" = "Изход от macshot";
+"Quit macshot" = "Изход от Macshot Pro";
 "No recent captures" = "Няма скорошни заснемания";
 "Clear History" = "Изчистване на историята";
 
@@ -139,7 +139,7 @@
 "Move up" = "Преместване нагоре";
 "Move down" = "Преместване надолу";
 "Menu Bar Order" = "Ред в лентата с менюта";
-"Choose the order of capture actions in the macshot menu bar menu." = "Изберете реда на действията за заснемане в менюто на macshot в лентата с менюта.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Изберете реда на действията за заснемане в менюто на Macshot Pro в лентата с менюта.";
 
 /* Toolbar - Recording */
 "Start Recording" = "Начало на записа";
@@ -213,7 +213,7 @@
 "Copy to clipboard" = "Копиране в клипборда";
 
 /* Preferences - General */
-"macshot Preferences" = "Настройки на macshot";
+"macshot Preferences" = "Настройки на Macshot Pro";
 "General" = "Общи";
 "Tools" = "Инструменти";
 "Recording" = "Запис";
@@ -238,7 +238,7 @@
 "Hide capture instructions" = "Скриване на указанията при заснемане";
 "Use window title in saved filename" = "Използване на заглавието на прозореца в името на файла";
 "Hide menu bar icon" = "Скриване на иконата в лентата с менюта";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Бързите клавиши продължават да работят. За да покажете иконата отново, рестартирайте macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Бързите клавиши продължават да работят. За да покажете иконата отново, рестартирайте Macshot Pro.";
 "Check for updates automatically" = "Автоматична проверка за обновления";
 "Check for beta updates" = "Проверка за бета обновления";
 "Thumbnail" = "Миниатюр";
@@ -372,7 +372,7 @@
 "Video upload requires Google Drive or S3" = "Качването на видео изисква Google Drive или S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Версия %@ (%@)";
 "Made by" = "Създадено от";
 "Licensed under the GPLv3" = "Лицензирано под GPLv3";
@@ -385,26 +385,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Първо копирайте изображение или текст в клипборда, след което опитайте отново.";
 "OK" = "ОК";
 "Accessibility Access Required" = "Необходим е достъп за достъпност";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot се нуждае от разрешение за достъпност, за да превърта автоматично други приложения. Моля, дайте достъп в Системни настройки, след което опитайте отново.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot се нуждае от разрешение за достъпност за заснемане с превъртане. Моля, разрешете достъпа в Системни настройки и опитайте отново.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro се нуждае от разрешение за достъпност, за да превърта автоматично други приложения. Моля, дайте достъп в Системни настройки, след което опитайте отново.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro се нуждае от разрешение за достъпност за заснемане с превъртане. Моля, разрешете достъпа в Системни настройки и опитайте отново.";
 "Open Settings" = "Отваряне на настройките";
 "Cancel" = "Отказ";
 "Microphone Access Required" = "Необходим е достъп до микрофон";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot се нуждае от разрешение за микрофон, за да записва гласово аудио. Отворете Системни настройки, за да дадете достъп.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro се нуждае от разрешение за микрофон, за да записва гласово аудио. Отворете Системни настройки, за да дадете достъп.";
 "Upload to Google Drive?" = "Качване в Google Drive?";
 "Upload to S3?" = "Качване в S3?";
 "Upload to imgbb.com?" = "Качване в imgbb.com?";
 "Your screenshot will be uploaded." = "Вашата екранна снимка ще бъде качена.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Добре дошли в macshot";
-"Welcome back to macshot" = "Добре дошли отново в macshot";
+"Welcome to macshot" = "Добре дошли в Macshot Pro";
+"Welcome back to macshot" = "Добре дошли отново в Macshot Pro";
 "Turn Screen Recording back on" = "Включете отново записа на екрана";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "След някои актуализации macOS иска отново да разрешите macshot. Настройките и заснеманията ви са запазени. Ако macshot вече е в списъка, изберете го, натиснете бутона минус (−), за да го премахнете, след това натиснете бутона плюс (+) и добавете macshot отново.";
-"macshot needs one permission" = "macshot се нуждае от едно разрешение";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "След някои актуализации macOS иска отново да разрешите Macshot Pro. Настройките и заснеманията ви са запазени. Ако Macshot Pro вече е в списъка, изберете го, натиснете бутона минус (−), за да го премахнете, след това натиснете бутона плюс (+) и добавете Macshot Pro отново.";
+"macshot needs one permission" = "Macshot Pro се нуждае от едно разрешение";
 "Screen Recording not yet granted" = "Записът на екран все още не е разрешен";
 "Screen Recording granted!" = "Записът на екран е разрешен!";
-"Enable macshot, then try taking a screenshot" = "Включете macshot, след което опитайте да направите екранна снимка";
+"Enable macshot, then try taking a screenshot" = "Включете Macshot Pro, след което опитайте да направите екранна снимка";
 "Open Screen Recording Settings" = "Отваряне на настройките за запис на екран";
 "Continue" = "Продължаване";
 
@@ -435,7 +435,7 @@
 "Path copied!" = "Пътят е копиран!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot Видео редактор";
+"macshot Video Editor" = "Macshot Pro Видео редактор";
 "%@ selected" = "%@ избрано";
 "Exporting..." = "Експортиране...";
 "Export failed" = "Експортирането е неуспешно";
@@ -483,8 +483,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Необходим е мониторинг на въвеждането";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot се нуждае от разрешение за мониторинг на въвеждането, за да откроява щракванията с мишката или да показва натисканията на клавиши по време на запис. Дайте достъп в системните настройки и опитайте отново.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot се нуждае от разрешение за достъпност за прилепване към отделни елементи на интерфейса. Моля, разрешете достъпа в Системни настройки и опитайте отново.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro се нуждае от разрешение за мониторинг на въвеждането, за да откроява щракванията с мишката или да показва натисканията на клавиши по време на запис. Дайте достъп в системните настройки и опитайте отново.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro се нуждае от разрешение за достъпност за прилепване към отделни елементи на интерфейса. Моля, разрешете достъпа в Системни настройки и опитайте отново.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Показване на натискания";
@@ -500,7 +500,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Уебкамера наслагване";
 "Camera Access Required" = "Необходим е достъп до камерата";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot се нуждае от разрешение за камера за наслагването на уебкамерата. Отворете Системни настройки, за да дадете достъп.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro се нуждае от разрешение за камера за наслагването на уебкамерата. Отворете Системни настройки, за да дадете достъп.";
 "Webcam" = "Уебкамера";
 "Bottom Right" = "Долу вдясно";
 "Bottom Left" = "Долу вляво";
@@ -521,7 +521,7 @@
 /* New Strings */
 "Settings" = "Настройки";
 "Settings..." = "Настройки...";
-"macshot Settings" = "Настройки на macshot";
+"macshot Settings" = "Настройки на Macshot Pro";
 "Also open in Editor" = "Отвори и в редактора";
 "Close editor after copying" = "Затвори редактора след копиране";
 "Hide controls" = "Скрий контролите";
@@ -561,7 +561,6 @@
 "Download language packs in System Settings…" = "Изтеглете езикови пакети в Системни настройки…";
 "Configure S3 in Settings" = "Конфигурирайте S3 в Настройки";
 "Sign in to Google Drive in Settings" = "Влезте в Google Drive от Настройки";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Офлайн версия: интеграциите за качване и облачно съхранение са премахнати. Проверките за актуализации все още може да се свързват със сървъра за актуализации на MacShot. Екранните снимки и записите остават локални, освен ако не ги споделите или запазите сами.";
 "Position:" = "Позиция:";
 "  Position:" = "  Позиция:";
 "Size:" = "Размер:";
@@ -581,7 +580,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Отваряне на видео...";
-"Choose a video to open in macshot editor" = "Изберете видео за отваряне в редактора на macshot";
+"Choose a video to open in macshot editor" = "Изберете видео за отваряне в редактора на Macshot Pro";
 "Click to add effects" = "Щракнете за добавяне на ефекти";
 "Add Zoom" = "Добавяне на мащабиране";
 "Add Censor" = "Добавяне на цензуриране";
@@ -655,7 +654,7 @@
 "Stop the current recording" = "Спиране на текущия запис";
 "Supported URL Scheme Commands" = "Поддържани команди за URL схема";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Разширението на файла се добавя автоматично. Наклонените черти и двоеточията в {window} стават тирета.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Задействайте macshot от Raycast, Alfred, Shortcuts или всеки инструмент, който отваря URL адреси.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Задействайте Macshot Pro от Raycast, Alfred, Shortcuts или всеки инструмент, който отваря URL адреси.";
 "Enable macshot:// URL scheme" = "Активиране на URL схемата macshot://";
 "URL scheme info" = "Информация за URL схема";
 "sec (0 = never)" = "сек (0 = никога)";
@@ -665,7 +664,7 @@
 "Export Settings…" = "Експортиране на настройките…";
 "Import Settings…" = "Импортиране на настройките…";
 "Reveal Settings File in Finder" = "Показване на файла с настройки във Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Експортирайте предпочитанията си във файл, за да ги пренесете на друг Mac или на чиста инсталация. Данните за качване, папката ви за запазване и историята на екранните снимки не се включват. Настройките се съхраняват в контейнера на приложението macshot.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Експортирайте предпочитанията си във файл, за да ги пренесете на друг Mac или на чиста инсталация. Данните за качване, папката ви за запазване и историята на екранните снимки не се включват. Настройките се съхраняват в контейнера на приложението Macshot Pro.";
 "Export Settings" = "Експортиране на настройките";
 "Import Settings" = "Импортиране на настройките";
 "Import failed" = "Импортирането е неуспешно";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Рестартиране сега";
 "Replace your current settings?" = "Да се заменят ли текущите настройки?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Импортирането ще замени текущите ви предпочитания с тези във файла. Папката за запазване, данните за качване и историята на екранните снимки се запазват. Това действие не може да бъде отменено.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "Приложени са %d настройки. Рестартирайте macshot, за да се приложат всички промени.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "Приложени са %d настройки. Рестартирайте Macshot Pro, за да се приложат всички промени.";
 "A few large items were too big to include. Everything else was saved." = "Няколко големи елемента бяха твърде големи, за да бъдат включени. Всичко останало беше запазено.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Персонализираното ви фоново изображение за Beautify беше твърде голямо, за да бъде включено. Всичко останало беше запазено.";
-"This file is not a valid macshot settings file." = "Този файл не е валиден файл с настройки на macshot.";
+"This file is not a valid macshot settings file." = "Този файл не е валиден файл с настройки на Macshot Pro.";
 "This settings file contains no settings." = "Този файл с настройки не съдържа настройки.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Този файл с настройки е създаден от по-нова версия на macshot. Моля, първо актуализирайте macshot.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Този файл с настройки е създаден от по-нова версия на Macshot Pro. Моля, първо актуализирайте Macshot Pro.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Заснемане, превод и наслагване на текста върху изображението";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Прилагане на мащаба по подразбиране към всички";
 "Auto" = "Авто";
 "Auto Zoom" = "Автомащабиране";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Автомащабирането изисква данни за показалеца, които macshot записва при всеки нов запис. Все пак можете да добавяте мащабирания с двойно щракване върху пистата за мащабиране.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Автомащабирането изисква данни за показалеца, които Macshot Pro записва при всеки нов запис. Все пак можете да добавяте мащабирания с двойно щракване върху пистата за мащабиране.";
 "Background blur" = "Размазване на фона";
 "Background color" = "Цвят на фона";
 "Background, padding, rounded corners and shadow" = "Фон, отстъп, заоблени ъгли и сянка";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Смаляване при мащабиране";
 "Smoothing" = "Изглаждане";
 "Snappy" = "Бързо";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Разпознаването на реч е изключено за macshot в Системни настройки › Поверителност и сигурност.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Разпознаването на реч е изключено за Macshot Pro в Системни настройки › Поверителност и сигурност.";
 "Speed" = "Скорост";
 "Spotlight" = "Прожектор";
 "Square" = "Квадрат";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "Звукът на записа не можа да бъде прочетен.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Този запис вече показва показалеца в картината, затова стилът му не може да се промени. Мащабиранията все пак могат да го следват.";
 "This recording has no audio to transcribe." = "Този запис няма звук за разпознаване.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Това видео няма записани данни за показалеца. Записите, направени с macshot и отворени в редактора, позволяват промяна на стила, изглаждане и преоразмеряване на показалеца след записа.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Това видео няма записани данни за показалеца. Записите, направени с Macshot Pro и отворени в редактора, позволяват промяна на стила, изглаждане и преоразмеряване на показалеца след записа.";
 "Title" = "Заглавие";
 "Transcribing…" = "Разпознаване…";
 "Transition" = "Преход";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Включете „Показване на клавишите“ преди записа. Тогава macshot ще ги запише отделно, за да можете да ги оформите тук.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Включете камерата преди записа. macshot я записва отделно, така че тук можете да я местите, преоразмерявате, променяте стила ѝ, скривате, и смалявате по време на мащабиране.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Включете „Показване на клавишите“ преди записа. Тогава Macshot Pro ще ги запише отделно, за да можете да ги оформите тук.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Включете камерата преди записа. Macshot Pro я записва отделно, така че тук можете да я местите, преоразмерявате, променяте стила ѝ, скривате, и смалявате по време на мащабиране.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Използвайте „Плътно“, за да скриете чувствителна информация: размазването и пикселизирането понякога могат да бъдат обърнати.";
 "Visibility" = "Видимост";
 "Wallpaper" = "Тапет";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Офлайн версия: интеграциите за качване и облачно съхранение са премахнати. Екранните снимки и записите остават локални, освен ако не ги споделите или запазите сами.";
