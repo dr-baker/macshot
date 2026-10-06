@@ -7,7 +7,7 @@
 <p align="center">Capture, annotate, and condense. Native to macOS.</p>
 
 <p align="center">
-  <a href="#try-it">Build from source</a> ·
+  <a href="https://github.com/dr-baker/macshot/releases/latest/download/Macshot-Pro.dmg">Download</a> ·
   <a href="docs/stitch-capture.md">Stitch guide</a> ·
   <a href="CONTRIBUTING.md">Contribute</a> ·
   <a href="LICENSE">GPLv3</a>
@@ -29,7 +29,15 @@ The original capture and annotation workflow is here, along with screen recordin
 
 ## Try it
 
-There are no packaged Macshot Pro releases yet. To build it, use Xcode 26 or later:
+[Download Macshot Pro](https://github.com/dr-baker/macshot/releases/latest/download/Macshot-Pro.dmg), open the disk image, and drag the app to **Applications**. Launch it and allow Screen Recording when prompted. Xcode is only needed to build from source.
+
+An [offline build](https://github.com/dr-baker/macshot/releases/latest/download/Macshot-Pro-Offline.dmg) removes upload and cloud integrations. Both builds support Apple Silicon and Intel Macs.
+
+Press **⌘⇧X** to capture an area. In the editor, press **S** for Stitch and drag across the space you want to remove. Press **⌘C** to copy the result. For a sequence of captures, start with **⌘⇧J** and finish with **Enter**.
+
+## Build from source
+
+Use Xcode 26 or later:
 
 ```sh
 git clone https://github.com/dr-baker/macshot.git macshot-pro
@@ -39,9 +47,7 @@ open macshot.xcodeproj
 
 Select the **macshot** scheme, choose your signing team, and run. Allow Screen Recording when prompted.
 
-Press **⌘⇧X** to capture an area. In the editor, press **S** for Stitch and drag across the space you want to remove. Press **⌘C** to copy the result. For a sequence of captures, start with **⌘⇧J** and finish with **Enter**.
-
-For a signed development install, see the [local build workflow](docs/local-development.md). [Release status](https://github.com/dr-baker/macshot/releases).
+For a signed development install, see the [local build workflow](docs/local-development.md). [Release history](https://github.com/dr-baker/macshot/releases).
 
 ## Credits and license
 

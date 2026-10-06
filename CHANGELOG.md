@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.1.0] - 2026-10-05
+
+First release of Macshot Pro, an independently maintained fork of Macshot by
+sw33tLie and contributors.
+
+### Added
+
+- **Guided Accessibility setup** with PermissionFlow and a draggable app card.
+- **Configurable screenshot controls** with Clear and Regular Liquid Glass,
+  tinted Classic panels, light and dark appearance, custom colors, and the
+  macOS accent color.
+- **Stitch** in the capture overlay and screenshot editor. Remove rows or
+  columns from a large capture, with fading blur, tear, and fold transitions.
+- **Stitch Capture** with automatic collection, alignment suggestions, snap
+  guides, rearrangement, and adjustable canvas backgrounds.
+
+### Improved
+
+- Faster first and idle captures.
+- Shared keyboard routing keeps Escape, Copy, and tool shortcuts working after
+  toolbar menus and tool changes.
+
+### Distribution
+
+- Universal builds for Apple Silicon and Intel, targeting macOS 13 or later.
+  Native Liquid Glass requires macOS 26. Earlier systems use Classic controls.
+- Normal and offline builds use separate fork identities and update feeds.
+- Original GPLv3 attribution and dependency notices are included in the app.
+
+Earlier entries below describe the original Macshot releases.
+
 ## [4.4.0-beta.5] - 2026-10-01
 
 ### Upgrade notice
