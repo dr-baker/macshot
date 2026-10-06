@@ -453,12 +453,16 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
-        if window !== newWindow { cancelGesture() }
+        if window !== newWindow {
+            ScreenshotCommandResponder.uninstallStitchCanvas(self, in: window)
+            cancelGesture()
+        }
         super.viewWillMove(toWindow: newWindow)
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let window {
+            ScreenshotCommandResponder.installStitchCanvas(self, in: window)
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidResignKey(_:)),
                 name: NSWindow.didResignKeyNotification, object: window)
         }
@@ -561,16 +565,24 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     }
 
     override func flagsChanged(with event: NSEvent) {
-        if mode == .move {
-            if moving, !packed, let end {
-                updateMovePreview(at: end, modifiers: event.modifierFlags)
-                needsDisplay = true
-            } else { super.flagsChanged(with: event) }
+        if inlineEditor != nil, let commands = ScreenshotCommandResponder.forWindow(window) {
+            commands.flagsChanged(with: event)
             return
+        }
+        if !handleStitchModifierEvent(event) { super.flagsChanged(with: event) }
+    }
+
+    func handleStitchModifierEvent(_ event: NSEvent) -> Bool {
+        if mode == .move {
+            guard moving, !packed, let end else { return false }
+            updateMovePreview(at: end, modifiers: event.modifierFlags)
+            needsDisplay = true
+            return true
         }
         bandSnapBypassed = event.modifierFlags.contains(.option)
         refreshBandSnapping()
         needsDisplay = true
+        return true
     }
 
     private func updateMovePreview(at point: CGPoint, modifiers: NSEvent.ModifierFlags, notify: Bool = true) {
@@ -631,14 +643,13 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     }
     override func keyDown(with event: NSEvent) {
         if let inlineEditor {
-            let pieceKey = mode == .move && !event.modifierFlags.contains(.command)
-                && [51, 117, 123, 124, 125, 126].contains(Int(event.keyCode))
-            let stitchEscape = event.keyCode == 53 && !PopoverHelper.isVisible
-                && (start != nil || selectedID != nil)
-            if !stitchEscape && !pieceKey {
-                inlineEditor.keyDown(with: event)
+            if let commands = ScreenshotCommandResponder.forWindow(window) {
+                commands.keyDown(with: event)
                 return
             }
+            if handleStitchInteractionKeyEvent(event) { return }
+            inlineEditor.keyDown(with: event)
+            return
         }
         if let command = EditorCommandShortcutManager.action(for: event) {
             if command == .undo { onUndo?() } else { onRedo?() }
@@ -668,14 +679,38 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             return
         }
         if event.keyCode == 51 || event.keyCode == 117 { onDelete?(); return }
-        if let id = selectedID, let piece = document.pieces.first(where: { $0.id == id }), [123,124,125,126].contains(Int(event.keyCode)) {
-            let amount: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
-            var p = piece.origin
-            switch event.keyCode { case 123: p.x -= amount; case 124: p.x += amount; case 125: p.y += amount; default: p.y -= amount }
-            onMove?(id, p, false); onMove?(id, p, true)
-            return
-        }
+        if nudgeSelectedPiece(with: event) { return }
         super.keyDown(with: event)
+    }
+
+    /// Piece interactions take priority over the editor's ordinary canvas commands.
+    func handleStitchInteractionKeyEvent(_ event: NSEvent) -> Bool {
+        if event.keyCode == 53, start != nil || selectedID != nil {
+            deselectPiece()
+            return true
+        }
+        guard mode == .move, !event.modifierFlags.contains(.command) else { return false }
+        if event.keyCode == 51 || event.keyCode == 117 {
+            onDelete?()
+            return true
+        }
+        return nudgeSelectedPiece(with: event)
+    }
+
+    private func nudgeSelectedPiece(with event: NSEvent) -> Bool {
+        guard let id = selectedID, let piece = document.pieces.first(where: { $0.id == id }),
+              [123, 124, 125, 126].contains(Int(event.keyCode)) else { return false }
+        let amount: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+        var p = piece.origin
+        switch event.keyCode {
+        case 123: p.x -= amount
+        case 124: p.x += amount
+        case 125: p.y += amount
+        default: p.y -= amount
+        }
+        onMove?(id, p, false)
+        onMove?(id, p, true)
+        return true
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {

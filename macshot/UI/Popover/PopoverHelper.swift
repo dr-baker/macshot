@@ -149,6 +149,7 @@ enum PopoverHelper {
         focus?.prepareToClose(restoreFocus: restoreFocus)
         nativeFocus = nil
         activePopover = nil
+        (popover?.contentViewController?.view as? ArrowCursorView)?.endCommandScope()
         popover?.close()
         focus?.restore()
         removeOutsideClickMonitors()
@@ -179,6 +180,7 @@ enum PopoverHelper {
     }
 
     static func willClose(_ popover: NSPopover) {
+        (popover.contentViewController?.view as? ArrowCursorView)?.endCommandScope()
         guard activePopover === popover else { return }
         nativeFocus?.prepareToClose()
     }
@@ -321,6 +323,7 @@ enum PopoverHelper {
                 parentWindow.collectionBehavior.intersection([.canJoinAllSpaces, .fullScreenAuxiliary]))
         }
 
+        (popover.contentViewController?.view as? ArrowCursorView)?.beginCommandScope()
         nativeFocus?.popoverWindow = popoverWindow
         popoverWindow.makeKey()
         if popoverWindow.firstResponder == nil || popoverWindow.firstResponder === popoverWindow {
@@ -380,28 +383,36 @@ final class ArrowCursorView: ScreenshotPanelView {
         addCursorRect(bounds, cursor: .arrow)
     }
 
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        beginCommandScope()
+    }
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            cancelOperation(self)
-            return
+    func beginCommandScope() {
+        guard let window else { return }
+        let commands = ScreenshotCommandResponder.install(in: window, editor: nil, startingAt: self)
+        commands.linkEditor(from: parentWindow)
+        commands.setTransientScope(owner: self) { [weak self] in self?.onCancel?() }
+        ScreenshotCommandResponder.forWindow(parentWindow)?.setTransientScope(owner: self) { [weak self] in
+            self?.onCancel?()
         }
-        super.keyDown(with: event)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if window !== newWindow { endCommandScope() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    func endCommandScope() {
+        ScreenshotCommandResponder.forWindow(window)?.removeTransientScope(owner: self)
+        ScreenshotCommandResponder.forWindow(parentWindow)?.removeTransientScope(owner: self)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let editorCommand = ["c", "v", "d"].contains {
-            KeyboardShortcutMatcher.matches(event, character: $0, modifiers: .command)
-        } || EditorCommandShortcutManager.action(for: event) != nil
-        guard editorCommand,
-              !(window?.firstResponder is NSTextView),
-              let parentWindow, parentWindow.isVisible else {
-            return super.performKeyEquivalent(with: event)
-        }
-        if parentWindow.contentView?.performKeyEquivalent(with: event) == true { return true }
+        if ScreenshotCommandResponder.forWindow(window)?.performEditorKeyEquivalent(event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
+
 }
 
 // Cleans up the invisible anchor view when the popover closes

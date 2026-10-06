@@ -286,13 +286,20 @@ private final class ScreenshotSubmenuView: ScreenshotPanelView {
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
 
-    override func cancelOperation(_ sender: Any?) { PopoverHelper.dismiss() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        ScreenshotCommandResponder.install(in: window, editor: nil)
+            .setTransientScope(owner: self) { [weak self] in
+                guard self?.window != nil else { return }
+                PopoverHelper.dismiss()
+            }
+    }
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            cancelOperation(self)
-            return
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if window !== newWindow {
+            ScreenshotCommandResponder.forWindow(window)?.removeTransientScope(owner: self)
         }
-        super.keyDown(with: event)
+        super.viewWillMove(toWindow: newWindow)
     }
 }

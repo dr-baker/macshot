@@ -87,14 +87,6 @@ class EditorTopBarView: ScreenshotPanelView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    override func keyDown(with event: NSEvent) {
-        if let overlayView, overlayView.window === window {
-            overlayView.keyDown(with: event)
-        } else {
-            super.keyDown(with: event)
-        }
-    }
-
     override func refreshPanelAppearance() {
         super.refreshPanelAppearance()
         sizeLabel?.textColor = panelForegroundColor.withAlphaComponent(0.8)

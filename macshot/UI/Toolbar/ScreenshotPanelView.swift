@@ -1,24 +1,5 @@
 import AppKit
 
-/// Move focus before removing or hiding the view that currently owns it.
-@MainActor
-enum ScreenshotKeyboardFocus {
-    static func editingView(in window: NSWindow) -> NSView? {
-        if let editor = window.firstResponder as? NSTextView, editor.isFieldEditor {
-            return editor.delegate as? NSView
-        }
-        return window.firstResponder as? NSView
-    }
-
-    @discardableResult
-    static func moveIfOwned(by owner: NSView, to fallback: NSResponder) -> Bool {
-        guard let window = owner.window,
-              editingView(in: window)?.isDescendant(of: owner) == true else { return false }
-        if let view = fallback as? NSView, view.window !== window { return false }
-        return window.makeFirstResponder(fallback)
-    }
-}
-
 /// A shared background inside the existing screenshot control hierarchy.
 /// Changing appearance never recreates a control or adds a window.
 class ScreenshotPanelView: NSView {

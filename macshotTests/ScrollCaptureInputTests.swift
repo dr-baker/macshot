@@ -114,7 +114,7 @@ final class ScrollCaptureInputTests: XCTestCase {
         }
     }
 
-    func testEveryToolOptionsRowRecoversFocusAfterAppearanceRebuild() throws {
+    func testEveryToolOptionsRowRetainsControlsAndFocusAfterAppearanceUpdate() throws {
         for detached in [false, true] {
             try withSpotlightWindow(detached: detached) { view, row, window, delegate in
                 for tool in AnnotationTool.allCases {
@@ -135,7 +135,8 @@ final class ScrollCaptureInputTests: XCTestCase {
                         })
                         XCTAssertTrue(window.makeFirstResponder(control))
                         NotificationCenter.default.post(name: .toolbarColorsDidChange, object: nil)
-                        XCTAssertTrue(window.firstResponder === view, "\(tool), \(controlType)")
+                        XCTAssertTrue(control.superview === row, "\(tool), \(controlType)")
+                        XCTAssertTrue(window.firstResponder === control, "\(tool), \(controlType)")
                         let previousRequests = delegate.dismissRequests
                         window.sendEvent(try keyEvent("\u{1B}", code: 53, in: window))
                         XCTAssertEqual(delegate.dismissRequests, previousRequests + 1, "\(tool), \(controlType)")
@@ -147,12 +148,13 @@ final class ScrollCaptureInputTests: XCTestCase {
                 let slider = try XCTUnwrap(row.subviews.compactMap { $0 as? NSSlider }.first)
                 XCTAssertTrue(window.makeFirstResponder(slider))
                 NotificationCenter.default.post(name: .toolbarColorsDidChange, object: nil)
-                XCTAssertTrue(window.firstResponder === view)
+                XCTAssertTrue(window.firstResponder === slider)
+                XCTAssertTrue(slider.superview === row)
             }
         }
     }
 
-    func testSpotlightCommitRestoresKeyboardAfterReplacingFocusedControls() throws {
+    func testSpotlightCommitRetainsControlsAndKeyboardCommands() throws {
         for detached in [false, true] {
             for useBorderControl in [false, true] {
                 try withSpotlightWindow(detached: detached) { view, row, window, delegate in
@@ -165,9 +167,9 @@ final class ScrollCaptureInputTests: XCTestCase {
                     handler.update(to: NSPoint(x: 220, y: 220), shiftHeld: false, canvas: view)
                     handler.finish(canvas: view)
 
-                    XCTAssertNil(control.superview)
-                    XCTAssertTrue(window.firstResponder === view,
-                                  "Replacing Spotlight controls must return focus to the canvas")
+                    XCTAssertTrue(control.superview === row)
+                    XCTAssertTrue(window.firstResponder === control,
+                                  "Committing Spotlight must retain the focused control")
                     window.sendEvent(try keyEvent("a", code: 0, in: window))
                     XCTAssertEqual(view.currentTool, .arrow)
                     XCTAssertTrue(window.performKeyEquivalent(with:
@@ -194,13 +196,13 @@ final class ScrollCaptureInputTests: XCTestCase {
         }
     }
 
-    func testOptionsRebuildReturnsFocusFromItsOwnFieldEditor() throws {
+    func testToolChangeUnmountsOnlyObsoleteControlsAndRestoresTheirFocus() throws {
         try withSpotlightWindow(detached: true) { view, row, window, _ in
-            let field = NSTextField(string: "320")
-            row.addSubview(field)
-            field.selectText(nil)
-            XCTAssertTrue((window.firstResponder as? NSTextView)?.isFieldEditor == true)
-            row.rebuild(for: .highlight)
+            let slider = try XCTUnwrap(row.subviews.compactMap { $0 as? NSSlider }.first)
+            XCTAssertTrue(window.makeFirstResponder(slider))
+            view.currentTool = .arrow
+            view.rebuildToolbarLayout()
+            XCTAssertNil(slider.superview)
             XCTAssertTrue(window.firstResponder === view)
         }
     }
@@ -231,6 +233,155 @@ final class ScrollCaptureInputTests: XCTestCase {
             XCTAssertTrue(editor.isFieldEditor)
             row.rebuild(for: .highlight)
             XCTAssertTrue(window.firstResponder === editor)
+        }
+    }
+
+    func testWindowKeyReleaseEndsKeyboardSelectionMoveAfterFocusChanges() throws {
+        try withSpotlightWindow(detached: false) { view, _, window, _ in
+            func descendants(_ parent: NSView) -> [NSView] {
+                parent.subviews.flatMap { [$0] + descendants($0) }
+            }
+            let move = try XCTUnwrap(descendants(view).compactMap { $0 as? ToolbarButtonView }.first { $0.action == .moveSelection })
+            XCTAssertTrue(view.startKeyboardMoveSelection())
+            XCTAssertTrue(move.isPressed)
+            XCTAssertTrue(window.makeFirstResponder(nil))
+            let shortcut = ToolShortcutManager.key(for: .moveSelection)
+            let release = try XCTUnwrap(NSEvent.keyEvent(with: .keyUp, location: .zero,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: shortcut, charactersIgnoringModifiers: shortcut, isARepeat: false, keyCode: 49))
+            window.sendEvent(release)
+            XCTAssertFalse(move.isPressed, "Releasing the move shortcut must end the held interaction")
+        }
+    }
+
+    func testRetainedMarkerControlsUpdateValuesAndRestoreEnabledState() throws {
+        try withSpotlightWindow(detached: true) { view, row, window, _ in
+            view.smartMarkerEnabled = false
+            view.currentTool = .marker
+            row.rebuild(for: .marker)
+            let slider = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "options.strokeSlider" } as? NSSlider)
+            let title = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "options.strokeTitle" })
+            XCTAssertTrue(window.makeFirstResponder(slider))
+            view.currentMarkerSize = 12
+            row.rebuild(for: .marker)
+            XCTAssertEqual(slider.doubleValue, 12)
+            XCTAssertTrue(window.firstResponder === slider)
+            view.smartMarkerEnabled = true
+            row.rebuild(for: .marker)
+            XCTAssertFalse(slider.isEnabled)
+            XCTAssertEqual(title.alphaValue, 0.35)
+            view.smartMarkerEnabled = false
+            row.rebuild(for: .marker)
+            XCTAssertTrue(slider.isEnabled)
+            XCTAssertEqual(title.alphaValue, 1)
+            XCTAssertEqual(slider.alphaValue, 1)
+            XCTAssertTrue(slider.superview === row)
+        }
+    }
+
+    func testUntrackedSiblingControlsAndWindowFallbackUseSceneCommands() throws {
+        for detached in [false, true] {
+            try withSpotlightWindow(detached: detached) { view, _, window, delegate in
+                let sibling = NSView(frame: .zero)
+                let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+                sibling.addSubview(slider)
+                try XCTUnwrap(window.contentView).addSubview(sibling)
+                XCTAssertTrue(window.makeFirstResponder(slider))
+                window.sendEvent(try keyEvent("a", code: 0, in: window))
+                XCTAssertEqual(view.currentTool, .arrow)
+                // Exercise AppKit's window fallback without a panel-specific repair.
+                XCTAssertTrue(window.makeFirstResponder(slider))
+                sibling.removeFromSuperview()
+                XCTAssertTrue(window.makeFirstResponder(nil))
+                window.sendEvent(try keyEvent("i", code: 34, in: window))
+                XCTAssertEqual(view.currentTool, .colorSampler)
+                XCTAssertTrue(window.performKeyEquivalent(with: try keyEvent("c", code: 8, modifiers: .command, in: window)))
+                XCTAssertEqual(delegate.confirmRequests, 1)
+                window.sendEvent(try keyEvent("\u{1B}", code: 53, in: window))
+                XCTAssertEqual(delegate.dismissRequests, 1)
+            }
+        }
+    }
+
+    func testNativeSiblingTextEditingKeepsTypingAndCopy() throws {
+        try withSpotlightWindow(detached: true) { view, _, window, delegate in
+            let field = NSTextField(string: "")
+            try XCTUnwrap(window.contentView).addSubview(field)
+            field.selectText(nil)
+            let text = try XCTUnwrap(window.firstResponder as? NSTextView)
+            window.sendEvent(try keyEvent("a", code: 0, in: window))
+            XCTAssertEqual(text.string, "a")
+            XCTAssertEqual(view.currentTool, .highlight)
+            _ = window.performKeyEquivalent(with: try keyEvent("c", code: 8, modifiers: .command, in: window))
+            XCTAssertEqual(delegate.confirmRequests, 0)
+            XCTAssertTrue(window.firstResponder === text)
+        }
+    }
+
+    func testUnhandledKeyReachesOriginalResponderOnce() throws {
+        try withSpotlightWindow(detached: true) { view, _, window, _ in
+            let commands = try XCTUnwrap(ScreenshotCommandResponder.forWindow(window))
+            let original = commands.nextResponder
+            let downstream = ScreenshotUnhandledKeyProbe()
+            commands.nextResponder = downstream
+            defer { commands.nextResponder = original }
+            let predecessor = try XCTUnwrap(window.contentView)
+            let interposer = NSResponder()
+            interposer.nextResponder = commands
+            predecessor.nextResponder = interposer
+            defer { predecessor.nextResponder = commands }
+            XCTAssertTrue(ScreenshotCommandResponder.install(in: window, editor: view) === commands)
+            XCTAssertTrue(predecessor.nextResponder === interposer)
+            XCTAssertTrue(commands.nextResponder === downstream)
+            XCTAssertTrue(window.makeFirstResponder(nil))
+            XCTAssertTrue(window.makeFirstResponder(view))
+            window.sendEvent(try keyEvent("§", code: 255, in: window))
+            XCTAssertEqual(downstream.events, 1)
+        }
+    }
+
+    func testControllerBackedWindowPreservesOwnersAndReleasesCommandsOnClose() throws {
+        try withSpotlightWindow(detached: true) { view, _, window, delegate in
+            let root = try XCTUnwrap(window.contentView)
+            let controller = NSViewController()
+            controller.view = root
+            window.contentViewController = controller
+            let commands = try XCTUnwrap(ScreenshotCommandResponder.forWindow(window))
+            XCTAssertTrue(root.nextResponder === controller)
+            XCTAssertTrue(controller.nextResponder === commands)
+            XCTAssertTrue(commands.nextResponder === window)
+            let sibling = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+            root.addSubview(sibling)
+            XCTAssertTrue(window.makeFirstResponder(sibling))
+            window.sendEvent(try keyEvent("a", code: 0, in: window))
+            XCTAssertEqual(view.currentTool, .arrow)
+            window.sendEvent(try keyEvent("\u{1B}", code: 53, in: window))
+            XCTAssertEqual(delegate.dismissRequests, 1)
+            window.close()
+            XCTAssertNil(commands.editor)
+            XCTAssertFalse(controller.nextResponder === commands)
+            XCTAssertFalse(commands.dispatchKeyEvent(try keyEvent("\u{1B}", code: 53, in: window)))
+            XCTAssertEqual(delegate.dismissRequests, 1)
+        }
+    }
+
+    func testMovingEditorUnbindsOldWindowAndPreservesItsResponderChain() throws {
+        try withSpotlightWindow(detached: true) { view, _, oldWindow, delegate in
+            let oldCommands = try XCTUnwrap(ScreenshotCommandResponder.forWindow(oldWindow))
+            let next = oldCommands.nextResponder
+            let newWindow = OverlayWindow(contentRect: oldWindow.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            newWindow.isReleasedWhenClosed = false
+            newWindow.contentView = NSView(frame: view.frame)
+            defer { newWindow.close() }
+            view.removeFromSuperview()
+            try XCTUnwrap(newWindow.contentView).addSubview(view)
+            XCTAssertNil(oldCommands.editor)
+            XCTAssertTrue(oldCommands.nextResponder === next)
+            XCTAssertFalse(oldCommands.dispatchKeyEvent(try keyEvent("\u{1B}", code: 53, in: oldWindow)))
+            XCTAssertEqual(delegate.dismissRequests, 0)
+            XCTAssertTrue(newWindow.makeFirstResponder(nil))
+            newWindow.sendEvent(try keyEvent("\u{1B}", code: 53, in: newWindow))
+            XCTAssertEqual(delegate.dismissRequests, 1)
         }
     }
 
@@ -399,4 +550,10 @@ private final class ScrollCaptureInputDelegate: OverlayViewDelegate {
     func overlayViewDidChangeSnapMode() {}
     func overlayViewRemoteSelectionDidFinish(_ rect: NSRect) {}
     func overlayViewDidRequestAddCapture() {}
+}
+
+@MainActor
+private final class ScreenshotUnhandledKeyProbe: NSResponder {
+    var events = 0
+    override func keyDown(with event: NSEvent) { events += 1 }
 }
