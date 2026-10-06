@@ -60,6 +60,13 @@ final class ResolutionBoxView: ScreenshotPanelView, NSTextFieldDelegate {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Discard an unfinished dimension edit when the capture chrome is removed.
+    /// Ending the field editor otherwise commits into a selection being cleared.
+    func prepareForRemoval(returningFocusTo responder: NSResponder) {
+        suppressNextEndEditingCommit = true
+        ScreenshotKeyboardFocus.moveIfOwned(by: self, to: responder)
+    }
+
     override func refreshPanelAppearance() {
         super.refreshPanelAppearance()
         for field in [widthField, heightField] {
@@ -197,9 +204,9 @@ final class ResolutionBoxView: ScreenshotPanelView, NSTextFieldDelegate {
 
     private func finishEditing() {
         window?.makeFirstResponder(nil)
-        DispatchQueue.main.async { [weak self] in
-            self?.onFinishEditing?()
-        }
+        // The field editor has already ended. Restore the canvas before the
+        // next key event instead of leaving the window as responder for a turn.
+        onFinishEditing?()
     }
 
     // Enter or Escape in either field commits and returns focus to the overlay.

@@ -106,7 +106,7 @@ final class ScreenshotSubmenuPresenter {
 
     private weak var root: NSView?
     private weak var parentWindow: NSWindow?
-    private weak var previousResponder: NSResponder?
+    private(set) weak var previousResponder: NSResponder?
     private var resizeObserver: NSObjectProtocol?
     private var closeObserver: NSObjectProtocol?
 
@@ -280,9 +280,19 @@ final class ScreenshotSubmenuPresenter {
 private final class ScreenshotSubmenuView: ScreenshotPanelView {
     override var joinsAdjacentGlass: Bool { true }
 
+    override var acceptsFirstResponder: Bool { true }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
 
     override func cancelOperation(_ sender: Any?) { PopoverHelper.dismiss() }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            cancelOperation(self)
+            return
+        }
+        super.keyDown(with: event)
+    }
 }

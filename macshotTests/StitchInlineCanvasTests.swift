@@ -455,7 +455,7 @@ final class StitchInlineCanvasTests: XCTestCase {
         XCTAssertTrue(editor.undoStack.isEmpty)
     }
 
-    func testMoveEscapeDeselectsAndClearsHoverBeforeForwardingUnusedEscape() {
+    func testMoveEscapeDeselectsButHoverDoesNotTrapDismissal() {
         let (editor, canvas) = fixture(twoPieces: true)
         let window = host(editor)
         defer { window.orderOut(nil) }
@@ -471,10 +471,10 @@ final class StitchInlineCanvasTests: XCTestCase {
         XCTAssertTrue(editor.keys.isEmpty)
         canvas.mouseMoved(with: hover)
         canvas.keyDown(with: escape)
-        XCTAssertNil(canvas.hoveredID, "Escape must also clear a hover-only border")
-        XCTAssertTrue(editor.keys.isEmpty)
+        XCTAssertEqual(editor.keys, [53], "Pointer movement must not keep trapping Escape")
+        canvas.mouseMoved(with: hover)
         canvas.keyDown(with: escape)
-        XCTAssertEqual(editor.keys, [53])
+        XCTAssertEqual(editor.keys, [53, 53])
         XCTAssertTrue(canvas.document.isIdentical(to: original))
         XCTAssertTrue(editor.undoStack.isEmpty)
     }

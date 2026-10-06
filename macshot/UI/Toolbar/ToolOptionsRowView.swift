@@ -6,6 +6,13 @@ class ToolOptionsRowView: ScreenshotPanelView {
     override var joinsAdjacentGlass: Bool { true }
 
     weak var overlayView: OverlayView?
+    override var isHidden: Bool {
+        willSet {
+            if newValue, !isHidden, let overlayView {
+                ScreenshotKeyboardFocus.moveIfOwned(by: self, to: overlayView)
+            }
+        }
+    }
     private(set) var currentTool: AnnotationTool?
     /// When set, the options row edits this annotation's properties instead of global tool state.
     private(set) var editingAnnotation: Annotation?
@@ -29,6 +36,16 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     override func mouseDown(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {}
+
+    override func keyDown(with event: NSEvent) {
+        // Native controls consume their own editing keys first. Route the
+        // remaining capture commands to the canvas even in sibling chrome.
+        if let overlayView, overlayView.window === window {
+            overlayView.keyDown(with: event)
+        } else {
+            super.keyDown(with: event)
+        }
+    }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
@@ -182,6 +199,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     /// Rebuild the options row for the given tool. Call when tool or state changes.
     func rebuild(for tool: AnnotationTool) {
+        // AppKit falls back to the window when a focused control is removed.
+        // The canvas then misses Escape and tool keys, especially when the
+        // chrome is a sibling of the editor rather than a child of the canvas.
+        if let overlayView {
+            ScreenshotKeyboardFocus.moveIfOwned(by: self, to: overlayView)
+        }
         removePanelContentSubviews()
         panelSeparatorViews.removeAll()
         foregroundButtonAlphas.removeAll()

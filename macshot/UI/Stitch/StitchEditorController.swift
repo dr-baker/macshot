@@ -342,6 +342,7 @@ final class StitchEditorController: NSObject {
         case .color(let value): backgroundChoice.selectItem(at: 1); canvasColor.color = value
         case .transparent: backgroundChoice.selectItem(at: 2)
         }
+        if backgroundChoice.indexOfSelectedItem != 1 { PopoverHelper.moveFocusBeforeChanging(canvasColor) }
         canvasColor.isHidden = backgroundChoice.indexOfSelectedItem != 1
         let hint = NSTextField(labelWithString: L("Fills space between captured pieces."))
         hint.font = .systemFont(ofSize: 10)
@@ -358,6 +359,7 @@ final class StitchEditorController: NSObject {
         default: next.background = .automatic
         }
         guard commitDocument(next) else { return }
+        if backgroundChoice.indexOfSelectedItem != 1 { PopoverHelper.moveFocusBeforeChanging(canvasColor) }
         canvasColor.isHidden = backgroundChoice.indexOfSelectedItem != 1
         refresh()
     }
@@ -408,6 +410,11 @@ final class StitchEditorController: NSObject {
         let s = document.style
         let parameters = StitchSeamParameter.visible(for: s.transition)
         let hasColor = s.transition.hasEditableColor
+        if !s.visible { PopoverHelper.moveFocusBeforeChanging(seamStylePicker) }
+        if !hasColor || !s.visible { PopoverHelper.moveFocusBeforeChanging(color) }
+        for parameter in StitchSeamParameter.allCases where !s.visible || !parameters.contains(parameter) {
+            PopoverHelper.moveFocusBeforeChanging(sliders[parameter.rawValue])
+        }
         let height = 136 + (hasColor ? 34 : 0) + CGFloat(parameters.count) * 38
         let size = NSSize(width: 368, height: height)
         seamOptions.setFrameSize(size)
@@ -548,6 +555,7 @@ final class StitchEditorController: NSObject {
     }
     private func refreshPieces() {
         pieceCountLabel.stringValue = "\(document.pieces.count) \(L("pieces"))"
+        PopoverHelper.moveFocusBeforeChanging(piecesStack)
         for view in piecesStack.arrangedSubviews { piecesStack.removeArrangedSubview(view); view.removeFromSuperview() }
         // Packed order matches the canvas reading direction; free placement shows frontmost layers first.
         let indices = document.placement == .packed ? Array(document.pieces.indices) : Array(document.pieces.indices.reversed())
@@ -603,6 +611,7 @@ final class StitchEditorController: NSObject {
             button.image = NSImage(systemSymbolName: info.symbol, accessibilityDescription: info.label)
             button.toolTip = info.label
             button.setAccessibilityLabel(info.label)
+            if !enabled[index] { PopoverHelper.moveFocusBeforeChanging(button) }
             button.isEnabled = enabled[index]
             button.alphaValue = enabled[index] ? 1 : 0.35
         }
@@ -682,12 +691,13 @@ final class StitchEditorController: NSObject {
         syncSeamControls(); updateBandGuides(); scheduleRender()
     }
     @objc private func selectPiece(_ sender: NSButton) {
+        let sourceWindow = sender.window
         let piece = document.pieces[sender.tag]
         setMode(.move, focusCanvas: false); canvas.selectedID = piece.id
         refreshPieces()
         let rect = piece.frame.offsetBy(dx: -document.bounds.minX, dy: -document.bounds.minY)
         canvas.scrollToVisible(rect.insetBy(dx: -12, dy: -12))
-        if !PopoverHelper.isVisible { window?.makeFirstResponder(canvas) }
+        if !PopoverHelper.isVisible, sourceWindow === window { window?.makeFirstResponder(canvas) }
     }
     @objc private func deletePiece() {
         guard let id = canvas.selectedID, document.pieces.count > 1 else { return }

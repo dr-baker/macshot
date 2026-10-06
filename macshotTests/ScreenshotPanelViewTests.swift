@@ -3,6 +3,275 @@ import XCTest
 
 @MainActor
 final class ScreenshotPanelViewTests: XCTestCase {
+    func testNativePiecesMenuKeepsKeyboardOwnershipWhenItsSelectedButtonIsRebuilt() throws {
+        let (editor, controller, canvas, parent) = try stitchMenuFixture()
+        let options = controller.makePieceOptions()
+        let wrapper = ArrowCursorView(frame: options.frame)
+        wrapper.parentWindow = parent
+        wrapper.addSubview(options)
+        let menuWindow = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        menuWindow.isReleasedWhenClosed = false
+        menuWindow.contentView = wrapper
+        defer { controller.suspend(); editor.reset(); menuWindow.close(); parent.close() }
+        let scroll = try XCTUnwrap(options.subviews.compactMap { $0 as? NSScrollView }.first)
+        let stack = try XCTUnwrap(scroll.documentView as? NSStackView)
+        let button = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSButton }.first)
+        XCTAssertTrue(menuWindow.makeFirstResponder(button))
+        button.performClick(nil)
+        XCTAssertNil(button.superview, "Selecting a piece rebuilds the menu's source buttons")
+        XCTAssertNotNil(canvas.selectedID)
+        XCTAssertTrue(menuWindow.firstResponder === wrapper, "The stable native menu must own focus before removing the source button")
+        var dismissals = 0
+        wrapper.onCancel = { dismissals += 1 }
+        menuWindow.sendEvent(try escape(in: menuWindow))
+        XCTAssertEqual(dismissals, 1)
+
+        let delete = try XCTUnwrap(options.subviews.compactMap { $0 as? NSButton }.first {
+            $0.toolTip == L("Delete piece")
+        })
+        XCTAssertTrue(menuWindow.makeFirstResponder(delete))
+        delete.performClick(nil)
+        XCTAssertFalse(delete.isEnabled)
+        XCTAssertTrue(menuWindow.firstResponder === wrapper, "An action disabled by deleting its piece must release menu focus")
+        menuWindow.sendEvent(try escape(in: menuWindow))
+        XCTAssertEqual(dismissals, 2)
+
+        let otherField = NSTextField(string: "Keep this edit")
+        wrapper.addSubview(otherField)
+        otherField.selectText(nil)
+        let fieldEditor = try XCTUnwrap(menuWindow.firstResponder as? NSTextView)
+        XCTAssertTrue(fieldEditor.isFieldEditor)
+        controller.restore(try XCTUnwrap(editor.stitchDocument))
+        XCTAssertTrue(menuWindow.firstResponder === fieldEditor, "Refreshing pieces must preserve editing outside their list")
+    }
+
+    func testNativeSeamModeChangesKeepEscapeWorkingWhenTheFocusedSliderDisappears() throws {
+        let (editor, controller, _, parent) = try stitchMenuFixture()
+        let options = controller.makeSeamOptions()
+        let wrapper = ArrowCursorView(frame: options.frame)
+        wrapper.parentWindow = parent
+        wrapper.addSubview(options)
+        let menuWindow = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        menuWindow.isReleasedWhenClosed = false
+        menuWindow.contentView = wrapper
+        defer { controller.suspend(); editor.reset(); menuWindow.close(); parent.close() }
+        let blur = try XCTUnwrap(options.subviews.first { $0.identifier?.rawValue == "stitch.seam.blur" } as? NSSlider)
+        let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+        func select(_ transition: StitchTransition) throws {
+            let choice = try XCTUnwrap(picker.subviews.compactMap { $0 as? NSButton }.first {
+                $0.identifier?.rawValue == "stitch.transition.\(transition.rawValue)"
+            })
+            choice.performClick(nil)
+        }
+        var dismissals = 0
+        wrapper.onCancel = { dismissals += 1 }
+        for transition in [StitchTransition.torn, .fold] {
+            try select(.wave)
+            XCTAssertFalse(blur.isHidden)
+            XCTAssertTrue(menuWindow.makeFirstResponder(blur))
+            try select(transition)
+            XCTAssertTrue(blur.isHidden)
+            XCTAssertTrue(menuWindow.firstResponder === wrapper, "A hidden seam slider must release focus to its menu")
+            menuWindow.sendEvent(try escape(in: menuWindow))
+        }
+        XCTAssertEqual(dismissals, 2)
+
+        try select(.wave)
+        XCTAssertTrue(menuWindow.makeFirstResponder(blur))
+        try select(.blend)
+        XCTAssertTrue(menuWindow.firstResponder === blur, "Changing styles must keep a slider that remains available")
+        let otherField = NSTextField(string: "Keep this edit")
+        wrapper.addSubview(otherField)
+        otherField.selectText(nil)
+        let fieldEditor = try XCTUnwrap(menuWindow.firstResponder as? NSTextView)
+        try select(.torn)
+        XCTAssertTrue(menuWindow.firstResponder === fieldEditor, "Hiding seam controls must preserve another field's editing")
+
+        try select(.wave)
+        XCTAssertTrue(menuWindow.makeFirstResponder(blur))
+        let visibility = try XCTUnwrap(options.subviews.first { $0.identifier?.rawValue == "stitch.seam.visibility" } as? NSButton)
+        visibility.performClick(nil)
+        XCTAssertFalse(blur.isEnabled)
+        XCTAssertTrue(menuWindow.firstResponder === wrapper, "Turning seams off must release focus from their disabled slider")
+        menuWindow.sendEvent(try escape(in: menuWindow))
+        XCTAssertEqual(dismissals, 3)
+    }
+
+    func testInlinePiecesMenuReturnsEscapeToTheCaptureAfterSelectingAPiece() throws {
+        guard ScreenshotGlassAvailability.isAvailable else { throw XCTSkip("Native glass requires supported macOS") }
+        defer { NotificationCenter.default.post(name: ScreenshotPanelStyle.didChange, object: nil) }
+        try withDefaults([ScreenshotPanelStyle.defaultsKey: nil]) {
+            ScreenshotPanelStyle(material: .clear).save()
+            let (editor, controller, canvas, window) = try stitchMenuFixture()
+            defer { controller.suspend(); editor.reset(); window.close() }
+            let anchor = NSButton(frame: NSRect(x: 320, y: 40, width: 32, height: 32))
+            editor.addSubview(anchor)
+            XCTAssertTrue(window.makeFirstResponder(canvas))
+            controller.showOptions(.pieces, at: anchor)
+            let wrapper = try XCTUnwrap(editor.subviews.first { $0.identifier?.rawValue == "screenshot.submenu" })
+            let options = try XCTUnwrap(wrapper.subviews.first { $0 is StitchOptionsView })
+            let scroll = try XCTUnwrap(options.subviews.compactMap { $0 as? NSScrollView }.first)
+            let stack = try XCTUnwrap(scroll.documentView as? NSStackView)
+            let button = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSButton }.first)
+            XCTAssertTrue(window.makeFirstResponder(button))
+            button.performClick(nil)
+            XCTAssertTrue(window.firstResponder === wrapper)
+            XCTAssertTrue(PopoverHelper.isVisible)
+            window.sendEvent(try escape(in: window))
+            XCTAssertFalse(PopoverHelper.isVisible, "Escape after rebuilding inline pieces must close its menu")
+            XCTAssertTrue(window.firstResponder === canvas)
+        }
+    }
+
+    private func escape(in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false, keyCode: 53))
+    }
+
+    private func stitchMenuFixture() throws -> (ImageEditingView, StitchEditorController, StitchCanvasView, OverlayWindow) {
+        _ = NSApplication.shared
+        let pixels = try XCTUnwrap(ImageProbe.quadrantImage(width: 80, height: 60)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let document = StitchDocument(pieces: [StitchPiece(image: pixels),
+            StitchPiece(image: pixels, origin: CGPoint(x: 80, y: 0))])
+        let editor = ImageEditingView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        editor.screenshotImage = NSImage(cgImage: try XCTUnwrap(StitchRenderer.render(document)), size: document.bounds.size)
+        editor.applySelection(editor.bounds)
+        editor.installStitchDocument(document)
+        editor.currentTool = .stitch
+        editor.stitchMode = .move
+        let window = OverlayWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = editor
+        let controller = StitchEditorController(document: document, window: window)
+        controller.onDocumentChanged = { value, registerUndo in editor.applyStitchDocument(value, registerUndo: registerUndo) }
+        controller.attach(to: editor)
+        let canvas = try XCTUnwrap(editor.subviews.compactMap { $0 as? StitchCanvasView }.first)
+        return (editor, controller, canvas, window)
+    }
+
+    func testNativePopoverWindowCommandsReachCaptureAndPreserveFieldEditing() throws {
+        _ = NSApplication.shared
+        let parent = ScreenshotFocusProbeWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        let capture = ScreenshotCommandProbeView(frame: root.bounds)
+        root.addSubview(capture)
+        parent.contentView = root
+        let wrapper = ArrowCursorView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+        wrapper.parentWindow = parent
+        let popoverWindow = NSWindow(contentRect: wrapper.frame, styleMask: .borderless,
+            backing: .buffered, defer: false)
+        popoverWindow.isReleasedWhenClosed = false
+        popoverWindow.contentView = wrapper
+        defer { popoverWindow.close(); parent.close() }
+        let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+        wrapper.addSubview(slider)
+        XCTAssertTrue(popoverWindow.makeFirstResponder(slider))
+        let copy = TestKeyEvent.keyDown(characters: "c", keyCode: 8, modifiers: .command)
+        XCTAssertTrue(popoverWindow.performKeyEquivalent(with: copy))
+        XCTAssertEqual(capture.copyRequests, 1)
+
+        let field = NSTextField(string: "320")
+        wrapper.addSubview(field)
+        field.selectText(nil)
+        let editor = try XCTUnwrap(popoverWindow.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        _ = popoverWindow.performKeyEquivalent(with: copy)
+        XCTAssertEqual(capture.copyRequests, 1, "Copy in the submenu field must not copy the screenshot")
+        XCTAssertTrue(popoverWindow.firstResponder === editor)
+    }
+
+    func testNativeMenuEscapeDispatchClosesFromItsControlsAndDefaultResponder() throws {
+        _ = NSApplication.shared
+        let wrapper = ArrowCursorView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+        let window = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = wrapper
+        defer { window.close() }
+        let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+        let button = NSButton(title: "Wave", target: nil, action: nil)
+        wrapper.addSubview(slider)
+        wrapper.addSubview(button)
+        var dismissals = 0
+        wrapper.onCancel = { dismissals += 1 }
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+        for responder in [wrapper, slider, button] {
+            XCTAssertTrue(window.makeFirstResponder(responder))
+            window.sendEvent(escape)
+        }
+        XCTAssertEqual(dismissals, 3, "Escape must survive native control focus and close the menu")
+    }
+
+    func testNativePopoverCloseRestoresCaptureFocusAndPreservesAnotherActiveField() throws {
+        _ = NSApplication.shared
+        let parent = ScreenshotFocusProbeWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        let capture = ScreenshotCommandProbeView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        parent.contentView = capture
+        let menu = ScreenshotFocusProbeWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        menu.isReleasedWhenClosed = false
+        menu.keyForTest = true
+        defer { menu.close(); parent.close() }
+        XCTAssertTrue(parent.makeFirstResponder(capture))
+        let focus = ScreenshotPopoverFocus(parentWindow: parent)
+        focus.popoverWindow = menu
+        XCTAssertTrue(parent.makeFirstResponder(nil))
+        focus.prepareToClose()
+        focus.restore(currentKeyWindow: menu)
+        XCTAssertEqual(parent.makeKeyRequests, 1)
+        XCTAssertTrue(parent.firstResponder === capture)
+
+        let field = NSTextField(string: "640")
+        capture.addSubview(field)
+        let nextFocus = ScreenshotPopoverFocus(parentWindow: parent)
+        nextFocus.popoverWindow = menu
+        field.selectText(nil)
+        let editor = try XCTUnwrap(parent.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        nextFocus.prepareToClose()
+        nextFocus.restore(currentKeyWindow: parent)
+        XCTAssertTrue(parent.firstResponder === editor, "Closing a menu must retain an already focused screenshot field")
+    }
+
+    func testNativePopoverCloseDoesNotReclaimFocusFromAnotherWindowOrApp() {
+        _ = NSApplication.shared
+        let parent = ScreenshotFocusProbeWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        let menu = ScreenshotFocusProbeWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        menu.isReleasedWhenClosed = false
+        let other = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        defer { other.close(); menu.close(); parent.close() }
+        menu.keyForTest = true
+        let focus = ScreenshotPopoverFocus(parentWindow: parent)
+        focus.popoverWindow = menu
+        focus.prepareToClose()
+        focus.restore(currentKeyWindow: other)
+        XCTAssertEqual(parent.makeKeyRequests, 0)
+
+        let appFocus = ScreenshotPopoverFocus(parentWindow: parent)
+        appFocus.popoverWindow = menu
+        appFocus.prepareToClose()
+        let anotherProcess = (NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0) + 1
+        appFocus.restore(currentKeyWindow: nil, frontmostProcessID: anotherProcess)
+        XCTAssertEqual(parent.makeKeyRequests, 0)
+
+        let outsideClickFocus = ScreenshotPopoverFocus(parentWindow: parent)
+        outsideClickFocus.popoverWindow = menu
+        outsideClickFocus.prepareToClose(restoreFocus: false)
+        outsideClickFocus.restore(currentKeyWindow: menu)
+        XCTAssertEqual(parent.makeKeyRequests, 0)
+    }
+
     func testClassicPreviewUsesTheActualToolbarColorsInBothAppearances() throws {
         defer { NotificationCenter.default.post(name: ScreenshotPanelStyle.didChange, object: nil) }
         try withDefaults([ScreenshotPanelStyle.defaultsKey: nil]) {
@@ -258,5 +527,27 @@ final class ScreenshotPanelViewTests: XCTestCase {
         chrome.panelAppearanceOverride = NSAppearance(named: .aqua)
         let after = try XCTUnwrap(canvas.captureSelectedRegionRaw())
         XCTAssertEqual(FieldDescriber.describe(before), FieldDescriber.describe(after))
+    }
+}
+
+@MainActor
+private final class ScreenshotFocusProbeWindow: NSWindow {
+    var keyForTest = false
+    var makeKeyRequests = 0
+    override var isVisible: Bool { true }
+    override var isKeyWindow: Bool { keyForTest }
+    override func makeKey() { makeKeyRequests += 1; keyForTest = true }
+}
+
+@MainActor
+private final class ScreenshotCommandProbeView: NSView {
+    var copyRequests = 0
+    override var acceptsFirstResponder: Bool { true }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard KeyboardShortcutMatcher.matches(event, character: "c", modifiers: .command) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        copyRequests += 1
+        return true
     }
 }

@@ -634,7 +634,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
             let pieceKey = mode == .move && !event.modifierFlags.contains(.command)
                 && [51, 117, 123, 124, 125, 126].contains(Int(event.keyCode))
             let stitchEscape = event.keyCode == 53 && !PopoverHelper.isVisible
-                && (start != nil || selectedID != nil || (mode == .move && hoveredID != nil))
+                && (start != nil || selectedID != nil)
             if !stitchEscape && !pieceKey {
                 inlineEditor.keyDown(with: event)
                 return

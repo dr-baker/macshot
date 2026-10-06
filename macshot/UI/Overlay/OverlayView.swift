@@ -5686,6 +5686,7 @@ class OverlayView: NSView {
     /// updateResolutionBox(), so it's fully disposed (not just hidden) on
     /// deselect to avoid leaving a stray box behind.
     private func dismissResolutionBox() {
+        resolutionBox?.prepareForRemoval(returningFocusTo: self)
         resolutionBox?.removeFromSuperview()
         resolutionBox = nil
         resolutionBoxRect = .zero
@@ -9306,6 +9307,12 @@ class OverlayView: NSView {
         if selectionOnlyMode {
             // Consume app/edit commands while the selector owns keyboard focus.
             return event.modifierFlags.contains(.command)
+        }
+        // Inspector fields use the window's shared field editor. Let their
+        // native text commands run before considering screenshot commands.
+        if let editor = window?.firstResponder as? NSTextView,
+           editor.isFieldEditor, editor !== textEditView {
+            return super.performKeyEquivalent(with: event)
         }
         // Text editing: forward standard commands to the active text view.
         if let tv = textEditView {

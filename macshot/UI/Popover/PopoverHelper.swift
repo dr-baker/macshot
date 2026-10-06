@@ -24,6 +24,49 @@ struct PopoverToggleState {
     }
 }
 
+/// A native popover borrows key focus from its screenshot window. Return it
+/// only when closing the menu still owns that focus.
+@MainActor
+final class ScreenshotPopoverFocus {
+    private weak var parentWindow: NSWindow?
+    private weak var previousResponder: NSResponder?
+    weak var popoverWindow: NSWindow?
+    private let appWasActive: Bool
+    private let frontmostProcessID: pid_t?
+    private var shouldRestoreKey = false
+
+    init(parentWindow: NSWindow?, previousResponder: NSResponder? = nil) {
+        self.parentWindow = parentWindow
+        self.previousResponder = previousResponder ?? parentWindow.flatMap(ScreenshotSubmenuPresenter.editingResponder)
+        self.appWasActive = NSApp.isActive
+        self.frontmostProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    }
+
+    func prepareToClose(restoreFocus: Bool = true) {
+        shouldRestoreKey = restoreFocus && popoverWindow?.isKeyWindow == true
+    }
+
+    func restore(currentKeyWindow: NSWindow? = NSApp.keyWindow,
+                 frontmostProcessID: pid_t? = NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+        let shouldRestore = shouldRestoreKey
+        shouldRestoreKey = false
+        guard shouldRestore, let parentWindow, parentWindow.isVisible,
+              !appWasActive || NSApp.isActive,
+              frontmostProcessID == self.frontmostProcessID,
+              currentKeyWindow == nil || currentKeyWindow === popoverWindow || currentKeyWindow === parentWindow else { return }
+        parentWindow.makeKey()
+
+        // An outside click within the screenshot may already have focused a
+        // different control. Preserve it instead of replacing an active editor.
+        let current = ScreenshotSubmenuPresenter.editingResponder(in: parentWindow)
+        if let currentView = current as? NSView, currentView.window === parentWindow,
+           current !== previousResponder { return }
+        if let previousView = previousResponder as? NSView, previousView.window === parentWindow {
+            parentWindow.makeFirstResponder(previousView)
+        }
+    }
+}
+
 /// Show screenshot menus beside their toolbar controls. Glass menus share the
 /// existing window; native popovers handle classic panels and smaller windows.
 enum PopoverHelper {
@@ -34,6 +77,7 @@ enum PopoverHelper {
     private static var localMouseDownMonitor: Any?
     private static var globalMouseDownMonitor: Any?
     private static var activeSubmenu: ScreenshotSubmenuPresenter?
+    private static var nativeFocus: ScreenshotPopoverFocus?
 
     /// Show a popover with the given content view, anchored relative to a rect in the given parent view.
     static func show(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge = .minY) {
@@ -47,11 +91,12 @@ enum PopoverHelper {
         popover.appearance = ToolbarLayout.appearance
 
         let vc = NSViewController()
-        vc.view = cursorWrapped(contentView)
+        vc.view = cursorWrapped(contentView, parentWindow: view.window)
         popover.contentViewController = vc
         popover.delegate = AnchorCleanupDelegate.shared
         toggleState.opened(from: view)
         activePopover = popover
+        nativeFocus = ScreenshotPopoverFocus(parentWindow: view.window)
         popover.show(relativeTo: rect, of: view, preferredEdge: preferredEdge)
         configureShownPopover(popover, parentWindow: view.window)
         installOutsideClickMonitors()
@@ -76,11 +121,12 @@ enum PopoverHelper {
         popover.appearance = ToolbarLayout.appearance
 
         let vc = NSViewController()
-        vc.view = cursorWrapped(contentView)
+        vc.view = cursorWrapped(contentView, parentWindow: parentView.window)
         popover.contentViewController = vc
         popover.delegate = AnchorCleanupDelegate.shared
         toggleState.opened(from: parentView)
         activePopover = popover
+        nativeFocus = ScreenshotPopoverFocus(parentWindow: parentView.window)
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: preferredEdge)
         configureShownPopover(popover, parentWindow: parentView.window)
         installOutsideClickMonitors()
@@ -92,15 +138,19 @@ enum PopoverHelper {
     /// checks "was one just dismissed?" instead of "is one visible?").
     static var lastDismissedAt: Date { toggleState.dismissedAt }
 
-    static func dismiss() {
+    static func dismiss(restoreFocus: Bool = true) {
         let submenu = activeSubmenu
         if submenu?.isVisible == true { toggleState.dismissed() }
         activeSubmenu = nil
-        submenu?.dismiss()
+        submenu?.dismiss(restoreFocus: restoreFocus)
         let popover = activePopover
         if popover?.isShown == true { toggleState.dismissed() }
+        let focus = nativeFocus
+        focus?.prepareToClose(restoreFocus: restoreFocus)
+        nativeFocus = nil
         activePopover = nil
         popover?.close()
+        focus?.restore()
         removeOutsideClickMonitors()
         anchorView?.removeFromSuperview()
         anchorView = nil
@@ -128,13 +178,21 @@ enum PopoverHelper {
         return false
     }
 
+    static func willClose(_ popover: NSPopover) {
+        guard activePopover === popover else { return }
+        nativeFocus?.prepareToClose()
+    }
+
     static func didClose(_ popover: NSPopover) {
         guard activePopover === popover else { return }
         toggleState.dismissed()
+        let focus = nativeFocus
+        nativeFocus = nil
         activePopover = nil
         removeOutsideClickMonitors()
         anchorView?.removeFromSuperview()
         anchorView = nil
+        focus?.restore()
     }
 
     static var isVisible: Bool {
@@ -177,6 +235,20 @@ enum PopoverHelper {
         return activeSubmenu?.contains(point: point, in: view) == true
     }
 
+    /// Preserve a menu's keyboard ownership before it rebuilds or hides the
+    /// focused control. A control in another window keeps its own responder.
+    @discardableResult
+    static func moveFocusBeforeChanging(_ owner: NSView) -> Bool {
+        var ancestor = owner.superview
+        while let view = ancestor {
+            if view is ArrowCursorView || view === activeSubmenu?.wrapper {
+                return ScreenshotKeyboardFocus.moveIfOwned(by: owner, to: view)
+            }
+            ancestor = view.superview
+        }
+        return false
+    }
+
     private static func showInline(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect,
                                    of view: NSView, preferredEdge: NSRectEdge) -> Bool {
         guard let submenu = ScreenshotSubmenuPresenter(contentView: contentView, size: size,
@@ -196,7 +268,9 @@ enum PopoverHelper {
     private static func showNativeAfterWindowResize(_ submenu: ScreenshotSubmenuPresenter) {
         guard activeSubmenu === submenu, let anchor = submenu.anchorView else { return }
         let responder = anchor.window.flatMap(ScreenshotSubmenuPresenter.editingResponder)
-        let menuResponder = (responder as? NSView)?.isDescendant(of: submenu.wrapper) == true ? responder : nil
+        let menuResponder = (responder as? NSView)?.isDescendant(of: submenu.contentView) == true ? responder : nil
+        let focus = ScreenshotPopoverFocus(parentWindow: anchor.window,
+            previousResponder: submenu.previousResponder)
         activeSubmenu = nil
         submenu.dismiss(restoreFocus: false)
         removeOutsideClickMonitors()
@@ -207,10 +281,11 @@ enum PopoverHelper {
         popover.animates = true
         popover.appearance = ToolbarLayout.appearance
         let controller = NSViewController()
-        controller.view = cursorWrapped(submenu.contentView)
+        controller.view = cursorWrapped(submenu.contentView, parentWindow: anchor.window)
         popover.contentViewController = controller
         popover.delegate = AnchorCleanupDelegate.shared
         activePopover = popover
+        nativeFocus = focus
         popover.show(relativeTo: submenu.anchorRect, of: anchor, preferredEdge: submenu.preferredEdge)
         configureShownPopover(popover, parentWindow: anchor.window)
         if let menuResponder { submenu.contentView.window?.makeFirstResponder(menuResponder) }
@@ -219,8 +294,10 @@ enum PopoverHelper {
 
     /// Wrap content view so the popover always shows an arrow cursor regardless of active tool.
     /// Sets appearance to match toolbar background brightness.
-    private static func cursorWrapped(_ contentView: NSView) -> NSView {
+    private static func cursorWrapped(_ contentView: NSView, parentWindow: NSWindow?) -> NSView {
         let wrapper = ArrowCursorView(frame: contentView.frame)
+        wrapper.parentWindow = parentWindow
+        wrapper.onCancel = { dismiss() }
         contentView.frame.origin = .zero
         wrapper.addSubview(contentView)
         return wrapper
@@ -231,26 +308,23 @@ enum PopoverHelper {
     /// Making the popover window key lets its first click interact with controls
     /// and preserves the capture overlay's nonactivating behavior.
     private static func configureShownPopover(_ popover: NSPopover, parentWindow: NSWindow?) {
-        func configure() {
-            guard popover.isShown,
-                  let popoverWindow = popover.contentViewController?.view.window else { return }
+        guard popover.isShown,
+              let popoverWindow = popover.contentViewController?.view.window else { return }
 
-            let parentLevel = parentWindow?.level ?? .normal
-            if parentLevel.rawValue > NSWindow.Level.normal.rawValue {
-                popoverWindow.level = NSWindow.Level(parentLevel.rawValue + 1)
-            }
-
-            if let parentWindow {
-                popoverWindow.collectionBehavior.formUnion(
-                    parentWindow.collectionBehavior.intersection([.canJoinAllSpaces, .fullScreenAuxiliary]))
-            }
-
-            popoverWindow.makeKey()
+        let parentLevel = parentWindow?.level ?? .normal
+        if parentLevel.rawValue > NSWindow.Level.normal.rawValue {
+            popoverWindow.level = NSWindow.Level(parentLevel.rawValue + 1)
         }
 
-        configure()
-        DispatchQueue.main.async {
-            configure()
+        if let parentWindow {
+            popoverWindow.collectionBehavior.formUnion(
+                parentWindow.collectionBehavior.intersection([.canJoinAllSpaces, .fullScreenAuxiliary]))
+        }
+
+        nativeFocus?.popoverWindow = popoverWindow
+        popoverWindow.makeKey()
+        if popoverWindow.firstResponder == nil || popoverWindow.firstResponder === popoverWindow {
+            popoverWindow.makeFirstResponder(popover.contentViewController?.view)
         }
     }
 
@@ -259,14 +333,16 @@ enum PopoverHelper {
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { event in
             if shouldDismiss(forMouseDownAt: NSEvent.mouseLocation) {
-                dismiss()
+                let parentWindow = activeSubmenu?.anchorView?.window
+                    ?? (activePopover?.contentViewController?.view as? ArrowCursorView)?.parentWindow
+                dismiss(restoreFocus: event.window === parentWindow)
             }
             return event
         }
         globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { _ in
             DispatchQueue.main.async {
                 if shouldDismiss(forMouseDownAt: NSEvent.mouseLocation) {
-                    dismiss()
+                    dismiss(restoreFocus: false)
                 }
             }
         }
@@ -294,15 +370,46 @@ enum PopoverHelper {
 }
 
 /// NSView that forces the arrow cursor over its entire bounds.
-private class ArrowCursorView: ScreenshotPanelView {
+final class ArrowCursorView: ScreenshotPanelView {
+    weak var parentWindow: NSWindow?
+    var onCancel: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
+    }
+
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            cancelOperation(self)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let editorCommand = ["c", "v", "d"].contains {
+            KeyboardShortcutMatcher.matches(event, character: $0, modifiers: .command)
+        } || EditorCommandShortcutManager.action(for: event) != nil
+        guard editorCommand,
+              !(window?.firstResponder is NSTextView),
+              let parentWindow, parentWindow.isVisible else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if parentWindow.contentView?.performKeyEquivalent(with: event) == true { return true }
+        return super.performKeyEquivalent(with: event)
     }
 }
 
 // Cleans up the invisible anchor view when the popover closes
 private class AnchorCleanupDelegate: NSObject, NSPopoverDelegate {
     static let shared = AnchorCleanupDelegate()
+    func popoverWillClose(_ notification: Notification) {
+        if let popover = notification.object as? NSPopover { PopoverHelper.willClose(popover) }
+    }
     func popoverDidClose(_ notification: Notification) {
         if let popover = notification.object as? NSPopover { PopoverHelper.didClose(popover) }
     }
