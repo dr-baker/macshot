@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "Rögzítés vágólapról";
 "Preferences..." = "Beállítások...";
 "Check for Updates..." = "Frissítések keresése...";
-"Quit macshot" = "Kilépés a macshot-ból";
+"Quit macshot" = "Kilépés a Macshot Pro-ból";
 "No recent captures" = "Nincsenek legutóbbi rögzítések";
 "Clear History" = "Előzmények törlése";
 
@@ -206,7 +206,7 @@
 "Keep ratio for next captures" = "Képarány megtartása a következő rögzítésekhez";
 
 /* Preferences - General */
-"macshot Preferences" = "macshot beállítások";
+"macshot Preferences" = "Macshot Pro beállítások";
 "General" = "Általános";
 "Tools" = "Eszközök";
 "Recording" = "Felvétel";
@@ -231,7 +231,7 @@
 "Show shortcuts in tooltips" = "Gyorsbillentyűk megjelenítése a buboréksúgókban";
 "Use window title in saved filename" = "Ablakcím használata a mentett fájlnévben";
 "Hide menu bar icon" = "Menüsor ikon elrejtése";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "A gyorsbillentyűk továbbra is működnek. Az ikon újbóli megjelenítéséhez indítsd újra a macshot-ot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "A gyorsbillentyűk továbbra is működnek. Az ikon újbóli megjelenítéséhez indítsd újra a Macshot Pro-ot.";
 "Check for updates automatically" = "Frissítések automatikus keresése";
 "Check for beta updates" = "Béta frissítések keresése";
 "Thumbnail" = "Bélyegkép";
@@ -242,7 +242,7 @@
 "Stack (keep all)" = "Halmozás (összes megtartása)";
 "Replace (show only latest)" = "Csere (csak a legutolsó megjelenítése)";
 "Menu Bar Order" = "Menüsor sorrendje";
-"Choose the order of capture actions in the macshot menu bar menu." = "Válaszd ki a rögzítési műveletek sorrendjét a macshot menüsorának menüjében.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Válaszd ki a rögzítési műveletek sorrendjét a Macshot Pro menüsorának menüjében.";
 "Move up" = "Mozgatás felfelé";
 "Move down" = "Mozgatás lefelé";
 "Output" = "Kimenet";
@@ -371,7 +371,7 @@
 "Video upload requires Google Drive or S3" = "A videó feltöltéshez Google Drive vagy S3 szükséges";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Verzió %@ (%@)";
 "Made by" = "Készítette";
 "Licensed under the GPLv3" = "GPLv3 licenc alatt";
@@ -384,26 +384,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Előbb másolj egy képet vagy szöveget a vágólapra, majd próbáld újra.";
 "OK" = "OK";
 "Accessibility Access Required" = "Akadálymentesítési hozzáférés szükséges";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "A macshot-nak Akadálymentesítési engedélyre van szüksége más alkalmazások automatikus görgetéséhez. Kérlek, adj hozzáférést a Rendszerbeállításokban, majd próbáld újra.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "A macshot Kisegítő lehetőségek engedélyre van szüksége a görgetéses rögzítéshez. Kérjük, engedélyezze a hozzáférést a Rendszerbeállításokban, majd próbálja újra.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "A Macshot Pro-nak Akadálymentesítési engedélyre van szüksége más alkalmazások automatikus görgetéséhez. Kérlek, adj hozzáférést a Rendszerbeállításokban, majd próbáld újra.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "A Macshot Pro Kisegítő lehetőségek engedélyre van szüksége a görgetéses rögzítéshez. Kérjük, engedélyezze a hozzáférést a Rendszerbeállításokban, majd próbálja újra.";
 "Open Settings" = "Beállítások megnyitása";
 "Cancel" = "Mégse";
 "Microphone Access Required" = "Mikrofon hozzáférés szükséges";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "A macshot-nak mikrofon engedélyre van szüksége a hangfelvételhez. Nyisd meg a Rendszerbeállításokat a hozzáférés megadásához.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "A Macshot Pro-nak mikrofon engedélyre van szüksége a hangfelvételhez. Nyisd meg a Rendszerbeállításokat a hozzáférés megadásához.";
 "Upload to Google Drive?" = "Feltöltés a Google Drive-ra?";
 "Upload to S3?" = "Feltöltés az S3-ra?";
 "Upload to imgbb.com?" = "Feltöltés az imgbb.com-ra?";
 "Your screenshot will be uploaded." = "A képernyőkép feltöltésre kerül.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Üdvözöl a macshot";
-"Welcome back to macshot" = "Üdv újra a macshotban";
+"Welcome to macshot" = "Üdvözöl a Macshot Pro";
+"Welcome back to macshot" = "Üdv újra a Macshot Pro alkalmazásban";
 "Turn Screen Recording back on" = "Kapcsold be újra a képernyőfelvételt";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Egyes frissítések után a macOS újra engedélyt kér a macshot számára. A beállításaid és a felvételeid megmaradtak. Ha a macshot már szerepel a listában, jelöld ki, kattints a mínusz gombra (−) az eltávolításához, majd kattints a plusz gombra (+), és add hozzá újra a macshotot.";
-"macshot needs one permission" = "A macshot-nak egy engedélyre van szüksége";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Egyes frissítések után a macOS újra engedélyt kér a Macshot Pro számára. A beállításaid és a felvételeid megmaradtak. Ha a Macshot Pro már szerepel a listában, jelöld ki, kattints a mínusz gombra (−) az eltávolításához, majd kattints a plusz gombra (+), és add hozzá újra a Macshot Pro alkalmazást.";
+"macshot needs one permission" = "A Macshot Pro-nak egy engedélyre van szüksége";
 "Screen Recording not yet granted" = "Képernyőfelvétel engedélye még nem adott";
 "Screen Recording granted!" = "Képernyőfelvétel engedélyezve!";
-"Enable macshot, then try taking a screenshot" = "Engedélyezd a macshot-ot, majd próbálj képernyőképet készíteni";
+"Enable macshot, then try taking a screenshot" = "Engedélyezd a Macshot Pro-ot, majd próbálj képernyőképet készíteni";
 "Open Screen Recording Settings" = "Képernyőfelvétel beállításainak megnyitása";
 "Continue" = "Tovább";
 
@@ -436,7 +436,7 @@
 "Path copied!" = "Útvonal másolva!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot videószerkesztő";
+"macshot Video Editor" = "Macshot Pro videószerkesztő";
 "%@ selected" = "%@ kiválasztva";
 "Exporting..." = "Exportálás...";
 "Export failed" = "Exportálás sikertelen";
@@ -484,8 +484,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Bevitelfigyelés szükséges";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "A macshot-nak Bevitelfigyelés engedélyre van szüksége az egérkattintások kiemeléséhez vagy a billentyűleütések megjelenítéséhez felvétel közben. Adj hozzáférést a Rendszerbeállításokban, majd próbáld újra.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "A macshot alkalmazásnak Kisegítő lehetőségek engedélyre van szüksége az egyes felületelemekhez való illesztéshez. Kérjük, engedélyezze a hozzáférést a Rendszerbeállításokban, majd próbálja újra.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "A Macshot Pro-nak Bevitelfigyelés engedélyre van szüksége az egérkattintások kiemeléséhez vagy a billentyűleütések megjelenítéséhez felvétel közben. Adj hozzáférést a Rendszerbeállításokban, majd próbáld újra.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "A Macshot Pro alkalmazásnak Kisegítő lehetőségek engedélyre van szüksége az egyes felületelemekhez való illesztéshez. Kérjük, engedélyezze a hozzáférést a Rendszerbeállításokban, majd próbálja újra.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Billentyűleütések megjelenítése";
@@ -501,7 +501,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Webkamera átfedés";
 "Camera Access Required" = "Kamera hozzáférés szükséges";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "A macshot-nak kamera engedélyre van szüksége a webkamera átfedéshez. Nyisd meg a Rendszerbeállításokat a hozzáférés megadásához.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "A Macshot Pro-nak kamera engedélyre van szüksége a webkamera átfedéshez. Nyisd meg a Rendszerbeállításokat a hozzáférés megadásához.";
 "Webcam" = "Webkamera";
 "Bottom Right" = "Jobb alsó";
 "Bottom Left" = "Bal alsó";
@@ -521,9 +521,8 @@
 
 /* New Strings */
 "Settings" = "Beállítások";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Offline build: a feltöltési és felhőtárhely-integrációk el vannak távolítva. A frissítések keresése továbbra is csatlakozhat a MacShot frissítési szerveréhez. A képernyőképek és felvételek helyben maradnak, hacsak nem osztod meg vagy mented el őket magad.";
 "Settings..." = "Beállítások...";
-"macshot Settings" = "macshot beállítások";
+"macshot Settings" = "Macshot Pro beállítások";
 "Also open in Editor" = "Megnyitás a szerkesztőben is";
 "Close editor after copying" = "Szerkesztő bezárása másolás után";
 "Hide controls" = "Vezérlők elrejtése";
@@ -581,7 +580,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Videó megnyitása...";
-"Choose a video to open in macshot editor" = "Válassz videót a macshot szerkesztőben való megnyitáshoz";
+"Choose a video to open in macshot editor" = "Válassz videót a Macshot Pro szerkesztőben való megnyitáshoz";
 "Click to add effects" = "Kattints effektusok hozzáadásához";
 "Add Zoom" = "Nagyítás hozzáadása";
 "Add Censor" = "Cenzúra hozzáadása";
@@ -656,7 +655,7 @@
 "Stop the current recording" = "Jelenlegi felvétel leállítása";
 "Supported URL Scheme Commands" = "Támogatott URL séma parancsok";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "A fájlkiterjesztés automatikusan hozzáadódik. A {window} perjeleiből és kettőspontjaiból kötőjel lesz.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Indítsd el a macshot-ot Raycast, Alfred, Shortcuts, vagy bármilyen URL-eket megnyitó eszközből.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Indítsd el a Macshot Pro-ot Raycast, Alfred, Shortcuts, vagy bármilyen URL-eket megnyitó eszközből.";
 "URL scheme info" = "URL séma információ";
 "sec (0 = never)" = "mp (0 = soha)";
 
@@ -665,7 +664,7 @@
 "Export Settings…" = "Beállítások exportálása…";
 "Import Settings…" = "Beállítások importálása…";
 "Reveal Settings File in Finder" = "Beállításfájl megjelenítése a Finderben";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exportáld a beállításaidat egy fájlba, hogy áthelyezhesd őket egy másik Macre vagy egy tiszta telepítésbe. A feltöltési hitelesítő adatok, a mentési mappa és a képernyőképek előzményei nem szerepelnek benne. A beállítások a macshot alkalmazáskonténerében tárolódnak.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exportáld a beállításaidat egy fájlba, hogy áthelyezhesd őket egy másik Macre vagy egy tiszta telepítésbe. A feltöltési hitelesítő adatok, a mentési mappa és a képernyőképek előzményei nem szerepelnek benne. A beállítások a Macshot Pro alkalmazáskonténerében tárolódnak.";
 "Export Settings" = "Beállítások exportálása";
 "Import Settings" = "Beállítások importálása";
 "Import failed" = "Az importálás sikertelen";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Újraindítás most";
 "Replace your current settings?" = "Lecseréled a jelenlegi beállításaidat?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Az importálás lecseréli a jelenlegi beállításaidat a fájlban lévőkre. A mentési mappa, a feltöltési hitelesítő adatok és a képernyőképek előzményei megmaradnak. Ez a művelet nem vonható vissza.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d beállítás lett alkalmazva. Indítsd újra a macshotot az összes módosítás érvényesítéséhez.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d beállítás lett alkalmazva. Indítsd újra a Macshot Pro alkalmazást az összes módosítás érvényesítéséhez.";
 "A few large items were too big to include. Everything else was saved." = "Néhány nagyméretű elem túl nagy volt ahhoz, hogy belekerüljön. Minden más mentésre került.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Az egyéni Beautify háttérképed túl nagy volt ahhoz, hogy belekerüljön. Minden más mentésre került.";
-"This file is not a valid macshot settings file." = "Ez a fájl nem érvényes macshot beállításfájl.";
+"This file is not a valid macshot settings file." = "Ez a fájl nem érvényes Macshot Pro beállításfájl.";
 "This settings file contains no settings." = "Ez a beállításfájl nem tartalmaz beállításokat.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Ez a beállításfájl a macshot egy újabb verziójával készült. Kérlek, először frissítsd a macshotot.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Ez a beállításfájl a Macshot Pro egy újabb verziójával készült. Kérlek, először frissítsd a Macshot Pro alkalmazást.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "A kép szövegének rögzítése, fordítása és rávetítése";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Alapértelmezett nagyítás alkalmazása mindre";
 "Auto" = "Auto";
 "Auto Zoom" = "Automatikus nagyítás";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Az automatikus nagyításhoz mutatóadatok kellenek, amelyeket a macshot minden új felvételnél rögzít. Nagyításokat továbbra is hozzáadhatsz a nagyítássávra duplán kattintva.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Az automatikus nagyításhoz mutatóadatok kellenek, amelyeket a Macshot Pro minden új felvételnél rögzít. Nagyításokat továbbra is hozzáadhatsz a nagyítássávra duplán kattintva.";
 "Background blur" = "Háttér elmosása";
 "Background color" = "Háttérszín";
 "Background, padding, rounded corners and shadow" = "Háttér, margó, lekerekített sarkok és árnyék";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Zsugorítás nagyításkor";
 "Smoothing" = "Simítás";
 "Snappy" = "Pörgős";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "A beszédfelismerés ki van kapcsolva a macshot számára a Rendszerbeállítások › Adatvédelem és biztonság menüpontban.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "A beszédfelismerés ki van kapcsolva a Macshot Pro számára a Rendszerbeállítások › Adatvédelem és biztonság menüpontban.";
 "Speed" = "Sebesség";
 "Spotlight" = "Reflektor";
 "Square" = "Négyzet";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "A felvétel hangját nem sikerült beolvasni.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Ez a felvétel már a képpontjaiban tartalmazza a mutatót, ezért nem lehet átformázni. A nagyítások továbbra is követhetik.";
 "This recording has no audio to transcribe." = "Ebben a felvételben nincs leírható hang.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Ebben a videóban nincsenek rögzített mutatóadatok. A macshot-tal készült, szerkesztőben megnyíló felvételeknél a mutató stílusa, simítása és mérete felvétel után is módosítható.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Ebben a videóban nincsenek rögzített mutatóadatok. A Macshot Pro-tal készült, szerkesztőben megnyíló felvételeknél a mutató stílusa, simítása és mérete felvétel után is módosítható.";
 "Title" = "Cím";
 "Transcribing…" = "Leírás folyamatban…";
 "Transition" = "Átmenet";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Felvétel előtt kapcsold be a Billentyűleütések megjelenítése opciót. A macshot ekkor külön rögzíti őket, így itt formázhatod őket.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Felvétel előtt kapcsold be a kamerát. A macshot külön rögzíti, így itt áthelyezheted, átméretezheted, átformázhatod vagy elrejtheted, és nagyításkor összezsugoríthatod.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Felvétel előtt kapcsold be a Billentyűleütések megjelenítése opciót. A Macshot Pro ekkor külön rögzíti őket, így itt formázhatod őket.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Felvétel előtt kapcsold be a kamerát. A Macshot Pro külön rögzíti, így itt áthelyezheted, átméretezheted, átformázhatod vagy elrejtheted, és nagyításkor összezsugoríthatod.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Érzékeny adatok elrejtéséhez használd a Színátfedés lehetőséget: az elmosás és a pixelezés néha visszafordítható.";
 "Visibility" = "Láthatóság";
 "Wallpaper" = "Háttérkép";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Offline build: a feltöltési és felhőtárhely-integrációk el vannak távolítva. A képernyőképek és felvételek helyben maradnak, hacsak nem osztod meg vagy mented el őket magad.";

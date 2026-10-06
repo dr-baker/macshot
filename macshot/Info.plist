@@ -14,7 +14,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>macshot Actions</string>
+			<string>Macshot Pro Actions</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>macshot</string>
@@ -44,21 +44,19 @@
 		</dict>
 	</array>
 	<key>Privacy - Screen Capture Usage Description</key>
-	<string>macshot needs screen recording permission to capture screenshots.</string>
+	<string>Macshot Pro needs screen recording permission to capture screenshots.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>macshot can record microphone audio during screen recordings.</string>
+	<string>Macshot Pro can record microphone audio during screen recordings.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>macshot can show a webcam overlay during screen recordings.</string>
+	<string>Macshot Pro can show a webcam overlay during screen recordings.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>macshot transcribes your recordings on this Mac to create captions. Audio is not uploaded.</string>
+	<string>Macshot Pro transcribes your recordings on this Mac to create captions. Audio is not uploaded.</string>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>+5RTT9lGyoeOYAYuNfCdPhxugmruYvRDyFXgk6VPY1c=</string>
+	<string>$(MACSHOT_UPDATE_FEED_URL)</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>NSSupportsAutomaticTermination</key>

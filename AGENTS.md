@@ -1,9 +1,9 @@
-# macshot
+# Macshot Pro
 
 ## What we're after
 
-macshot is a native macOS screenshot and recording app. This checkout is also
-Daniel's working copy: edits should reach the signed `macshot Dev` app on this
+Macshot Pro is a native macOS screenshot and recording app. This checkout is also
+Daniel's working copy: edits should reach the signed `Macshot Pro Dev` app on this
 Mac, where the real capture and menu bar behavior can be checked. Keep that
 local workflow reliable and publish verified work to Daniel's GitHub fork.
 
@@ -18,14 +18,15 @@ local workflow reliable and publish verified work to Daniel's GitHub fork.
 
 ## Ground rules
 
-- After changing app code, run `macshot-deploy` and verify that `/Applications/macshot Dev.app` is signed and running. A successful `xcodebuild` alone does not complete a local app change. Use `--build-only` only when installation is outside the task's scope.
+- After changing app code, run `macshot-deploy` and verify that `/Applications/Macshot Pro Dev.app` is signed and running. A successful `xcodebuild` alone does not complete a local app change. Use `--build-only` only when installation is outside the task's scope.
 - Keep the `LOCAL_DEV` build separate from the normal and offline variants. Preserve its stable bundle ID and signing identity so macOS permissions survive redeploys. Do not enable Sparkle updates in the local build.
-- Keep normal and offline releases on macOS 13 and `macshot Dev` on macOS 26. Screenshot appearance belongs to Macshot: native Clear glass on supported systems, tinted Classic panels on older systems.
+- Keep normal and offline releases on macOS 13 and `Macshot Pro Dev` on macOS 26. Screenshot appearance belongs to Macshot Pro: native Clear glass on supported systems, tinted Classic panels on older systems.
+- Use fork-owned release IDs, appcasts, and Sparkle keys. Preserve original Macshot attribution and GPLv3 notices.
 - Run `scripts/run-tests.sh` for logic changes. When changing compilation flags, signing, or variant behavior, also check the affected Release builds described in `CLAUDE.md` and the CI workflow.
 - Publish to `origin` (`dr-baker/macshot`); fetch upstream changes from `upstream` (`sw33tLie/macshot`). Keep completed work on the fork's `main`. Do not merge with fast-forward unless Daniel specifically asks for it.
 
 ## Vocabulary
 
-- **Local dev**: the signed `macshot Dev` app installed by `macshot-deploy`.
-- **Normal**: the upstream release with uploads and Sparkle updates.
-- **Offline**: the upstream release compiled with `OFFLINE` and no cloud integrations.
+- **Local dev**: the signed `Macshot Pro Dev` app installed by `macshot-deploy`.
+- **Normal**: the fork release with optional uploads and configured fork updates.
+- **Offline**: the fork release compiled with `OFFLINE` and no cloud integrations.

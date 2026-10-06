@@ -11,7 +11,7 @@ Quit macshot normally and let pending saves finish. Make a copy of the entire
 history directory, including `index.json`, before changing anything. The normal
 sandboxed app uses:
 
-`~/Library/Containers/com.sw33tlie.macshot.macshot/Data/Library/Application Support/com.sw33tlie.macshot/history`
+`~/Library/Containers/com.drbaker.macshot.pro/Data/Library/Application Support/com.sw33tlie.macshot/history`
 
 An older, unsandboxed installation may instead have used:
 

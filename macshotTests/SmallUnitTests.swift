@@ -237,6 +237,33 @@ final class ClipboardTextPinRendererTests: XCTestCase {
 /// Build-variant flags decide whether upload UI exists at all.
 final class BuildVariantTests: XCTestCase {
 
+    func testSourceBuildHasNoUpdateKey() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("macshot/Info.plist"))
+        let info = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        XCTAssertNil(info["SUPublicEDKey"])
+        XCTAssertFalse(BuildVariant.hasForkUpdateConfiguration(info))
+    }
+
+    func testUpdatesRequireTheForkVariantFeedAndAValidPublicKey() {
+        let key = Data(repeating: 7, count: 32).base64EncodedString()
+        XCTAssertTrue(BuildVariant.hasForkUpdateConfiguration([
+            "SUFeedURL": BuildVariant.updateFeedURL, "SUPublicEDKey": key,
+        ]))
+        for feed in [
+            "https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast.xml",
+            "https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast-offline.xml",
+            BuildVariant.updateFeedURL.replacingOccurrences(of: "appcast", with: "other-appcast"),
+        ] {
+            XCTAssertFalse(BuildVariant.hasForkUpdateConfiguration(["SUFeedURL": feed, "SUPublicEDKey": key]))
+        }
+        for invalidKey in ["", "not-base64", Data(repeating: 7, count: 31).base64EncodedString()] {
+            XCTAssertFalse(BuildVariant.hasForkUpdateConfiguration([
+                "SUFeedURL": BuildVariant.updateFeedURL, "SUPublicEDKey": invalidKey,
+            ]))
+        }
+    }
+
     func testTheVariantIsSelfConsistent() {
         XCTAssertFalse(BuildVariant.displayName.isEmpty)
         if BuildVariant.isOffline {

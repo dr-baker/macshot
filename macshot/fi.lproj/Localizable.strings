@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "Kiinnitä leikepöydältä";
 "Preferences..." = "Asetukset...";
 "Check for Updates..." = "Tarkista päivitykset...";
-"Quit macshot" = "Lopeta macshot";
+"Quit macshot" = "Lopeta Macshot Pro";
 "No recent captures" = "Ei viimeaikaisia kaappauksia";
 "Clear History" = "Tyhjennä historia";
 
@@ -207,7 +207,7 @@
 "Copy to clipboard" = "Kopioi leikepöydälle";
 
 /* Preferences - General */
-"macshot Preferences" = "macshot-asetukset";
+"macshot Preferences" = "Macshot Pro-asetukset";
 "General" = "Yleiset";
 "Tools" = "Työkalut";
 "Recording" = "Nauhoitus";
@@ -232,7 +232,7 @@
 "Hide capture instructions" = "Piilota kuvakaappausohjeet";
 "Use window title in saved filename" = "Käytä ikkunan otsikkoa tiedostonimessä";
 "Hide menu bar icon" = "Piilota valikkopalkin kuvake";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Pikanäppäimet toimivat edelleen. Näytä kuvake uudelleen käynnistämällä macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Pikanäppäimet toimivat edelleen. Näytä kuvake uudelleen käynnistämällä Macshot Pro.";
 "Check for updates automatically" = "Tarkista päivitykset automaattisesti";
 "Check for beta updates" = "Tarkista beetapäivitykset";
 "Thumbnail" = "Pienoiskuva";
@@ -295,7 +295,7 @@
 "Hidden tools are removed from the bottom toolbar." = "Piilotetut työkalut poistetaan alapalkista.";
 "Capture Actions" = "Kaappaustoiminnot";
 "Menu Bar Order" = "Valikkopalkin j\U00E4rjestys";
-"Choose the order of capture actions in the macshot menu bar menu." = "Valitse kaappaustoimintojen j\U00E4rjestys macshot-valikkopalkkivalikossa.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Valitse kaappaustoimintojen j\U00E4rjestys Macshot Pro-valikkopalkkivalikossa.";
 "Move up" = "Siirr\U00E4 yl\U00F6s";
 "Move down" = "Siirr\U00E4 alas";
 "Bottom Toolbar Actions" = "Alapalkin toiminnot";
@@ -370,7 +370,7 @@
 "Video upload requires Google Drive or S3" = "Videon lataus vaatii Google Driven tai S3:n";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Versio %@ (%@)";
 "Made by" = "Tekijä";
 "Licensed under the GPLv3" = "Lisensoitu GPLv3-lisenssillä";
@@ -383,26 +383,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Kopioi ensin kuva tai teksti leikepöydälle ja yritä sitten uudelleen.";
 "OK" = "OK";
 "Accessibility Access Required" = "Esteettömyysoikeus vaaditaan";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot tarvitsee esteettömyysoikeuden vierittääkseen muita sovelluksia automaattisesti. Myönnä oikeus järjestelmän asetuksissa ja yritä uudelleen.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot tarvitsee Esteettömyys-luvan vierityskaappausta varten. Myönnä käyttöoikeus Järjestelmäasetuksista ja yritä uudelleen.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro tarvitsee esteettömyysoikeuden vierittääkseen muita sovelluksia automaattisesti. Myönnä oikeus järjestelmän asetuksissa ja yritä uudelleen.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro tarvitsee Esteettömyys-luvan vierityskaappausta varten. Myönnä käyttöoikeus Järjestelmäasetuksista ja yritä uudelleen.";
 "Open Settings" = "Avaa asetukset";
 "Cancel" = "Peruuta";
 "Microphone Access Required" = "Mikrofonin käyttöoikeus vaaditaan";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot tarvitsee mikrofonin käyttöoikeuden äänittääkseen puhetta. Avaa järjestelmän asetukset myöntääksesi käyttöoikeuden.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro tarvitsee mikrofonin käyttöoikeuden äänittääkseen puhetta. Avaa järjestelmän asetukset myöntääksesi käyttöoikeuden.";
 "Upload to Google Drive?" = "Ladataanko Google Driveen?";
 "Upload to S3?" = "Ladataanko S3:een?";
 "Upload to imgbb.com?" = "Ladataanko imgbb.com-palveluun?";
 "Your screenshot will be uploaded." = "Kuvakaappauksesi ladataan.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Tervetuloa macshot-sovellukseen";
-"Welcome back to macshot" = "Tervetuloa takaisin macshotiin";
+"Welcome to macshot" = "Tervetuloa Macshot Pro-sovellukseen";
+"Welcome back to macshot" = "Tervetuloa takaisin Macshot Pro -sovellukseen";
 "Turn Screen Recording back on" = "Ota näytön tallennus uudelleen käyttöön";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Joidenkin päivitysten jälkeen macOS pyytää sallimaan macshotin uudelleen. Asetuksesi ja kaappauksesi ovat tallessa. Jos macshot on jo luettelossa, valitse se, poista se miinuspainikkeella (−) ja lisää macshot sitten uudelleen pluspainikkeella (+).";
-"macshot needs one permission" = "macshot tarvitsee yhden luvan";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Joidenkin päivitysten jälkeen macOS pyytää sallimaan Macshot Pro -sovelluksen uudelleen. Asetuksesi ja kaappauksesi ovat tallessa. Jos Macshot Pro on jo luettelossa, valitse se, poista se miinuspainikkeella (−) ja lisää Macshot Pro sitten uudelleen pluspainikkeella (+).";
+"macshot needs one permission" = "Macshot Pro tarvitsee yhden luvan";
 "Screen Recording not yet granted" = "Ruudun nauhoituslupaa ei ole vielä myönnetty";
 "Screen Recording granted!" = "Ruudun nauhoituslupa myönnetty!";
-"Enable macshot, then try taking a screenshot" = "Ota macshot käyttöön ja kokeile kuvakaappausta";
+"Enable macshot, then try taking a screenshot" = "Ota Macshot Pro käyttöön ja kokeile kuvakaappausta";
 "Open Screen Recording Settings" = "Avaa ruudun nauhoitusasetukset";
 "Continue" = "Jatka";
 
@@ -433,7 +433,7 @@
 "Path copied!" = "Polku kopioitu!";
 
 /* Video Editor */
-"macshot Video Editor" = "macshot-videoeditori";
+"macshot Video Editor" = "Macshot Pro-videoeditori";
 "%@ selected" = "%@ valittu";
 "Exporting..." = "Viedään...";
 "Export failed" = "Vienti epäonnistui";
@@ -481,8 +481,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Syötön seuranta vaaditaan";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot tarvitsee syötön seurannan luvan korostaakseen hiiren napsautukset tai näyttääkseen näppäinpainallukset tallennuksen aikana. Myönnä käyttöoikeus Järjestelmäasetuksissa ja yritä uudelleen.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot tarvitsee Esteettömyys-luvan yksittäisiin käyttöliittymäelementteihin kohdistamista varten. Myönnä käyttöoikeus Järjestelmäasetuksista ja yritä uudelleen.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro tarvitsee syötön seurannan luvan korostaakseen hiiren napsautukset tai näyttääkseen näppäinpainallukset tallennuksen aikana. Myönnä käyttöoikeus Järjestelmäasetuksissa ja yritä uudelleen.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro tarvitsee Esteettömyys-luvan yksittäisiin käyttöliittymäelementteihin kohdistamista varten. Myönnä käyttöoikeus Järjestelmäasetuksista ja yritä uudelleen.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Näytä näppäinpainallukset";
@@ -498,7 +498,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Webkameran peittokuva";
 "Camera Access Required" = "Kameran käyttöoikeus vaaditaan";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot tarvitsee kameran käyttöoikeuden webkameran peittokuvaa varten. Avaa järjestelmän asetukset myöntääksesi käyttöoikeuden.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro tarvitsee kameran käyttöoikeuden webkameran peittokuvaa varten. Avaa järjestelmän asetukset myöntääksesi käyttöoikeuden.";
 "Webcam" = "Webkamera";
 "Bottom Right" = "Oikea alakulma";
 "Bottom Left" = "Vasen alakulma";
@@ -519,7 +519,7 @@
 
 /* New Strings */
 "Settings..." = "Asetukset...";
-"macshot Settings" = "macshot-asetukset";
+"macshot Settings" = "Macshot Pro-asetukset";
 "Also open in Editor" = "Avaa my\U00F6s editorissa";
 "Close editor after copying" = "Sulje editori kopioinnin jälkeen";
 "Hide controls" = "Piilota ohjaimet";
@@ -579,7 +579,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Avaa video...";
-"Choose a video to open in macshot editor" = "Valitse video avattavaksi macshot-editorissa";
+"Choose a video to open in macshot editor" = "Valitse video avattavaksi Macshot Pro-editorissa";
 "Click to add effects" = "Napsauta lisätäksesi tehosteita";
 "Add Zoom" = "Lisää zoomaus";
 "Add Censor" = "Lisää sensurointi";
@@ -653,19 +653,18 @@
 "Stop the current recording" = "Pysäytä nykyinen nauhoitus";
 "Supported URL Scheme Commands" = "Tuetut URL-skeeman komennot";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Tiedostopääte lisätään automaattisesti. {window}-kentän vinoviivat ja kaksoispisteet muuttuvat viivoiksi.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Käynnistä macshot Raycastista, Alfredista, Shortcuts-sovelluksesta tai mistä tahansa työkalusta, joka avaa URL-osoitteita.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Käynnistä Macshot Pro Raycastista, Alfredista, Shortcuts-sovelluksesta tai mistä tahansa työkalusta, joka avaa URL-osoitteita.";
 "URL scheme info" = "URL-skeeman tiedot";
 "Enable macshot:// URL scheme" = "Ota macshot://-URL-skeema k\U00E4ytt\U00F6\U00F6n";
 "sec (0 = never)" = "s (0 = ei koskaan)";
 "Settings" = "Asetukset";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Offline-versio: lähetys- ja pilvitallennusintegraatiot on poistettu. Päivitysten tarkistus voi silti muodostaa yhteyden MacShotin päivityspalvelimeen. Kuvakaappaukset ja tallenteet pysyvät paikallisina, ellet jaa tai tallenna niitä itse.";
 
 /* Settings import/export (issues #265, #280) */
 "Settings Backup" = "Asetusten varmuuskopio";
 "Export Settings…" = "Vie asetukset…";
 "Import Settings…" = "Tuo asetukset…";
 "Reveal Settings File in Finder" = "Näytä asetustiedosto Finderissa";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Vie asetuksesi tiedostoon siirtääksesi ne toiseen Maciin tai puhtaaseen asennukseen. Latauksen tunnistetietoja, tallennuskansiotasi ja kuvakaappaushistoriaa ei sisällytetä. Asetukset tallennetaan macshotin sovellussäiliöön.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Vie asetuksesi tiedostoon siirtääksesi ne toiseen Maciin tai puhtaaseen asennukseen. Latauksen tunnistetietoja, tallennuskansiotasi ja kuvakaappaushistoriaa ei sisällytetä. Asetukset tallennetaan Macshot Pro -sovelluksen sovellussäiliöön.";
 "Export Settings" = "Vie asetukset";
 "Import Settings" = "Tuo asetukset";
 "Import failed" = "Tuonti epäonnistui";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Käynnistä uudelleen nyt";
 "Replace your current settings?" = "Korvataanko nykyiset asetuksesi?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Tuonti korvaa nykyiset asetuksesi tämän tiedoston asetuksilla. Tallennuskansiosi, latauksen tunnistetiedot ja kuvakaappaushistoria säilytetään. Tätä ei voi kumota.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d asetusta otettiin käyttöön. Käynnistä macshot uudelleen ottaaksesi kaikki muutokset käyttöön.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d asetusta otettiin käyttöön. Käynnistä Macshot Pro uudelleen ottaaksesi kaikki muutokset käyttöön.";
 "A few large items were too big to include. Everything else was saved." = "Muutama suuri kohde oli liian suuri sisällytettäväksi. Kaikki muu tallennettiin.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Mukautettu Beautify-taustakuvasi oli liian suuri sisällytettäväksi. Kaikki muu tallennettiin.";
-"This file is not a valid macshot settings file." = "Tämä tiedosto ei ole kelvollinen macshot-asetustiedosto.";
+"This file is not a valid macshot settings file." = "Tämä tiedosto ei ole kelvollinen Macshot Pro-asetustiedosto.";
 "This settings file contains no settings." = "Tämä asetustiedosto ei sisällä asetuksia.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Tämä asetustiedosto on luotu uudemmalla macshot-versiolla. Päivitä macshot ensin.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Tämä asetustiedosto on luotu uudemmalla Macshot Pro-versiolla. Päivitä Macshot Pro ensin.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Kaappaa, käännä ja peitä kuvan teksti käännöksellä";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Käytä oletuszoomausta kaikkiin";
 "Auto" = "Auto";
 "Auto Zoom" = "Automaattizoomaus";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Automaattizoomaus tarvitsee osoitintietoja, jotka macshot tallentaa jokaisen uuden nauhoituksen yhteydessä. Voit silti lisätä zoomauksia kaksoisnapsauttamalla zoomausraitaa.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Automaattizoomaus tarvitsee osoitintietoja, jotka Macshot Pro tallentaa jokaisen uuden nauhoituksen yhteydessä. Voit silti lisätä zoomauksia kaksoisnapsauttamalla zoomausraitaa.";
 "Background blur" = "Taustan sumennus";
 "Background color" = "Taustaväri";
 "Background, padding, rounded corners and shadow" = "Tausta, reunus, pyöristetyt kulmat ja varjo";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Pienennä zoomausten aikana";
 "Smoothing" = "Tasoitus";
 "Snappy" = "Napakka";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Puheentunnistus on poistettu käytöstä macshotilta kohdassa Järjestelmäasetukset › Tietosuoja ja turvallisuus.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Puheentunnistus on poistettu käytöstä Macshot Pro -sovellukselta kohdassa Järjestelmäasetukset › Tietosuoja ja turvallisuus.";
 "Speed" = "Nopeus";
 "Spotlight" = "Valokeila";
 "Square" = "Neliö";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "Nauhoituksen ääntä ei voitu lukea.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Tämän nauhoituksen pikseleissä näkyy jo osoitin, joten sen tyyliä ei voi muuttaa. Zoomaukset voivat silti seurata sitä.";
 "This recording has no audio to transcribe." = "Tässä nauhoituksessa ei ole litteroitavaa ääntä.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Tässä videossa ei ole tallennettuja osoitintietoja. Kun macshotilla tehty nauhoitus avautuu editorissa, voit muuttaa osoittimen tyyliä, tasoittaa sen liikettä ja muuttaa sen kokoa nauhoituksen jälkeen.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Tässä videossa ei ole tallennettuja osoitintietoja. Kun Macshot Pro -sovelluksella tehty nauhoitus avautuu editorissa, voit muuttaa osoittimen tyyliä, tasoittaa sen liikettä ja muuttaa sen kokoa nauhoituksen jälkeen.";
 "Title" = "Otsikko";
 "Transcribing…" = "Litteroidaan…";
 "Transition" = "Siirtymä";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Ota Näytä näppäinpainallukset käyttöön ennen nauhoitusta. macshot tallentaa ne silloin erikseen, jotta voit muotoilla ne täällä.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Ota kamera käyttöön ennen nauhoitusta. macshot tallentaa sen erikseen, jotta voit siirtää, muuttaa kokoa, muuttaa tyyliä tai piilottaa sen täällä, ja pienentää sen zoomausten aikana.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Ota Näytä näppäinpainallukset käyttöön ennen nauhoitusta. Macshot Pro tallentaa ne silloin erikseen, jotta voit muotoilla ne täällä.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Ota kamera käyttöön ennen nauhoitusta. Macshot Pro tallentaa sen erikseen, jotta voit siirtää, muuttaa kokoa, muuttaa tyyliä tai piilottaa sen täällä, ja pienentää sen zoomausten aikana.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Käytä Yhtenäinen-tyyliä arkaluontoisten tietojen piilottamiseen: sumennus ja pikselöinti voidaan joskus kumota.";
 "Visibility" = "Näkyvyys";
 "Wallpaper" = "Taustakuva";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Offline-versio: lähetys- ja pilvitallennusintegraatiot on poistettu. Kuvakaappaukset ja tallenteet pysyvät paikallisina, ellet jaa tai tallenna niitä itse.";

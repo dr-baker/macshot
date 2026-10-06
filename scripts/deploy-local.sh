@@ -14,12 +14,14 @@ while [[ -L "$script_path" ]]; do
 done
 repo_dir="$(cd "$(dirname "$script_path")/.." && pwd)"
 build_dir="$repo_dir/build/local-dev"
-app_name="macshot Dev"
+app_name="Macshot Pro Dev"
+scheme_name="macshot Dev"
 bundle_id="com.drbaker.macshot.dev"
 product_path="$build_dir/Build/Products/Release/$app_name.app"
 signed_dir="$build_dir/signed"
 app_path="$signed_dir/$app_name.app"
 install_path="/Applications/$app_name.app"
+legacy_install_path="/Applications/macshot Dev.app"
 build_log="$build_dir/build.log"
 build_only=false
 
@@ -43,7 +45,7 @@ mkdir -p "$build_dir"
 echo "Building $app_name (log: $build_log)"
 if ! xcodebuild \
   -project "$repo_dir/macshot.xcodeproj" \
-  -scheme "$app_name" \
+  -scheme "$scheme_name" \
   -configuration Release \
   -derivedDataPath "$build_dir" \
   -destination 'platform=macOS' \
@@ -109,13 +111,17 @@ if $build_only; then
   exit 0
 fi
 
-if pgrep -x "$app_name" >/dev/null; then
+dev_is_running() {
+  pgrep -x "$app_name" >/dev/null || pgrep -x 'macshot Dev' >/dev/null
+}
+
+if dev_is_running; then
   osascript -e "tell application id \"$bundle_id\" to quit"
   for ((attempt=0; attempt<30; attempt++)); do
-    if ! pgrep -x "$app_name" >/dev/null; then break; fi
+    if ! dev_is_running; then break; fi
     sleep 1
   done
-  if pgrep -x "$app_name" >/dev/null; then
+  if dev_is_running; then
     echo "$app_name did not quit. Close it and rerun this command." >&2
     exit 1
   fi
@@ -124,14 +130,18 @@ fi
 stage_dir="$(mktemp -d /Applications/.macshot-dev.XXXXXX)"
 install_verified=false
 previous_saved=false
+legacy_saved=false
 new_installed=false
 restore_previous() {
   if ! $install_verified; then
+    if $new_installed; then
+      rm -rf "$install_path"
+    fi
     if $previous_saved; then
-      rm -rf "$install_path"
       mv "$stage_dir/previous.app" "$install_path"
-    elif $new_installed; then
-      rm -rf "$install_path"
+    fi
+    if $legacy_saved; then
+      mv "$stage_dir/legacy.app" "$legacy_install_path"
     fi
   fi
   rm -rf "$stage_dir"
@@ -143,15 +153,19 @@ if [[ -e "$install_path" ]]; then
   mv "$install_path" "$stage_dir/previous.app"
   previous_saved=true
 fi
+if [[ -e "$legacy_install_path" ]]; then
+  legacy_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$legacy_install_path/Contents/Info.plist")"
+  if [[ "$legacy_bundle_id" != "$bundle_id" ]]; then
+    echo "Unexpected legacy app at $legacy_install_path; leaving it in place." >&2
+    exit 1
+  fi
+  mv "$legacy_install_path" "$stage_dir/legacy.app"
+  legacy_saved=true
+fi
 mv "$stage_dir/new.app" "$install_path"
 new_installed=true
 codesign --verify --deep --strict "$install_path"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$install_path/Contents/Info.plist")" == "$bundle_id" ]]
-install_verified=true
-rm -rf "$stage_dir/previous.app"
-trap - EXIT
-rm -rf "$stage_dir"
-
 open -a "$install_path"
 for ((attempt=0; attempt<10; attempt++)); do
   if pgrep -x "$app_name" >/dev/null; then break; fi
@@ -161,6 +175,10 @@ if ! pgrep -x "$app_name" >/dev/null; then
   echo "Installed $install_path, but the app did not remain running. Check Console for launch errors." >&2
   exit 1
 fi
+install_verified=true
+rm -rf "$stage_dir/previous.app" "$stage_dir/legacy.app"
+trap - EXIT
+rm -rf "$stage_dir"
 echo "Installed and launched: $install_path"
 echo "Bundle ID: $bundle_id"
 echo "Build: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$install_path/Contents/Info.plist")"

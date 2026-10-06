@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CC0000012F61B60100B71643"
-               BuildableName = "macshot Dev.app"
+               BuildableName = "Macshot Pro Dev.app"
                BlueprintName = "macshot Dev"
                ReferencedContainer = "container:macshot.xcodeproj">
             </BuildableReference>
@@ -44,7 +44,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CC0000012F61B60100B71643"
-            BuildableName = "macshot Dev.app"
+            BuildableName = "Macshot Pro Dev.app"
             BlueprintName = "macshot Dev"
             ReferencedContainer = "container:macshot.xcodeproj">
          </BuildableReference>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CC0000012F61B60100B71643"
-            BuildableName = "macshot Dev.app"
+            BuildableName = "Macshot Pro Dev.app"
             BlueprintName = "macshot Dev"
             ReferencedContainer = "container:macshot.xcodeproj">
          </BuildableReference>

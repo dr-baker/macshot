@@ -1,4 +1,4 @@
-# macshot
+# Macshot Pro
 
 Native macOS screenshot & annotation tool inspired by Flameshot. Built with Swift + AppKit. No Qt, no Electron.
 
@@ -7,32 +7,22 @@ Native macOS screenshot & annotation tool inspired by Flameshot. Built with Swif
 - **Language:** Swift 5.0
 - **UI:** AppKit (all windows created in code, storyboard is minimal — just app entry + main menu)
 - **Min Target:** macOS 13.0+ (Ventura)
-- **Bundle ID:** com.sw33tlie.macshot.macshot
+- **Bundle ID:** com.drbaker.macshot.pro
 - **Sandbox:** Enabled (entitlements: network.client, files.user-selected.read-write, files.bookmarks.app-scope)
 - **LSUIElement:** YES (menu bar only app, no dock icon — switches to `.regular` when editor windows are open)
 - **Permissions:** Screen Recording (Info.plist has Privacy - Screen Capture Usage Description)
 - **Xcode:** File system synchronized groups — just create .swift files in `macshot/` and Xcode picks them up automatically
 
-## Build Variants
+## Build variants
 
-macshot has two release variants:
+Product identity, signing, update feeds, and install instructions are documented
+in [docs/local-development.md](docs/local-development.md). The internal schemes
+remain `macshot` and `macshot Dev`; their products are Macshot Pro and Macshot Pro
+Dev. Normal and offline builds target macOS 13. Local development targets macOS 26.
 
-- **Normal:** product name `macshot`, bundle id `com.sw33tlie.macshot.macshot`, Sparkle feed `appcast.xml`, release asset `MacShot.dmg`.
-- **Offline:** product name `macshot Offline`, bundle id `com.sw33tlie.macshot.offline`, Sparkle feed `appcast-offline.xml`, release asset `MacShot-Offline.dmg`.
-
-Daniel's local **`macshot Dev`** target uses macOS 26, `LOCAL_DEV`, bundle id
-`com.drbaker.macshot.dev`. The normal and offline targets remain on macOS 13.
-All variants share the app-owned screenshot renderer: native Clear glass on
-supported macOS 26 systems and tinted Classic panels elsewhere.
-`scripts/deploy-local.sh` builds and signs the separate Dev scheme.
-
-The offline build is selected with the `OFFLINE` Swift compilation condition. Use `BuildVariant.isOffline` / `BuildVariant.displayName` for runtime variant checks and display names. Upload and cloud storage integrations must be compiled out of the offline build with `#if !OFFLINE`, including upload UI, upload shortcuts, upload settings, upload context menu items, and uploader implementations.
-
-The release workflow builds both variants from the same tag. It patches the offline app's `SUFeedURL` to `appcast-offline.xml`, removes the Google OAuth URL scheme from the offline app, signs both apps, packages both DMGs, notarizes both DMGs, and writes both appcasts. Do not point the offline app at the normal appcast or vice versa; Sparkle updates must stay variant-specific so offline users never update into the normal app.
-
-Beta handling is shared: beta items get `<sparkle:channel>beta</sparkle:channel>`, and users opt in through the existing "Check for beta updates" setting. Stable offline releases will appear to offline users through `appcast-offline.xml` once a stable offline item exists.
-
-Homebrew status: beta releases skip Homebrew. Stable releases update the normal cask and generate `macshot-offline` in the personal tap. The official Homebrew cask remains normal-only unless a separate `macshot-offline` cask is submitted later.
+The offline build uses `OFFLINE` and compiles out upload and cloud integrations.
+Use `BuildVariant` for names and capabilities. Updates require the fork's own
+configured public key and matching variant feed. Local development never updates.
 
 ## Architecture
 

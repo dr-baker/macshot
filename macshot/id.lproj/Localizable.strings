@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -35,7 +35,7 @@
 "Pin from Clipboard" = "Sematkan dari Papan Klip";
 "Preferences..." = "Preferensi...";
 "Check for Updates..." = "Periksa Pembaruan...";
-"Quit macshot" = "Keluar macshot";
+"Quit macshot" = "Keluar Macshot Pro";
 "No recent captures" = "Tidak ada tangkapan terbaru";
 "Clear History" = "Hapus Riwayat";
 
@@ -211,7 +211,7 @@
 "Copy to clipboard" = "Salin ke papan klip";
 
 /* Preferences - General */
-"macshot Preferences" = "Preferensi macshot";
+"macshot Preferences" = "Preferensi Macshot Pro";
 "General" = "Umum";
 "Tools" = "Alat";
 "Recording" = "Rekaman";
@@ -238,9 +238,9 @@
 "Show shortcuts in tooltips" = "Tampilkan pintasan di tooltip";
 "Use window title in saved filename" = "Gunakan judul jendela di nama file tersimpan";
 "Hide menu bar icon" = "Sembunyikan ikon bilah menu";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Tombol pintas tetap berfungsi. Untuk menampilkan ikon kembali, jalankan ulang macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Tombol pintas tetap berfungsi. Untuk menampilkan ikon kembali, jalankan ulang Macshot Pro.";
 "Menu Bar Order" = "Urutan Bilah Menu";
-"Choose the order of capture actions in the macshot menu bar menu." = "Pilih urutan tindakan tangkapan di menu bilah menu macshot.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Pilih urutan tindakan tangkapan di menu bilah menu Macshot Pro.";
 "Move up" = "Pindah ke atas";
 "Move down" = "Pindah ke bawah";
 "Check for updates automatically" = "Periksa pembaruan secara otomatis";
@@ -372,7 +372,7 @@
 "Video upload requires Google Drive or S3" = "Unggahan video memerlukan Google Drive atau S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Versi %@ (%@)";
 "Made by" = "Dibuat oleh";
 "Licensed under the GPLv3" = "Dilisensikan di bawah GPLv3";
@@ -385,26 +385,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Salin gambar atau teks ke papan klip terlebih dahulu, lalu coba lagi.";
 "OK" = "OK";
 "Accessibility Access Required" = "Akses Aksesibilitas Diperlukan";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot memerlukan izin Aksesibilitas untuk menggulir otomatis aplikasi lain. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot memerlukan izin Aksesibilitas untuk tangkapan gulir. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro memerlukan izin Aksesibilitas untuk menggulir otomatis aplikasi lain. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro memerlukan izin Aksesibilitas untuk tangkapan gulir. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
 "Open Settings" = "Buka Pengaturan";
 "Cancel" = "Batal";
 "Microphone Access Required" = "Akses Mikrofon Diperlukan";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot memerlukan izin mikrofon untuk merekam audio suara. Buka Pengaturan Sistem untuk memberikan akses.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro memerlukan izin mikrofon untuk merekam audio suara. Buka Pengaturan Sistem untuk memberikan akses.";
 "Upload to Google Drive?" = "Unggah ke Google Drive?";
 "Upload to S3?" = "Unggah ke S3?";
 "Upload to imgbb.com?" = "Unggah ke imgbb.com?";
 "Your screenshot will be uploaded." = "Tangkapan layar Anda akan diunggah.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Selamat datang di macshot";
-"Welcome back to macshot" = "Selamat datang kembali di macshot";
+"Welcome to macshot" = "Selamat datang di Macshot Pro";
+"Welcome back to macshot" = "Selamat datang kembali di Macshot Pro";
 "Turn Screen Recording back on" = "Nyalakan lagi Perekaman Layar";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Setelah beberapa pembaruan, macOS meminta Anda mengizinkan macshot lagi. Pengaturan dan tangkapan Anda aman. Jika macshot sudah ada di daftar, pilih, klik tombol minus (−) untuk menghapusnya, lalu klik tombol plus (+) dan tambahkan macshot lagi.";
-"macshot needs one permission" = "macshot memerlukan satu izin";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Setelah beberapa pembaruan, macOS meminta Anda mengizinkan Macshot Pro lagi. Pengaturan dan tangkapan Anda aman. Jika Macshot Pro sudah ada di daftar, pilih, klik tombol minus (−) untuk menghapusnya, lalu klik tombol plus (+) dan tambahkan Macshot Pro lagi.";
+"macshot needs one permission" = "Macshot Pro memerlukan satu izin";
 "Screen Recording not yet granted" = "Perekaman Layar belum diberikan";
 "Screen Recording granted!" = "Perekaman Layar diberikan!";
-"Enable macshot, then try taking a screenshot" = "Aktifkan macshot, lalu coba ambil tangkapan layar";
+"Enable macshot, then try taking a screenshot" = "Aktifkan Macshot Pro, lalu coba ambil tangkapan layar";
 "Open Screen Recording Settings" = "Buka Pengaturan Perekaman Layar";
 "Continue" = "Lanjutkan";
 
@@ -435,7 +435,7 @@
 "Path copied!" = "Path disalin!";
 
 /* Video Editor */
-"macshot Video Editor" = "Editor Video macshot";
+"macshot Video Editor" = "Editor Video Macshot Pro";
 "%@ selected" = "%@ dipilih";
 "Exporting..." = "Mengekspor...";
 "Export failed" = "Ekspor gagal";
@@ -483,8 +483,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Pemantauan Input Diperlukan";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot memerlukan izin Pemantauan Input untuk menyorot klik mouse atau menampilkan penekanan tombol selama perekaman. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot memerlukan izin Aksesibilitas untuk menempel ke elemen antarmuka individual. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro memerlukan izin Pemantauan Input untuk menyorot klik mouse atau menampilkan penekanan tombol selama perekaman. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro memerlukan izin Aksesibilitas untuk menempel ke elemen antarmuka individual. Berikan akses di Pengaturan Sistem, lalu coba lagi.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Tampilkan Ketukan Tombol";
@@ -500,7 +500,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Hamparan Webcam";
 "Camera Access Required" = "Akses Kamera Diperlukan";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot memerlukan izin kamera untuk hamparan webcam. Buka Pengaturan Sistem untuk memberikan akses.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro memerlukan izin kamera untuk hamparan webcam. Buka Pengaturan Sistem untuk memberikan akses.";
 "Webcam" = "Webcam";
 "Bottom Right" = "Kanan Bawah";
 "Bottom Left" = "Kiri Bawah";
@@ -520,9 +520,8 @@
 
 /* New Strings */
 "Settings" = "Pengaturan";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Versi offline: integrasi unggah dan penyimpanan cloud dihapus. Pemeriksaan pembaruan mungkin masih terhubung ke server pembaruan MacShot. Tangkapan layar dan rekaman tetap lokal kecuali Anda membagikan atau menyimpannya sendiri.";
 "Settings..." = "Pengaturan...";
-"macshot Settings" = "Pengaturan macshot";
+"macshot Settings" = "Pengaturan Macshot Pro";
 "Also open in Editor" = "Buka juga di Editor";
 "Close editor after copying" = "Tutup editor setelah menyalin";
 "Hide controls" = "Sembunyikan kontrol";
@@ -581,7 +580,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Buka Video...";
-"Choose a video to open in macshot editor" = "Pilih video untuk dibuka di editor macshot";
+"Choose a video to open in macshot editor" = "Pilih video untuk dibuka di editor Macshot Pro";
 "Click to add effects" = "Klik untuk menambahkan efek";
 "Add Zoom" = "Tambah Zoom";
 "Add Censor" = "Tambah Sensor";
@@ -655,7 +654,7 @@
 "Stop the current recording" = "Hentikan rekaman saat ini";
 "Supported URL Scheme Commands" = "Perintah Skema URL yang Didukung";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "Ekstensi file ditambahkan secara otomatis. Garis miring dan titik dua di {window} menjadi tanda hubung.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Picu macshot dari Raycast, Alfred, Shortcuts, atau alat apa pun yang membuka URL.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Picu Macshot Pro dari Raycast, Alfred, Shortcuts, atau alat apa pun yang membuka URL.";
 "URL scheme info" = "Info skema URL";
 "Enable macshot:// URL scheme" = "Aktifkan skema URL macshot://";
 "sec (0 = never)" = "detik (0 = tidak pernah)";
@@ -665,7 +664,7 @@
 "Export Settings…" = "Ekspor Pengaturan…";
 "Import Settings…" = "Impor Pengaturan…";
 "Reveal Settings File in Finder" = "Tampilkan Berkas Pengaturan di Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Ekspor preferensi Anda ke sebuah berkas untuk memindahkannya ke Mac lain atau instalasi baru. Kredensial unggah, folder penyimpanan, dan riwayat tangkapan layar tidak disertakan. Pengaturan disimpan di dalam wadah aplikasi macshot.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Ekspor preferensi Anda ke sebuah berkas untuk memindahkannya ke Mac lain atau instalasi baru. Kredensial unggah, folder penyimpanan, dan riwayat tangkapan layar tidak disertakan. Pengaturan disimpan di dalam wadah aplikasi Macshot Pro.";
 "Export Settings" = "Ekspor Pengaturan";
 "Import Settings" = "Impor Pengaturan";
 "Import failed" = "Impor gagal";
@@ -676,12 +675,12 @@
 "Relaunch Now" = "Luncurkan Ulang Sekarang";
 "Replace your current settings?" = "Ganti pengaturan Anda saat ini?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "Mengimpor akan mengganti preferensi Anda saat ini dengan yang ada di berkas ini. Folder penyimpanan, kredensial unggah, dan riwayat tangkapan layar Anda tetap dipertahankan. Tindakan ini tidak dapat dibatalkan.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "%d pengaturan telah diterapkan. Luncurkan ulang macshot untuk menerapkan semua perubahan.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "%d pengaturan telah diterapkan. Luncurkan ulang Macshot Pro untuk menerapkan semua perubahan.";
 "A few large items were too big to include. Everything else was saved." = "Beberapa item besar terlalu besar untuk disertakan. Selebihnya telah disimpan.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "Gambar latar Beautify khusus Anda terlalu besar untuk disertakan. Selebihnya telah disimpan.";
-"This file is not a valid macshot settings file." = "Berkas ini bukan berkas pengaturan macshot yang valid.";
+"This file is not a valid macshot settings file." = "Berkas ini bukan berkas pengaturan Macshot Pro yang valid.";
 "This settings file contains no settings." = "Berkas pengaturan ini tidak berisi pengaturan apa pun.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Berkas pengaturan ini dibuat oleh versi macshot yang lebih baru. Harap perbarui macshot terlebih dahulu.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Berkas pengaturan ini dibuat oleh versi Macshot Pro yang lebih baru. Harap perbarui Macshot Pro terlebih dahulu.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Tangkap, terjemahkan, dan tampilkan teks di atas gambar";
@@ -726,7 +725,7 @@
 "Apply Default Zoom to All" = "Terapkan Zoom Default ke Semua";
 "Auto" = "Otomatis";
 "Auto Zoom" = "Zoom Otomatis";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Zoom Otomatis memerlukan data penunjuk, yang direkam macshot di setiap rekaman baru. Anda tetap dapat menambahkan zoom dengan mengeklik dua kali jalur zoom.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "Zoom Otomatis memerlukan data penunjuk, yang direkam Macshot Pro di setiap rekaman baru. Anda tetap dapat menambahkan zoom dengan mengeklik dua kali jalur zoom.";
 "Background blur" = "Blur latar belakang";
 "Background color" = "Warna latar belakang";
 "Background, padding, rounded corners and shadow" = "Latar belakang, padding, sudut membulat, dan bayangan";
@@ -827,7 +826,7 @@
 "Shrink during zooms" = "Perkecil saat zoom";
 "Smoothing" = "Penghalusan";
 "Snappy" = "Cepat";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Pengenalan ucapan dimatikan untuk macshot di Pengaturan Sistem › Privasi & Keamanan.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "Pengenalan ucapan dimatikan untuk Macshot Pro di Pengaturan Sistem › Privasi & Keamanan.";
 "Speed" = "Kecepatan";
 "Spotlight" = "Sorotan";
 "Square" = "Persegi";
@@ -837,12 +836,12 @@
 "The recording's audio could not be read." = "Audio rekaman tidak dapat dibaca.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Rekaman ini sudah menampilkan penunjuk di pikselnya, jadi gayanya tidak dapat diubah. Zoom tetap dapat mengikutinya.";
 "This recording has no audio to transcribe." = "Rekaman ini tidak memiliki audio untuk ditranskripsi.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Video ini tidak memiliki data penunjuk yang terekam. Rekaman yang dibuat dengan macshot dan dibuka di editor memungkinkan Anda mengubah gaya, menghaluskan, dan mengubah ukuran penunjuk setelah merekam.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Video ini tidak memiliki data penunjuk yang terekam. Rekaman yang dibuat dengan Macshot Pro dan dibuka di editor memungkinkan Anda mengubah gaya, menghaluskan, dan mengubah ukuran penunjuk setelah merekam.";
 "Title" = "Judul";
 "Transcribing…" = "Mentranskripsi…";
 "Transition" = "Transisi";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Aktifkan Tampilkan Ketukan Tombol sebelum merekam. macshot kemudian merekamnya secara terpisah agar Anda dapat mengatur gayanya di sini.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Aktifkan kamera sebelum merekam. macshot merekamnya secara terpisah agar Anda dapat memindahkan, mengubah ukuran, mengubah gaya, atau menyembunyikannya di sini, dan memperkecilnya saat zoom.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Aktifkan Tampilkan Ketukan Tombol sebelum merekam. Macshot Pro kemudian merekamnya secara terpisah agar Anda dapat mengatur gayanya di sini.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Aktifkan kamera sebelum merekam. Macshot Pro merekamnya secara terpisah agar Anda dapat memindahkan, mengubah ukuran, mengubah gaya, atau menyembunyikannya di sini, dan memperkecilnya saat zoom.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Gunakan Solid untuk menyembunyikan informasi sensitif: blur dan pikselasi terkadang dapat dikembalikan.";
 "Visibility" = "Visibilitas";
 "Wallpaper" = "Wallpaper";
@@ -860,7 +859,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -915,7 +914,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1052,3 +1051,5 @@
 "Connected glass for capture and editor controls." = "Connected glass for capture and editor controls.";
 "Glass is unavailable on this Mac. Classic is shown." = "Glass is unavailable on this Mac. Classic is shown.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Versi offline: integrasi unggah dan penyimpanan cloud dihapus. Tangkapan layar dan rekaman tetap lokal kecuali Anda membagikan atau menyimpannya sendiri.";

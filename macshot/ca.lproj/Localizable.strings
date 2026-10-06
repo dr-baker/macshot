@@ -11,7 +11,7 @@
  * Keys use the English text. Values should be the translation.
  * Format strings use %@ for strings, %d for integers.
  * Keep keyboard shortcuts (like ⌘C) untranslated.
- * Keep brand names (macshot, Google Drive, imgbb, S3) untranslated.
+ * Keep brand names (Macshot Pro, Google Drive, imgbb, S3) untranslated.
  */
 
 /* Menu Bar */
@@ -33,7 +33,7 @@
 "Pin from Clipboard" = "Fixar des del porta-retalls";
 "Preferences..." = "Preferències...";
 "Check for Updates..." = "Cercar actualitzacions...";
-"Quit macshot" = "Sortir de macshot";
+"Quit macshot" = "Sortir de Macshot Pro";
 "No recent captures" = "No hi ha captures recents";
 "Clear History" = "Esborrar historial";
 
@@ -194,7 +194,7 @@
 "Copy to clipboard" = "Copiar al porta-retalls";
 
 /* Preferences - General */
-"macshot Preferences" = "Preferències de macshot";
+"macshot Preferences" = "Preferències de Macshot Pro";
 "General" = "General";
 "Tools" = "Eines";
 "Recording" = "Gravació";
@@ -219,7 +219,7 @@
 "Show shortcuts in tooltips" = "Mostrar dreceres als consells d'eina";
 "Use window title in saved filename" = "Utilitzar el títol de la finestra al nom del fitxer";
 "Hide menu bar icon" = "Amagar la icona de la barra de menús";
-"Hotkeys still work. To show the icon again, re-launch macshot." = "Les dreceres segueixen funcionant. Per mostrar la icona de nou, reinicieu macshot.";
+"Hotkeys still work. To show the icon again, re-launch macshot." = "Les dreceres segueixen funcionant. Per mostrar la icona de nou, reinicieu Macshot Pro.";
 "Check for updates automatically" = "Cercar actualitzacions automàticament";
 "Check for beta updates" = "Cercar actualitzacions beta";
 "Thumbnail" = "Miniatura";
@@ -230,7 +230,7 @@
 "Stack (keep all)" = "Apilar (mantenir totes)";
 "Replace (show only latest)" = "Substituir (mostrar només l'última)";
 "Menu Bar Order" = "Ordre de la barra de menús";
-"Choose the order of capture actions in the macshot menu bar menu." = "Tria l'ordre de les accions de captura al menu de la barra de menús de macshot.";
+"Choose the order of capture actions in the macshot menu bar menu." = "Tria l'ordre de les accions de captura al menu de la barra de menús de Macshot Pro.";
 "Move up" = "Mou amunt";
 "Move down" = "Mou avall";
 "Output" = "Sortida";
@@ -365,7 +365,7 @@
 "Video upload requires Google Drive or S3" = "La pujada de vídeo requereix Google Drive o S3";
 
 /* Preferences - About */
-"macshot" = "macshot";
+"macshot" = "Macshot Pro";
 "Version %@ (%@)" = "Versió %@ (%@)";
 "Made by" = "Creat per";
 "Licensed under the GPLv3" = "Llicenciat sota la GPLv3";
@@ -378,26 +378,26 @@
 "Copy an image or text to the clipboard first, then try again." = "Copieu primer una imatge o text al porta-retalls i torneu-ho a provar.";
 "OK" = "D'acord";
 "Accessibility Access Required" = "Es requereix accés d'accessibilitat";
-"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "macshot necessita permís d'accessibilitat per desplaçar automàticament altres aplicacions. Concediu l'accés a la Configuració del sistema i torneu-ho a provar.";
-"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "macshot necessita permís d'accessibilitat per a la captura de desplaçament. Concediu l'accés a Configuració del sistema i torneu-ho a provar.";
+"macshot needs Accessibility permission to auto-scroll other apps. Please grant access in System Settings, then try again." = "Macshot Pro necessita permís d'accessibilitat per desplaçar automàticament altres aplicacions. Concediu l'accés a la Configuració del sistema i torneu-ho a provar.";
+"macshot needs Accessibility permission for scroll capture. Please grant access in System Settings, then try again." = "Macshot Pro necessita permís d'accessibilitat per a la captura de desplaçament. Concediu l'accés a Configuració del sistema i torneu-ho a provar.";
 "Open Settings" = "Obrir configuració";
 "Cancel" = "Cancel·lar";
 "Microphone Access Required" = "Es requereix accés al micròfon";
-"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "macshot necessita permís de micròfon per gravar àudio de veu. Obriu la Configuració del sistema per concedir l'accés.";
+"macshot needs microphone permission to record voice audio. Open System Settings to grant access." = "Macshot Pro necessita permís de micròfon per gravar àudio de veu. Obriu la Configuració del sistema per concedir l'accés.";
 "Upload to Google Drive?" = "Pujar a Google Drive?";
 "Upload to S3?" = "Pujar a S3?";
 "Upload to imgbb.com?" = "Pujar a imgbb.com?";
 "Your screenshot will be uploaded." = "La vostra captura de pantalla es pujarà.";
 
 /* Permission Onboarding */
-"Welcome to macshot" = "Benvingut a macshot";
-"Welcome back to macshot" = "Et donem la benvinguda de nou a macshot";
+"Welcome to macshot" = "Benvingut a Macshot Pro";
+"Welcome back to macshot" = "Et donem la benvinguda de nou a Macshot Pro";
 "Turn Screen Recording back on" = "Torna a activar la gravació de pantalla";
-"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Després d'algunes actualitzacions, macOS et demana que tornis a permetre macshot. La teva configuració i les teves captures estan segures. Si macshot ja és a la llista, selecciona'l, fes clic al botó menys (−) per eliminar-lo i després fes clic al botó més (+) i torna a afegir macshot.";
-"macshot needs one permission" = "macshot necessita un permís";
+"After some updates, macOS asks you to allow macshot again. Your settings and captures are safe. If macshot is already in the list, select it, click the minus button (−) to remove it, then click the plus button (+) and add macshot again." = "Després d'algunes actualitzacions, macOS et demana que tornis a permetre Macshot Pro. La teva configuració i les teves captures estan segures. Si Macshot Pro ja és a la llista, selecciona'l, fes clic al botó menys (−) per eliminar-lo i després fes clic al botó més (+) i torna a afegir Macshot Pro.";
+"macshot needs one permission" = "Macshot Pro necessita un permís";
 "Screen Recording not yet granted" = "Gravació de pantalla encara no concedida";
 "Screen Recording granted!" = "Gravació de pantalla concedida!";
-"Enable macshot, then try taking a screenshot" = "Activeu macshot i proveu de fer una captura de pantalla";
+"Enable macshot, then try taking a screenshot" = "Activeu Macshot Pro i proveu de fer una captura de pantalla";
 "Open Screen Recording Settings" = "Obrir la configuració de gravació de pantalla";
 "Continue" = "Continuar";
 
@@ -428,7 +428,7 @@
 "Path copied!" = "Ruta copiada!";
 
 /* Video Editor */
-"macshot Video Editor" = "Editor de vídeo de macshot";
+"macshot Video Editor" = "Editor de vídeo de Macshot Pro";
 "%@ selected" = "%@ seleccionat";
 "Exporting..." = "Exportant...";
 "Export failed" = "Error en exportar";
@@ -476,8 +476,8 @@
 
 /* Recording — Input Monitoring Permission */
 "Input Monitoring Required" = "Es requereix monitoratge d'entrada";
-"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "macshot necessita permís de monitoratge d'entrada per ressaltar els clics del ratolí o mostrar les pulsacions de tecles durant la gravació. Concediu l'accés a la configuració del sistema i torneu-ho a provar.";
-"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "macshot necessita permís d'accessibilitat per ajustar-se a elements individuals de la interfície. Concediu l'accés a Configuració del sistema i torneu-ho a provar.";
+"macshot needs Input Monitoring permission to highlight mouse clicks or show keystrokes during recording. Please grant access in System Settings, then try again." = "Macshot Pro necessita permís de monitoratge d'entrada per ressaltar els clics del ratolí o mostrar les pulsacions de tecles durant la gravació. Concediu l'accés a la configuració del sistema i torneu-ho a provar.";
+"macshot needs Accessibility permission to snap to individual interface elements. Please grant access in System Settings, then try again." = "Macshot Pro necessita permís d'accessibilitat per ajustar-se a elements individuals de la interfície. Concediu l'accés a Configuració del sistema i torneu-ho a provar.";
 
 /* Recording — Keystroke Overlay */
 "Show Keystrokes" = "Mostrar pulsacions de tecles";
@@ -493,7 +493,7 @@
 /* Webcam Overlay */
 "Webcam Overlay" = "Superposició de webcam";
 "Camera Access Required" = "Es requereix accés a la càmera";
-"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "macshot necessita permís de càmera per a la superposició de webcam. Obriu la Configuració del sistema per concedir l'accés.";
+"macshot needs camera permission for the webcam overlay. Open System Settings to grant access." = "Macshot Pro necessita permís de càmera per a la superposició de webcam. Obriu la Configuració del sistema per concedir l'accés.";
 "Webcam" = "Webcam";
 "Bottom Right" = "Baix a la dreta";
 "Bottom Left" = "Baix a l'esquerra";
@@ -514,7 +514,7 @@
 /* Settings */
 "Settings" = "Configuració";
 "Settings..." = "Configuració...";
-"macshot Settings" = "Configuració de macshot";
+"macshot Settings" = "Configuració de Macshot Pro";
 "Also open in Editor" = "Obrir també a l'editor";
 "Close editor after copying" = "Tanca l'editor després de copiar";
 "Hide controls" = "Amagar controls";
@@ -556,7 +556,6 @@
 "Download language packs in System Settings…" = "Descarregar paquets d'idioma a la Configuració del sistema…";
 "Configure S3 in Settings" = "Configurar S3 a la Configuració";
 "Sign in to Google Drive in Settings" = "Iniciar sessió a Google Drive a la Configuració";
-"Offline build: upload and cloud storage integrations are removed. Update checks may still connect to MacShot's update server. Screenshots and recordings stay local unless you share or save them yourself." = "Versió sense connexió: s'han eliminat les integracions de pujada i d'emmagatzematge al núvol. Les comprovacions d'actualitzacions encara poden connectar-se al servidor d'actualitzacions de MacShot. Les captures de pantalla i els enregistraments es mantenen locals tret que els comparteixis o els desis tu mateix.";
 "Position:" = "Posició:";
 "Size:" = "Mida:";
 "Shape:" = "Forma:";
@@ -575,7 +574,7 @@
 
 /* Added for v4.1.0-beta.3 — video editor, effects, open-video, shortcuts help */
 "Open Video..." = "Obrir vídeo...";
-"Choose a video to open in macshot editor" = "Trieu un vídeo per obrir a l'editor de macshot";
+"Choose a video to open in macshot editor" = "Trieu un vídeo per obrir a l'editor de Macshot Pro";
 "Click to add effects" = "Feu clic per afegir efectes";
 "Add Zoom" = "Afegir zoom";
 "Add Censor" = "Afegir censura";
@@ -650,7 +649,7 @@
 "Stop the current recording" = "Aturar la gravació actual";
 "Supported URL Scheme Commands" = "Ordres d'esquema d'URL compatibles";
 "The file extension is appended automatically. Slashes and colons in {window} become dashes." = "L'extensió del fitxer s'afegeix automàticament. Les barres i els dos punts a {window} es converteixen en guions.";
-"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Activeu macshot des de Raycast, Alfred, Shortcuts o qualsevol eina que obri URLs.";
+"Trigger macshot from Raycast, Alfred, Shortcuts, or any tool that opens URLs." = "Activeu Macshot Pro des de Raycast, Alfred, Shortcuts o qualsevol eina que obri URLs.";
 "URL scheme info" = "Informació de l'esquema d'URL";
 "sec (0 = never)" = "seg (0 = mai)";
 
@@ -667,7 +666,7 @@
 "Export Settings…" = "Exporta la configuració…";
 "Import Settings…" = "Importa la configuració…";
 "Reveal Settings File in Finder" = "Mostra el fitxer de configuració al Finder";
-"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exporta les preferències a un fitxer per traslladar-les a un altre Mac o a una instal·lació nova. Les credencials de pujada, la carpeta de desament i l'historial de captures no s'hi inclouen. La configuració es desa dins del contenidor de l'app de macshot.";
+"Export your preferences to a file to move them to another Mac or a clean install. Upload credentials, your save folder, and screenshot history are not included. Settings are stored inside macshot's app container." = "Exporta les preferències a un fitxer per traslladar-les a un altre Mac o a una instal·lació nova. Les credencials de pujada, la carpeta de desament i l'historial de captures no s'hi inclouen. La configuració es desa dins del contenidor de l'app de Macshot Pro.";
 "Export Settings" = "Exporta la configuració";
 "Import Settings" = "Importa la configuració";
 "Import failed" = "La importació ha fallat";
@@ -678,12 +677,12 @@
 "Relaunch Now" = "Reinicia ara";
 "Replace your current settings?" = "Vols substituir la configuració actual?";
 "Importing will replace your current preferences with the ones in this file. Your save folder, upload credentials, and screenshot history are kept. This cannot be undone." = "En importar, se substituiran les preferències actuals per les d'aquest fitxer. La carpeta de desament, les credencials de pujada i l'historial de captures es conserven. Aquesta acció no es pot desfer.";
-"%d settings were applied. Relaunch macshot to apply all changes." = "S'han aplicat %d opcions de configuració. Reinicia macshot per aplicar tots els canvis.";
+"%d settings were applied. Relaunch macshot to apply all changes." = "S'han aplicat %d opcions de configuració. Reinicia Macshot Pro per aplicar tots els canvis.";
 "A few large items were too big to include. Everything else was saved." = "Alguns elements grans eren massa grossos per incloure'ls. La resta s'ha desat.";
 "Your custom Beautify background image was too large to include. Everything else was saved." = "La teva imatge de fons personalitzada de Beautify era massa gran per incloure-la. La resta s'ha desat.";
-"This file is not a valid macshot settings file." = "Aquest fitxer no és un fitxer de configuració de macshot vàlid.";
+"This file is not a valid macshot settings file." = "Aquest fitxer no és un fitxer de configuració de Macshot Pro vàlid.";
 "This settings file contains no settings." = "Aquest fitxer de configuració no conté cap opció.";
-"This settings file was made by a newer version of macshot. Please update macshot first." = "Aquest fitxer de configuració s'ha creat amb una versió més recent de macshot. Actualitza macshot primer.";
+"This settings file was made by a newer version of macshot. Please update macshot first." = "Aquest fitxer de configuració s'ha creat amb una versió més recent de Macshot Pro. Actualitza Macshot Pro primer.";
 
 /* URL scheme: ocr-translate (issue #283) */
 "Capture, translate, and overlay the text on the image" = "Captura, tradueix i superposa el text a la imatge";
@@ -728,7 +727,7 @@
 "Apply Default Zoom to All" = "Aplicar el zoom per defecte a tots";
 "Auto" = "Auto";
 "Auto Zoom" = "Zoom automàtic";
-"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "El zoom automàtic necessita dades del punter, que macshot enregistra amb cada enregistrament nou. Encara podeu afegir zooms fent doble clic a la pista de zoom.";
+"Auto Zoom needs pointer data, which macshot records with every new recording. You can still add zooms by double-clicking the zoom lane." = "El zoom automàtic necessita dades del punter, que Macshot Pro enregistra amb cada enregistrament nou. Encara podeu afegir zooms fent doble clic a la pista de zoom.";
 "Background blur" = "Difuminat del fons";
 "Background color" = "Color de fons";
 "Background, padding, rounded corners and shadow" = "Fons, farciment, cantonades arrodonides i ombra";
@@ -829,7 +828,7 @@
 "Shrink during zooms" = "Reduir durant els zooms";
 "Smoothing" = "Suavitzat";
 "Snappy" = "Àgil";
-"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "El reconeixement de veu està desactivat per a macshot a Configuració del sistema › Privadesa i seguretat.";
+"Speech recognition is turned off for macshot in System Settings › Privacy & Security." = "El reconeixement de veu està desactivat per a Macshot Pro a Configuració del sistema › Privadesa i seguretat.";
 "Speed" = "Velocitat";
 "Spotlight" = "Focus";
 "Square" = "Quadrat";
@@ -839,12 +838,12 @@
 "The recording's audio could not be read." = "No s'ha pogut llegir l'àudio de l'enregistrament.";
 "This recording already shows the pointer in its pixels, so it can't be restyled. Zooms can still follow it." = "Aquest enregistrament ja mostra el punter als seus píxels, de manera que no se'n pot canviar l'estil. Els zooms encara el poden seguir.";
 "This recording has no audio to transcribe." = "Aquest enregistrament no té àudio per transcriure.";
-"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Aquest vídeo no té dades enregistrades del punter. Els enregistraments fets amb macshot que s'obren a l'editor permeten canviar l'estil, el suavitzat i la mida del punter després d'enregistrar.";
+"This video has no recorded pointer data. Recordings made with macshot that open in the editor let you restyle, smooth and resize the pointer after recording." = "Aquest vídeo no té dades enregistrades del punter. Els enregistraments fets amb Macshot Pro que s'obren a l'editor permeten canviar l'estil, el suavitzat i la mida del punter després d'enregistrar.";
 "Title" = "Títol";
 "Transcribing…" = "S'està transcrivint…";
 "Transition" = "Transició";
-"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Activeu Mostrar pulsacions de tecles abans d'enregistrar. Llavors macshot les enregistra per separat perquè les pugueu personalitzar aquí.";
-"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Activeu la càmera abans d'enregistrar. macshot l'enregistra per separat perquè la pugueu moure, redimensionar, canviar-ne l'estil o amagar-la aquí, i reduir-la durant els zooms.";
+"Turn on Show Keystrokes before recording. macshot then records them separately so you can style them here." = "Activeu Mostrar pulsacions de tecles abans d'enregistrar. Llavors Macshot Pro les enregistra per separat perquè les pugueu personalitzar aquí.";
+"Turn on the camera before recording. macshot records it separately so you can move, resize, restyle or hide it here, and shrink it during zooms." = "Activeu la càmera abans d'enregistrar. Macshot Pro l'enregistra per separat perquè la pugueu moure, redimensionar, canviar-ne l'estil o amagar-la aquí, i reduir-la durant els zooms.";
 "Use Solid to hide sensitive information: blur and pixelation can sometimes be reversed." = "Feu servir Sòlid per amagar informació confidencial: el difuminat i la pixelació de vegades es poden revertir.";
 "Visibility" = "Visibilitat";
 "Wallpaper" = "Fons de pantalla";
@@ -862,7 +861,7 @@
 "Add Images" = "Add Images";
 "Add images" = "Add images";
 "Added image" = "Added image";
-"Allow macshot in System Settings, then start Stitch Capture again." = "Allow macshot in System Settings, then start Stitch Capture again.";
+"Allow macshot in System Settings, then start Stitch Capture again." = "Allow Macshot Pro in System Settings, then start Stitch Capture again.";
 "Annotate" = "Annotate";
 "Bring Forward" = "Bring Forward";
 "Bring piece forward" = "Bring piece forward";
@@ -917,7 +916,7 @@
 "Use Finish to open the stitch editor" = "Use Finish to open the stitch editor";
 "Wave height" = "Wave height";
 "captures" = "captures";
-"macshot · Stitch" = "macshot · Stitch";
+"macshot · Stitch" = "Macshot Pro · Stitch";
 "pieces" = "pieces";
 
 /* Stitch workspace controls. English fallback pending translation. */
@@ -1054,3 +1053,5 @@
 "Connected glass for capture and editor controls." = "Vidre connectat per als controls de captura i de l’editor.";
 "Glass is unavailable on this Mac. Classic is shown." = "El vidre no està disponible en aquest Mac. Es mostra l’estil clàssic.";
 "Glass requires macOS 26. Classic is shown on this Mac." = "El vidre requereix macOS 26. Es mostra l’estil clàssic en aquest Mac.";
+
+"Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Versió sense connexió: s'han eliminat les integracions de pujada i d'emmagatzematge al núvol. Les captures de pantalla i els enregistraments es mantenen locals tret que els comparteixis o els desis tu mateix.";

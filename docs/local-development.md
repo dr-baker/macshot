@@ -17,7 +17,7 @@ ln -sfn "$PWD/scripts/deploy-local.sh" ~/.local/bin/macshot-deploy
 
 The command builds the `macshot Dev` scheme for macOS 26 and signs its Release app with the installed Developer ID Application
 certificate. It then quits the previous development copy, installs the new copy
-at `/Applications/macshot Dev.app`, launches it, and verifies the bundle ID,
+at `/Applications/Macshot Pro Dev.app`, launches it, and verifies the bundle ID,
 signature, and process. Build output is in `build/local-dev/build.log`. Run
 `macshot-deploy --build-only` to compile and sign without installing.
 
@@ -35,6 +35,11 @@ Normal and offline builds target macOS 13. All variants use the same app-owned
 screenshot appearance code. Native Clear glass requires macOS 26 and the
 supported window appearance hooks; other systems use Classic panels.
 
+The scheme names (`macshot` and `macshot Dev`) and repository paths remain stable.
+The first renamed deployment retires `/Applications/macshot Dev.app` after
+verifying the replacement. Its bundle ID and signing identity are preserved,
+so your preferences, history, and permission grants stay with the app.
+
 ## Tune screenshot controls
 
 Open **Settings → Appearance**. Choose **Clear**, **Regular**, or **Classic**, then select
@@ -46,7 +51,7 @@ Choose **System**, **Light**, or **Dark** appearance. Built-in themes include
 matching palettes for both appearances; custom colors remain explicit.
 **Use macOS accent color** derives a quiet background in OKLCH, preserving hue
 while reducing chroma and choosing lightness for the selected appearance.
-Turning it off restores the chosen Macshot palette. Settings buttons and sliders
+Turning it off restores the chosen Macshot Pro palette. Settings buttons and sliders
 use the chosen accent through supported native tint APIs.
 Sunset pairs a pink background with orange accents.
 
@@ -77,11 +82,20 @@ Reduce Transparency uses Classic. Layout coalesces geometry updates and skips
 unchanged SwiftUI state.
 
 The window appearance bridge keeps glass active without claiming keyboard
-focus. Macshot owns the renderer and its tint settings directly.
+focus. Macshot Pro owns the renderer and its tint settings directly.
 
 If the certificate changes, set `MACSHOT_SIGNING_IDENTITY` to the full name of
 the identity you want to use. Keep using the same identity for later deploys to
 avoid another macOS permission prompt.
+
+## Release builds
+
+Normal and offline builds use `com.drbaker.macshot.pro` and
+`com.drbaker.macshot.pro.offline`, respectively. Source builds have no Sparkle
+signing key and do not check for updates. The release workflow requires the
+fork's own `SPARKLE_PUBLIC_KEY` and `SPARKLE_PRIVATE_KEY`, Developer ID signing
+credentials, and notarization credentials. It publishes fork-owned DMGs and
+variant-specific appcasts. No upstream Homebrew tap is modified.
 
 ## Publish and sync the fork
 
