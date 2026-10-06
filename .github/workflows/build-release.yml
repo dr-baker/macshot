@@ -22,6 +22,9 @@ permissions:
 
 jobs:
   release:
+    # Local releases keep signing credentials in Keychain. Enable tag builds
+    # after configuring the repository's release secrets.
+    if: github.event_name == 'workflow_dispatch' || vars.MACSHOT_CI_RELEASES == 'true'
     runs-on: macos-26        # Xcode 26 + macOS 26 SDK (needed for NSGlassEffectView / Liquid Glass)
     timeout-minutes: 360
     env:
@@ -87,7 +90,7 @@ jobs:
             exit 1
           fi
           VERSION="${TAG#v}"   # strip leading 'v'
-          BUILD_NUMBER="${{ github.run_number }}"
+          BUILD_NUMBER="$(date -u +%s)"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
           if [[ "$VERSION" == *"-beta"* ]]; then
