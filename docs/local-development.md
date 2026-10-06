@@ -97,6 +97,46 @@ fork's own `SPARKLE_PUBLIC_KEY` and `SPARKLE_PRIVATE_KEY`, Developer ID signing
 credentials, and notarization credentials. It publishes fork-owned DMGs and
 variant-specific appcasts. No upstream Homebrew tap is modified.
 
+### Prepare a local release
+
+Local releases use your Developer ID certificate and the `macshot-pro` Sparkle
+key in Keychain. Private signing keys are not written to release files.
+
+Download the [Sparkle 2.9.0 release tools](https://github.com/sparkle-project/Sparkle/releases/tag/2.9.0)
+and create the fork's key once:
+
+```sh
+/path/to/Sparkle/bin/generate_keys --account macshot-pro
+```
+
+Build, sign, and package the normal and offline apps:
+
+```sh
+scripts/prepare-release.sh \
+  --version 0.1.0 \
+  --build-number "$(date -u +%s)" \
+  --sparkle-tools /path/to/Sparkle/bin \
+  --signing-identity 'Developer ID Application: Daniel Richard Baker (45W5CFCVQF)'
+```
+
+Commit the intended source first; preparation requires a clean checkout.
+Ignored build output is allowed.
+The output in `build/release/v<version>-<build-number>/` contains both universal
+apps, disk images, and a manifest with their metadata and hashes. The
+preparation step does not publish or notarize them.
+Submit the disk images using a validated Apple notarization Keychain profile,
+then staple and validate the accepted tickets before publishing.
+Generate Sparkle signatures and final hashes after stapling, which changes the
+disk image bytes. Publish the release assets before updating their appcasts.
+
+### Enable releases from GitHub Actions
+
+Set the signing, notarization, and Sparkle repository secrets before setting the
+`MACSHOT_CI_RELEASES` repository variable to `true`. Until then, tag pushes skip
+the CI release job. Manual workflow runs still check for the required secrets.
+Build numbers use UTC Unix time so local and CI releases share one increasing
+sequence. Resumed notarization runs retain the original app's build number.
+
 ## Publish and sync the fork
 
 This checkout uses `origin` for [Daniel's fork](https://github.com/dr-baker/macshot)
