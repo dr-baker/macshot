@@ -1154,8 +1154,14 @@ class OverlayView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var isFlipped: Bool { false }
 
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if window !== newWindow { ScreenshotCommandResponder.uninstallEditor(self, in: window) }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let window { ScreenshotCommandResponder.install(in: window, editor: self) }
         window?.makeFirstResponder(self)
         window?.acceptsMouseMovedEvents = true
         let area = NSTrackingArea(
@@ -1189,12 +1195,9 @@ class OverlayView: NSView {
     }
 
     @objc private func handleToolbarColorsChanged() {
-        // Rebuild toolbars and options row with new colors.
+        // Refresh native controls in place, then update toolbar layout.
         toolOptionsRowView?.refreshPanelAppearance()
         rebuildToolbarLayout()
-        if let tool = toolOptionsRowView?.currentTool {
-            toolOptionsRowView?.rebuild(for: tool)
-        }
         needsDisplay = true
     }
 
@@ -9282,6 +9285,14 @@ class OverlayView: NSView {
     // MARK: - Keyboard
 
     override func flagsChanged(with event: NSEvent) {
+        if let commands = ScreenshotCommandResponder.forWindow(window) {
+            commands.flagsChanged(with: event)
+            return
+        }
+        handleEditorModifierEvent(event)
+    }
+
+    func handleEditorModifierEvent(_ event: NSEvent) {
         refreshStitchStartingModifiers(event.modifierFlags)
         if state == .selecting, let point = selectionRawPoint {
             updateSelectionRect(to: point, shiftHeld: event.modifierFlags.contains(.shift),
@@ -9304,6 +9315,20 @@ class OverlayView: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let handled = ScreenshotCommandResponder.forWindow(window)?.performEditorKeyEquivalent(event)
+            ?? handleEditorKeyEquivalent(event)
+        return handled || super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if let commands = ScreenshotCommandResponder.forWindow(window) {
+            commands.keyDown(with: event)
+            return
+        }
+        if !handleEditorKeyEvent(event) { super.keyDown(with: event) }
+    }
+
+    func handleEditorKeyEquivalent(_ event: NSEvent) -> Bool {
         if selectionOnlyMode {
             // Consume app/edit commands while the selector owns keyboard focus.
             return event.modifierFlags.contains(.command)
@@ -9312,7 +9337,7 @@ class OverlayView: NSView {
         // native text commands run before considering screenshot commands.
         if let editor = window?.firstResponder as? NSTextView,
            editor.isFieldEditor, editor !== textEditView {
-            return super.performKeyEquivalent(with: event)
+            return false
         }
         // Text editing: forward standard commands to the active text view.
         if let tv = textEditView {
@@ -9389,22 +9414,22 @@ class OverlayView: NSView {
                 return true
             }
         }
-        return super.performKeyEquivalent(with: event)
+        return false
     }
 
-    override func keyDown(with event: NSEvent) {
-        if handleScrollCaptureKey(event) { return }
+    func handleEditorKeyEvent(_ event: NSEvent) -> Bool {
+        if handleScrollCaptureKey(event) { return true }
         if selectionOnlyMode {
             guard !event.modifierFlags.contains(.command),
                   !event.modifierFlags.contains(.control),
-                  !event.modifierFlags.contains(.option) else { return }
+                  !event.modifierFlags.contains(.option) else { return true }
             switch event.keyCode {
             case 53:
                 overlayDelegate?.overlayViewDidCancel()
-                return
+                return true
             case 36, 76:
                 if state == .selected { overlayDelegate?.overlayViewDidFinishSelection(selectionRect) }
-                return
+                return true
             case 48: // Preserve the normal Tab snapping controls below.
                 break
             case 49 where state == .selecting: // Space repositions an active drag.
@@ -9418,7 +9443,7 @@ class OverlayView: NSView {
                     overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
                     needsDisplay = true
                 }
-                return
+                return true
             }
         }
         // Recording setup allows Move and Escape, without activating screenshot
@@ -9430,7 +9455,7 @@ class OverlayView: NSView {
                       eventMatchesToolShortcut(event, action: .moveSelection) {
                 _ = startKeyboardMoveSelection()
             }
-            return
+            return true
         }
 
         // Character-based so the shortcut follows QWERTZ/AZERTY/Dvorak.
@@ -9448,7 +9473,7 @@ class OverlayView: NSView {
                 overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
                 needsDisplay = true
             }
-            return
+            return true
         }
 
         // R restores the previous capture region while the overlay is still
@@ -9457,7 +9482,7 @@ class OverlayView: NSView {
         if state == .idle, !isEditorMode, textEditView == nil,
            KeyboardShortcutMatcher.matches(event, character: "r", modifiers: []) {
             overlayDelegate?.overlayViewDidRequestRestoreLastSelection()
-            return
+            return true
         }
 
         // Space: reposition shape/selection mid-drag (design tool convention).
@@ -9469,7 +9494,7 @@ class OverlayView: NSView {
             && !event.modifierFlags.contains(.control)
         {
             // Swallow all repeats while repositioning to prevent system beep
-            if spaceRepositioning { return }
+            if spaceRepositioning { return true }
 
             if !event.isARepeat {
                 let isDrawingAnnotation =
@@ -9494,7 +9519,7 @@ class OverlayView: NSView {
                     } else if let windowPoint = window?.mouseLocationOutsideOfEventStream {
                         spaceRepositionLast = convert(windowPoint, from: nil)
                     }
-                    return
+                    return true
                 }
             }
             // Space may be a user-configured action shortcut (Copy, Save, Pin, …).
@@ -9514,26 +9539,24 @@ class OverlayView: NSView {
                 default:
                     handleToolbarAction(action)
                 }
-                return
+                return true
             }
             // Unbound Space is still consumed so key repeat never falls through
             // to AppKit's "unhandled key" beep while the overlay is focused.
-            return
+            return true
         }
 
         switch event.keyCode {
         case 53:  // Escape
             if isAnchoredSelecting {
                 cancelAnchoredSelection()
-                return
+                return true
             }
             if colorWheel.isVisible && colorWheel.isSticky {
                 colorWheel.dismiss()
                 needsDisplay = true
             } else if textEditView != nil {
                 cancelTextEditing()
-            } else if PopoverHelper.isVisible {
-                PopoverHelper.dismiss()
             } else if !selectedAnnotations.isEmpty {
                 selectedAnnotations = []
                 needsDisplay = true
@@ -9553,7 +9576,7 @@ class OverlayView: NSView {
                 if snapMode == .element && !AXIsProcessTrusted() {
                     showOverlayError(L("Accessibility Access Required"))
                     overlayDelegate?.overlayViewDidRequestAccessibilityPermission()
-                    return
+                    return true
                 }
                 if snapMode != .off {
                     querySnapTarget(at: NSEvent.mouseLocation)
@@ -9587,7 +9610,7 @@ class OverlayView: NSView {
                             autoMeasureKeyHeld = true
                             updateAutoMeasurePreview()
                         }
-                        return
+                        return true
                     }
                 }
             }
@@ -9612,7 +9635,7 @@ class OverlayView: NSView {
                     default:
                         handleToolbarAction(action)
                     }
-                    return
+                    return true
                 }
             }
             if event.modifierFlags.contains(.command) {
@@ -9622,7 +9645,7 @@ class OverlayView: NSView {
                     if state == .selected {
                         overlayDelegate?.overlayViewDidRequestSave()
                     }
-                    return
+                    return true
                 }
                 let commandModifiers = KeyboardShortcutMatcher.modifiers(in: event)
                 let isCommandCharacter = commandModifiers == .command
@@ -9635,7 +9658,7 @@ class OverlayView: NSView {
                         sv.magnification = 1.0
                         findTopBar()?.updateZoom(1.0)
                     }
-                    return
+                    return true
                 }
                 if isInsideScrollView {
                     if isCommandCharacter && (commandCharacter == "=" || commandCharacter == "+") {
@@ -9644,7 +9667,7 @@ class OverlayView: NSView {
                             sv.setMagnification(newMag, centeredAt: NSPoint(x: doc.bounds.midX, y: doc.bounds.midY))
                             findTopBar()?.updateZoom(newMag)
                         }
-                        return
+                        return true
                     }
                     if isCommandCharacter && commandCharacter == "-" {
                         if let sv = enclosingScrollView, let doc = sv.documentView {
@@ -9652,42 +9675,51 @@ class OverlayView: NSView {
                             sv.setMagnification(newMag, centeredAt: NSPoint(x: doc.bounds.midX, y: doc.bounds.midY))
                             findTopBar()?.updateZoom(newMag)
                         }
-                        return
+                        return true
                     }
                     if isCommandCharacter && commandCharacter == "1" {
                         if let sv = enclosingScrollView, let doc = sv.documentView {
                             let unscaledW = doc.frame.width / sv.magnification
                             let unscaledH = doc.frame.height / sv.magnification
-                            guard unscaledW > 0, unscaledH > 0 else { return }
+                            guard unscaledW > 0, unscaledH > 0 else { return true }
                             let clipSize = sv.contentView.bounds.size
                             let fitMag = min(clipSize.width / unscaledW, clipSize.height / unscaledH)
                             let clamped = max(sv.minMagnification, min(sv.maxMagnification, fitMag))
                             sv.magnification = clamped
                             findTopBar()?.updateZoom(clamped)
                         }
-                        return
+                        return true
                     }
                 }
             }
-            super.keyDown(with: event)
+            return false
         }
+        return true
     }
 
     override func keyUp(with event: NSEvent) {
+        if let commands = ScreenshotCommandResponder.forWindow(window) {
+            commands.keyUp(with: event)
+            return
+        }
+        if !handleEditorKeyRelease(event) { super.keyUp(with: event) }
+    }
+
+    func handleEditorKeyRelease(_ event: NSEvent) -> Bool {
         if isKeyboardMoveSelectionActive && eventEndsKeyboardMoveSelection(event) {
             endKeyboardMoveSelection()
-            return
+            return true
         }
         if event.keyCode == 49 && spaceRepositioning {
             spaceRepositioning = false
-            return
+            return true
         }
         if event.keyCode == 49 && textEditView == nil
             && !event.modifierFlags.contains(.command)
             && !event.modifierFlags.contains(.option)
             && !event.modifierFlags.contains(.control)
         {
-            return
+            return true
         }
         // Clear auto-measure preview on key release (click to commit instead)
         if let char = event.charactersIgnoringModifiers, char == "1" || char == "2" {
@@ -9696,10 +9728,10 @@ class OverlayView: NSView {
                 autoMeasurePreview = nil
                 autoMeasureBitmapCtx = nil  // free cached bitmap
                 needsDisplay = true
-                return
+                return true
             }
         }
-        super.keyUp(with: event)
+        return false
     }
 
     // MARK: - Annotation Copy/Paste

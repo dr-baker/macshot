@@ -4,12 +4,12 @@ import XCTest
 @MainActor
 private final class StitchShortcutSpyEditor: EditorView {
     var receivedSave = false
-    override func keyDown(with event: NSEvent) {
+    override func handleEditorKeyEvent(_ event: NSEvent) -> Bool {
         if KeyboardShortcutMatcher.matches(event, character: "s", modifiers: .command) {
             receivedSave = true
-            return
+            return true
         }
-        super.keyDown(with: event)
+        return super.handleEditorKeyEvent(event)
     }
 }
 

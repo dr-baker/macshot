@@ -24,6 +24,46 @@ class ToolOptionsRowView: ScreenshotPanelView {
     private(set) var contentWidth: CGFloat = 200
     private var panelSeparatorViews: [NSView] = []
     private var foregroundButtonAlphas: [ObjectIdentifier: CGFloat] = [:]
+    private enum BeautifyProperty: String { case padding, radius, shadow, blur }
+    private enum ControlRole: Hashable {
+        case strokeTitle, strokeSlider, strokeValue
+        case loupeSizeTitle, loupeSizeSlider, loupeSizeValue
+        case loupeZoomTitle, loupeZoomSlider, loupeZoomValue
+        case highlightDimTitle, highlightDimSlider, highlightDimValue, highlightBorder
+        case lineStyle, arrowStyle, shapeFill, censorMode
+        case cornerRadiusTitle, cornerRadiusSlider, cornerRadiusValue
+        case arrowFlip, pencilSmooth, pencilPressure, markerSmart
+        case stitchMode, stitchPlacement, stitchSeams, stitchPieces, stitchCanvas
+        case numberFormat, numberStartTitle, numberStartStepper, numberStartValue
+        case fontFamily, textBold, textItalic, textUnderline, textStrikethrough
+        case alignmentLeft, alignmentCenter, alignmentRight
+        case fontSizeDecrease, fontSizeValue, fontSizeIncrease
+        case textFillToggle, textFillSwatch, textOutlineToggle, textOutlineSwatch
+        case textStrokeToggle, textStrokeSwatch, textCancel, textConfirm
+        case measureUnits, measureLimit, measureHint
+        case stampSizeTitle, stampSizeSlider, stampSizeValue, stampQuickChoices, stampMore, stampLoad
+        case stampEmoji(String)
+        case censorDrawTitle, censorDrawMode, censorAutoTitle
+        case redactText, redactPII, redactFaces, redactPeople
+        case beautifyToggle, beautifyMode, beautifySwatch, beautifyDisclosure
+        case beautifyTitle(BeautifyProperty), beautifySlider(BeautifyProperty)
+        case annotationOutlineToggle, annotationOutlineSwatch
+        case loupeOutlineToggle, loupeOutlineSwatch
+        case separator(String)
+
+        var identifier: String {
+            switch self {
+            case .stampEmoji(let emoji): return "options.stamp.emoji.\(emoji)"
+            case .beautifyTitle(let property): return "options.beautify.\(property.rawValue).title"
+            case .beautifySlider(let property): return "options.beautify.\(property.rawValue).slider"
+            case .separator(let nextControl): return "options.separator.\(nextControl)"
+            default: return "options.\(String(describing: self))"
+            }
+        }
+    }
+    private var mountedViews: [ControlRole: NSView] = [:]
+    private var usedRoles: Set<ControlRole> = []
+    private var toggleHandlers: [ControlRole: ToggleHandler] = [:]
     // Consume clicks on gaps between controls so they don't fall through to OverlayView.
     // In editor mode, let gap clicks pass through so drawing works over the options area.
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -37,16 +77,6 @@ class ToolOptionsRowView: ScreenshotPanelView {
     override func mouseDown(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {}
 
-    override func keyDown(with event: NSEvent) {
-        // Native controls consume their own editing keys first. Route the
-        // remaining capture commands to the canvas even in sibling chrome.
-        if let overlayView, overlayView.window === window {
-            overlayView.keyDown(with: event)
-        } else {
-            super.keyDown(with: event)
-        }
-    }
-
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
     }
@@ -54,7 +84,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
     /// Auto-tint controls to match toolbar accent color.
     /// Buttons with tag 990+ are excluded (they have custom colors like red/green/white).
     override func addSubview(_ view: NSView) {
-        super.addSubview(view)
+        if view.superview !== self { super.addSubview(view) }
         if let btn = view as? NSButton, btn.tag < 990 { btn.contentTintColor = ToolbarLayout.accentColor }
         if let slider = view as? NSSlider { slider.trackFillColor = ToolbarLayout.accentColor }
         if let seg = view as? NSSegmentedControl { seg.selectedSegmentBezelColor = ToolbarLayout.accentColor }
@@ -199,15 +229,10 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     /// Rebuild the options row for the given tool. Call when tool or state changes.
     func rebuild(for tool: AnnotationTool) {
-        // AppKit falls back to the window when a focused control is removed.
-        // The canvas then misses Escape and tool keys, especially when the
-        // chrome is a sibling of the editor rather than a child of the canvas.
-        if let overlayView {
-            ScreenshotKeyboardFocus.moveIfOwned(by: self, to: overlayView)
-        }
-        removePanelContentSubviews()
+        usedRoles.removeAll(keepingCapacity: true)
         panelSeparatorViews.removeAll()
         foregroundButtonAlphas.removeAll()
+        defer { unmountUnusedControls() }
         guard let ov = overlayView else { return }
 
         currentTool = tool
@@ -235,14 +260,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
             curX = addStrokeSlider(at: curX, tool: tool, ov: ov)
         }
         if tool == .loupe {
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .loupeZoomTitle)
             curX = addLoupeMagnificationSlider(at: curX, ov: ov)
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .loupeOutlineToggle)
             curX = addLoupeOutlineControls(at: curX, ov: ov)
         }
         if tool == .highlight {
             curX = addHighlightDimSlider(at: curX, ov: ov)
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .highlightBorder)
             curX = addHighlightBorderSegment(at: curX, ov: ov)
             let totalW = max(curX + padding, 200)
             contentWidth = totalW
@@ -253,19 +278,19 @@ class ToolOptionsRowView: ScreenshotPanelView {
         // ── Line style (line, pencil, rectangle) ──
         let hasLineStyle = [.line, .pencil, .rectangle, .arrow, .ellipse].contains(tool)
         if hasLineStyle {
-            if hasStroke { curX = addSeparator(at: curX) }
+            if hasStroke { curX = addSeparator(at: curX, before: .lineStyle) }
             curX = addLineStyleSegment(at: curX, ov: ov)
         }
 
         // ── Arrow style + outline + reverse toggle ──
         if tool == .arrow {
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .arrowStyle)
             curX = addArrowStyleSegment(at: curX, ov: ov)
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .annotationOutlineToggle)
             curX = addOutlineControls(at: curX, ov: ov)
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .arrowFlip)
             let flipIsOn = editingAnnotation?.arrowReversed ?? ov.arrowReversed
-            curX = addToggle(at: curX, title: L("Flip"), isOn: flipIsOn) { [weak self, weak ov] isOn in
+            curX = addToggle(.arrowFlip, at: curX, title: L("Flip"), isOn: flipIsOn) { [weak self, weak ov] isOn in
                 if let ann = self?.editingAnnotation {
                     self?.ensureSnapshot()
                     ann.arrowReversed = isOn
@@ -279,13 +304,13 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
         // ── Shape fill style (rectangle, ellipse) ──
         if tool == .rectangle || tool == .ellipse {
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .shapeFill)
             curX = addShapeFillSegment(at: curX, tool: tool, ov: ov)
         }
 
         // ── Corner radius slider (rectangle) ──
         if tool == .rectangle {
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .cornerRadiusTitle)
             curX = addCornerRadiusSlider(at: curX, ov: ov)
         }
 
@@ -293,10 +318,9 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
         // ── Pencil smooth mode selector ──
         if tool == .pencil {
-            curX = addSeparator(at: curX)
-            let seg = NSSegmentedControl(labels: [L("None"), L("Smooth"), L("Refined")],
-                                          trackingMode: .selectOne,
-                                          target: self, action: #selector(pencilSmoothModeChanged(_:)))
+            curX = addSeparator(at: curX, before: .pencilSmooth)
+            let seg = makeSegments(.pencilSmooth, labels: [L("None"), L("Smooth"), L("Refined")],
+                                   action: #selector(pencilSmoothModeChanged(_:)))
             seg.selectedSegment = ov.pencilSmoothMode
             seg.font = NSFont.systemFont(ofSize: 10, weight: .medium)
             (seg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
@@ -306,8 +330,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
             curX += seg.frame.width + 4
 
             // ── Pressure sensitivity toggle ──
-            curX = addSeparator(at: curX)
-            curX = addToggle(at: curX, title: L("Pressure"), isOn: ov.pencilPressureEnabled) { [weak ov] isOn in
+            curX = addSeparator(at: curX, before: .pencilPressure)
+            curX = addToggle(.pencilPressure, at: curX, title: L("Pressure"), isOn: ov.pencilPressureEnabled) { [weak ov] isOn in
                 ov?.pencilPressureEnabled = isOn
                 UserDefaults.standard.set(isOn, forKey: "pencilPressureEnabled")
             }
@@ -315,8 +339,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
         // ── Smart marker toggle ──
         if tool == .marker {
-            curX = addSeparator(at: curX)
-            curX = addToggle(at: curX, title: L("Smart"), isOn: ov.smartMarkerEnabled) { [weak ov, weak self] isOn in
+            curX = addSeparator(at: curX, before: .markerSmart)
+            curX = addToggle(.markerSmart, at: curX, title: L("Smart"), isOn: ov.smartMarkerEnabled) { [weak ov, weak self] isOn in
                 ov?.smartMarkerEnabled = isOn
                 UserDefaults.standard.set(isOn, forKey: "smartMarkerEnabled")
                 ov?.updateCursorForCurrentTool()
@@ -324,29 +348,11 @@ class ToolOptionsRowView: ScreenshotPanelView {
                 // Rebuild to update stroke slider enabled state
                 self?.rebuild(for: .marker)
             }
-            // Disable stroke slider when smart marker is on (auto-sized)
-            if ov.smartMarkerEnabled {
-                for sub in subviews {
-                    if let slider = sub as? NSSlider, slider.tag == AnnotationTool.marker.rawValue {
-                        slider.isEnabled = false
-                        slider.alphaValue = 0.35
-                    }
-                }
-                if let label = viewWithTag(997) as? NSTextField {
-                    label.alphaValue = 0.35
-                }
-                // Also dim the "Stroke" label
-                for sub in subviews {
-                    if let tf = sub as? NSTextField, tf.stringValue == L("Stroke"), tf.tag == 0 {
-                        tf.alphaValue = 0.35
-                    }
-                }
-            }
         }
 
         // ── Number format + start-at ──
         if tool == .number {
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .numberFormat)
             curX = addNumberOptions(at: curX, ov: ov)
         }
 
@@ -368,14 +374,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
         // ── Censor tool: mode selector + redact buttons ──
         if tool == .pixelate {
             curX = addCensorModeSegment(at: curX, ov: ov)
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .censorDrawTitle)
             curX = addRedactOptions(at: curX, ov: ov)
         }
 
         // ── Outline toggle + color swatch (line, rectangle, ellipse, number — arrow handled above) ──
         let hasOutlineGeneric: [AnnotationTool] = [.line, .rectangle, .ellipse, .number]
         if hasOutlineGeneric.contains(tool) {
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .annotationOutlineToggle)
             curX = addOutlineControls(at: curX, ov: ov)
         }
 
@@ -385,18 +391,132 @@ class ToolOptionsRowView: ScreenshotPanelView {
         frame.size = NSSize(width: totalW, height: rowHeight)
 
         // Right-align cancel/confirm buttons for text tool
-        if let confirmBtn = viewWithTag(991) {
+        if usedRoles.contains(.textConfirm), let confirmBtn = mountedViews[.textConfirm] {
             confirmBtn.frame.origin.x = totalW - padding - 28
         }
-        if let cancelBtn = viewWithTag(990) {
+        if usedRoles.contains(.textCancel), let cancelBtn = mountedViews[.textCancel] {
             cancelBtn.frame.origin.x = totalW - padding - 28 - 4 - 28
         }
     }
 
     // MARK: - Section builders
 
-    private func addSeparator(at x: CGFloat) -> CGFloat {
-        let sep = NSView(frame: NSRect(x: x + 6, y: 8, width: 1, height: rowHeight - 16))
+    /// A semantic role owns one native view for as long as that option is present.
+    /// Builders configure retained views on every pass; controls and their cells
+    /// stay attached while values, annotations, and panel appearance change.
+    private func mounted<View: NSView>(_ role: ControlRole, make: () -> View) -> View {
+        precondition(usedRoles.insert(role).inserted, "An option role must be rendered only once")
+        let view: View
+        if let existing = mountedViews[role] {
+            guard let matching = existing as? View else {
+                preconditionFailure("An option role cannot change its native view type")
+            }
+            view = matching
+        } else {
+            view = make()
+            view.identifier = NSUserInterfaceItemIdentifier(role.identifier)
+            mountedViews[role] = view
+        }
+        if view.isHidden { view.isHidden = false }
+        return view
+    }
+
+    private func applyControlState(_ control: NSControl, isEnabled: Bool = true, alpha: CGFloat = 1) {
+        if control.isEnabled != isEnabled { control.isEnabled = isEnabled }
+        if control.alphaValue != alpha { control.alphaValue = alpha }
+    }
+
+    private func makeLabel(_ role: ControlRole, text: String, isEnabled: Bool = true,
+                           alpha: CGFloat = 1) -> NSTextField {
+        let field = mounted(role) { NSTextField(labelWithString: text) }
+        applyControlState(field, isEnabled: isEnabled, alpha: alpha)
+        if field.stringValue != text { field.stringValue = text }
+        field.alignment = .left
+        field.tag = 0
+        return field
+    }
+
+    private func makeButton(_ role: ControlRole, title: String = "", action: Selector? = nil,
+                            type: NSButton.ButtonType = .momentaryPushIn, isEnabled: Bool = true) -> NSButton {
+        let control: NSButton = mounted(role) {
+            let button = NSButton()
+            button.setButtonType(type)
+            return button
+        }
+        applyControlState(control, isEnabled: isEnabled)
+        if control.title != title { control.title = title }
+        control.target = self
+        control.action = action
+        return control
+    }
+
+    private func makeSlider(_ role: ControlRole, value: Double, min: Double, max: Double,
+                            action: Selector, isEnabled: Bool = true, alpha: CGFloat = 1) -> NSSlider {
+        let control = mounted(role) { NSSlider() }
+        applyControlState(control, isEnabled: isEnabled, alpha: alpha)
+        control.minValue = min
+        control.maxValue = max
+        control.doubleValue = value
+        control.target = self
+        control.action = action
+        return control
+    }
+
+    private func makeSegments(_ role: ControlRole, labels: [String]? = nil,
+                              action: Selector, tracking: NSSegmentedControl.SwitchTracking = .selectOne,
+                              isEnabled: Bool = true) -> NSSegmentedControl {
+        let control = mounted(role) { NSSegmentedControl() }
+        applyControlState(control, isEnabled: isEnabled)
+        if control.trackingMode != tracking { control.trackingMode = tracking }
+        control.target = self
+        control.action = action
+        if let labels {
+            if control.segmentCount != labels.count { control.segmentCount = labels.count }
+            for (index, title) in labels.enumerated() {
+                if control.label(forSegment: index) != title { control.setLabel(title, forSegment: index) }
+            }
+        }
+        for index in 0..<control.segmentCount { control.setEnabled(true, forSegment: index) }
+        return control
+    }
+
+    private func makePopup(_ role: ControlRole, titles: [String], action: Selector) -> NSPopUpButton {
+        let control = mounted(role) { NSPopUpButton(frame: .zero, pullsDown: false) }
+        applyControlState(control)
+        if control.itemTitles != titles {
+            control.removeAllItems()
+            control.addItems(withTitles: titles)
+        }
+        control.target = self
+        control.action = action
+        return control
+    }
+
+    private func makeStepper(_ role: ControlRole, value: Int, min: Double, max: Double,
+                             action: Selector) -> NSStepper {
+        let control = mounted(role) { NSStepper() }
+        applyControlState(control)
+        control.minValue = min
+        control.maxValue = max
+        control.integerValue = value
+        control.target = self
+        control.action = action
+        return control
+    }
+
+    private func unmountUnusedControls() {
+        let unusedRoles = mountedViews.keys.filter { !usedRoles.contains($0) }
+        for role in unusedRoles {
+            guard let view = mountedViews.removeValue(forKey: role) else { continue }
+            if let overlayView { ScreenshotKeyboardFocus.moveIfOwned(by: view, to: overlayView) }
+            view.removeFromSuperview()
+            toggleHandlers.removeValue(forKey: role)
+        }
+    }
+
+    private func addSeparator(at x: CGFloat, before role: ControlRole) -> CGFloat {
+        let sep = mounted(.separator(role.identifier)) { NSView() }
+        sep.frame = NSRect(x: x + 6, y: 8, width: 1, height: rowHeight - 16)
         sep.wantsLayer = true
         sep.layer?.backgroundColor = panelForegroundColor.withAlphaComponent(0.1).cgColor
         addSubview(sep)
@@ -420,8 +540,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addStitchOptions(at x: CGFloat, editor: ImageEditingView) -> CGFloat {
         var curX = x
-        let modes = NSSegmentedControl(labels: [L("Remove Space"), L("Move")],
-            trackingMode: .selectOne, target: self, action: #selector(stitchModeChanged(_:)))
+        let modes = makeSegments(.stitchMode, labels: [L("Remove Space"), L("Move")],
+            action: #selector(stitchModeChanged(_:)))
         modes.identifier = NSUserInterfaceItemIdentifier("stitch.mode")
         switch editor.stitchMode {
         case .removeSpace: modes.selectedSegment = 0
@@ -435,28 +555,30 @@ class ToolOptionsRowView: ScreenshotPanelView {
         modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 1)
         addSubview(modes)
         curX += modes.frame.width + 4
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .stitchPlacement)
 
-        let placement = NSPopUpButton(frame: .zero, pullsDown: false)
+        let placement = makePopup(.stitchPlacement, titles: [L("Free Move"), L("Packed")],
+                                  action: #selector(stitchPlacementChanged(_:)))
         placement.identifier = NSUserInterfaceItemIdentifier("stitch.placement")
-        placement.addItems(withTitles: [L("Free Move"), L("Packed")])
         placement.toolTip = L("Free Move keeps overlaps. Packed closes gaps and snaps pieces into rows or columns.")
         placement.item(at: 0)?.toolTip = L("Place pieces independently and keep precise overlaps.")
         placement.item(at: 1)?.toolTip = L("Arrange pieces tightly and drag to reorder them.")
         placement.selectItem(at: editor.stitchDocument?.placement == .packed ? 1 : 0)
         placement.font = NSFont.systemFont(ofSize: 10, weight: .medium)
-        placement.target = self
-        placement.action = #selector(stitchPlacementChanged(_:))
         placement.sizeToFit()
         placement.frame = NSRect(x: curX, y: (rowHeight - 22) / 2,
             width: max(placement.frame.width, 96), height: 22)
         addSubview(placement)
         curX += placement.frame.width + 4
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .stitchSeams)
 
-        for (label, identifier, tag) in [(L("Seams"), "stitch.seams", 0),
-            (L("Pieces"), "stitch.pieces", 1), (L("Canvas"), "stitch.canvas", 2)] {
-            let button = NSButton(title: label, target: self, action: #selector(stitchOptionsClicked(_:)))
+        let options: [(String, String, Int, ControlRole)] = [
+            (L("Seams"), "stitch.seams", 0, .stitchSeams),
+            (L("Pieces"), "stitch.pieces", 1, .stitchPieces),
+            (L("Canvas"), "stitch.canvas", 2, .stitchCanvas),
+        ]
+        for (label, identifier, tag, role) in options {
+            let button = makeButton(role, title: label, action: #selector(stitchOptionsClicked(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(identifier)
             button.tag = tag
             button.bezelStyle = .rounded
@@ -496,8 +618,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addStrokeSlider(at x: CGFloat, tool: AnnotationTool, ov: OverlayView) -> CGFloat {
         var curX = x
+        // Smart marker supplies its own width; retain and dim the manual controls.
+        let usesSmartWidth = tool == .marker && ov.smartMarkerEnabled
+        let controlAlpha: CGFloat = usesSmartWidth ? 0.35 : 1
 
-        let nameLabel = NSTextField(labelWithString: tool == .loupe ? L("Size") : L("Stroke"))
+        let nameLabel = makeLabel(tool == .loupe ? .loupeSizeTitle : .strokeTitle,
+            text: tool == .loupe ? L("Size") : L("Stroke"), alpha: controlAlpha)
         nameLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         nameLabel.textColor = panelForegroundColor
         nameLabel.sizeToFit()
@@ -512,9 +638,10 @@ class ToolOptionsRowView: ScreenshotPanelView {
             currentVal = editingAnnotation?.strokeWidth ?? ov.activeStrokeWidthForTool(tool)
         }
         let sliderW: CGFloat = 100
-        let slider = NSSlider(value: Double(currentVal),
-                              minValue: tool == .loupe ? 40 : 1, maxValue: tool == .loupe ? 320 : 30,
-                              target: self, action: #selector(strokeSliderChanged(_:)))
+        let slider = makeSlider(tool == .loupe ? .loupeSizeSlider : .strokeSlider, value: Double(currentVal),
+                                min: tool == .loupe ? 40 : 1, max: tool == .loupe ? 320 : 30,
+                                action: #selector(strokeSliderChanged(_:)),
+                                isEnabled: !usesSmartWidth, alpha: controlAlpha)
         slider.frame = NSRect(x: curX, y: (rowHeight - 20) / 2, width: sliderW, height: 20)
         slider.isContinuous = true
         slider.tag = tool.rawValue
@@ -524,7 +651,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         let val = Int(currentVal)
         let valStr = tool == .loupe ? "\(val)" : "\(val)px"
         let labelW: CGFloat = tool == .loupe ? 32 : 28
-        let label = NSTextField(labelWithString: valStr)
+        let label = makeLabel(tool == .loupe ? .loupeSizeValue : .strokeValue, text: valStr, alpha: controlAlpha)
         label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
         label.textColor = panelForegroundColor
         label.alignment = .right
@@ -539,7 +666,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
     private func addLoupeMagnificationSlider(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
 
-        let nameLabel = NSTextField(labelWithString: L("Zoom"))
+        let nameLabel = makeLabel(.loupeZoomTitle, text: L("Zoom"))
         nameLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         nameLabel.textColor = panelForegroundColor
         nameLabel.sizeToFit()
@@ -549,15 +676,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
         let currentVal = editingAnnotation?.loupeMagnification ?? ov.currentLoupeMagnification
         let sliderW: CGFloat = 84
-        let slider = NSSlider(value: Double(currentVal),
-                              minValue: 1.1, maxValue: 6.0,
-                              target: self, action: #selector(loupeMagnificationChanged(_:)))
+        let slider = makeSlider(.loupeZoomSlider, value: Double(currentVal), min: 1.1, max: 6.0,
+                                action: #selector(loupeMagnificationChanged(_:)))
         slider.frame = NSRect(x: curX, y: (rowHeight - 20) / 2, width: sliderW, height: 20)
         slider.isContinuous = true
         addSubview(slider)
         curX += sliderW + 4
 
-        let label = NSTextField(labelWithString: String(format: "%.1fx", currentVal))
+        let label = makeLabel(.loupeZoomValue, text: String(format: "%.1fx", currentVal))
         label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
         label.textColor = panelForegroundColor
         label.alignment = .right
@@ -572,7 +698,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
     private func addHighlightDimSlider(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
 
-        let nameLabel = NSTextField(labelWithString: L("Dim"))
+        let nameLabel = makeLabel(.highlightDimTitle, text: L("Dim"))
         nameLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         nameLabel.textColor = panelForegroundColor
         nameLabel.sizeToFit()
@@ -583,15 +709,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
         let stored = UserDefaults.standard.object(forKey: HighlightToolHandler.dimOpacityKey) as? Double
         let currentVal = editingAnnotation?.dimOpacity ?? CGFloat(stored ?? 0.55)
         let sliderW: CGFloat = 84
-        let slider = NSSlider(value: Double(currentVal),
-                              minValue: 0.1, maxValue: 0.95,
-                              target: self, action: #selector(highlightDimChanged(_:)))
+        let slider = makeSlider(.highlightDimSlider, value: Double(currentVal), min: 0.1, max: 0.95,
+                                action: #selector(highlightDimChanged(_:)))
         slider.frame = NSRect(x: curX, y: (rowHeight - 20) / 2, width: sliderW, height: 20)
         slider.isContinuous = true
         addSubview(slider)
         curX += sliderW + 4
 
-        let label = NSTextField(labelWithString: "\(Int((currentVal * 100).rounded()))%")
+        let label = makeLabel(.highlightDimValue, text: "\(Int((currentVal * 100).rounded()))%")
         label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
         label.textColor = panelForegroundColor
         label.alignment = .right
@@ -606,11 +731,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
     /// Solid | Dashed border-style toggle for the highlight rect.
     private func addHighlightBorderSegment(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
-        let seg = NSSegmentedControl()
-        seg.segmentCount = 2
-        seg.trackingMode = .selectOne
-        seg.target = self
-        seg.action = #selector(highlightBorderChanged(_:))
+        let seg = makeSegments(.highlightBorder, action: #selector(highlightBorderChanged(_:)))
+        if seg.segmentCount != 2 { seg.segmentCount = 2 }
         seg.tag = 992
         seg.setImage(Self.lineStyleImage(.solid, color: panelForegroundColor), forSegment: 0)
         seg.setImage(Self.lineStyleImage(.dashed, color: panelForegroundColor), forSegment: 1)
@@ -632,11 +754,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addLineStyleSegment(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
-        let seg = NSSegmentedControl()
-        seg.segmentCount = LineStyle.allCases.count
-        seg.trackingMode = .selectOne
-        seg.target = self
-        seg.action = #selector(lineStyleChanged(_:))
+        let seg = makeSegments(.lineStyle, action: #selector(lineStyleChanged(_:)))
+        if seg.segmentCount != LineStyle.allCases.count { seg.segmentCount = LineStyle.allCases.count }
         seg.tag = 979  // tag for finding this segment to disable dashed/dotted when outline is on
         for (i, style) in LineStyle.allCases.enumerated() {
             seg.setImage(Self.lineStyleImage(style, color: panelForegroundColor), forSegment: i)
@@ -649,8 +768,9 @@ class ToolOptionsRowView: ScreenshotPanelView {
         (seg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
 
         // Disable dashed/dotted for rect/ellipse when outline is enabled
-        let isShapeTool = [AnnotationTool.rectangle, .ellipse].contains(editingAnnotation?.tool ?? ov.currentTool)
-        let hasOutline = editingAnnotation?.outlineColor != nil || (isShapeTool && UserDefaults.standard.bool(forKey: "annotationOutlineEnabled"))
+        let isShapeTool = [AnnotationTool.rectangle, .ellipse].contains(currentTool ?? ov.currentTool)
+        let hasOutline = editingAnnotation.map { $0.outlineColor != nil }
+            ?? (isShapeTool && UserDefaults.standard.bool(forKey: "annotationOutlineEnabled"))
         if isShapeTool && hasOutline {
             for (i, style) in LineStyle.allCases.enumerated() {
                 if style != .solid {
@@ -676,11 +796,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addArrowStyleSegment(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
-        let seg = NSSegmentedControl()
-        seg.segmentCount = ArrowStyle.allCases.count
-        seg.trackingMode = .selectOne
-        seg.target = self
-        seg.action = #selector(arrowStyleChanged(_:))
+        let seg = makeSegments(.arrowStyle, action: #selector(arrowStyleChanged(_:)))
+        if seg.segmentCount != ArrowStyle.allCases.count { seg.segmentCount = ArrowStyle.allCases.count }
         for (i, style) in ArrowStyle.allCases.enumerated() {
             seg.setImage(Self.arrowStyleImage(style, color: panelForegroundColor), forSegment: i)
             seg.setWidth(30, forSegment: i)
@@ -697,11 +814,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
     private func addShapeFillSegment(at x: CGFloat, tool: AnnotationTool, ov: OverlayView) -> CGFloat {
         var curX = x
         let isOval = tool == .ellipse
-        let seg = NSSegmentedControl()
-        seg.segmentCount = RectFillStyle.allCases.count
-        seg.trackingMode = .selectOne
-        seg.target = self
-        seg.action = #selector(shapeFillChanged(_:))
+        let seg = makeSegments(.shapeFill, action: #selector(shapeFillChanged(_:)))
+        if seg.segmentCount != RectFillStyle.allCases.count { seg.segmentCount = RectFillStyle.allCases.count }
         for (i, style) in RectFillStyle.allCases.enumerated() {
             seg.setImage(Self.shapeFillImage(style, oval: isOval, color: panelForegroundColor), forSegment: i)
             seg.setWidth(30, forSegment: i)
@@ -717,11 +831,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addCensorModeSegment(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
-        let seg = NSSegmentedControl()
-        seg.segmentCount = CensorMode.allCases.count
-        seg.trackingMode = .selectOne
-        seg.target = self
-        seg.action = #selector(censorModeChanged(_:))
+        let seg = makeSegments(.censorMode, action: #selector(censorModeChanged(_:)))
+        if seg.segmentCount != CensorMode.allCases.count { seg.segmentCount = CensorMode.allCases.count }
         seg.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         (seg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
         for (i, mode) in CensorMode.allCases.enumerated() {
@@ -744,17 +855,16 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     /// Add a uniform redact action button using NSSegmentedControl for consistent sizing.
     /// If `dropdownAction` is provided, adds a second narrow segment with a ▾ arrow.
-    private func addRedactButton(at x: CGFloat, title: String, action: Selector,
+    private func addRedactButton(_ role: ControlRole, at x: CGFloat, title: String, action: Selector,
                                   font: NSFont, height: CGFloat, y: CGFloat,
                                   dropdownAction: Selector? = nil) -> CGFloat {
         var curX = x
-        let seg = NSSegmentedControl()
-        seg.trackingMode = .momentary
+        let seg = makeSegments(role, action: action, tracking: .momentary)
         seg.font = font
         (seg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
 
         if dropdownAction != nil {
-            seg.segmentCount = 2
+            if seg.segmentCount != 2 { seg.segmentCount = 2 }
             seg.setLabel(title, forSegment: 0)
             seg.setLabel("▾", forSegment: 1)
             seg.setWidth(0, forSegment: 0)
@@ -762,7 +872,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
             seg.target = self
             seg.action = #selector(piiSegmentClicked(_:))
         } else {
-            seg.segmentCount = 1
+            if seg.segmentCount != 1 { seg.segmentCount = 1 }
             seg.setLabel(title, forSegment: 0)
             seg.setWidth(0, forSegment: 0)
             seg.target = self
@@ -1004,7 +1114,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addCornerRadiusSlider(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
-        let label = NSTextField(labelWithString: L("Radius"))
+        let label = makeLabel(.cornerRadiusTitle, text: L("Radius"))
         label.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         label.textColor = panelForegroundColor
         label.sizeToFit()
@@ -1013,15 +1123,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += label.frame.width + 4
 
         let radiusVal = editingAnnotation?.rectCornerRadius ?? ov.currentRectCornerRadius
-        let slider = NSSlider(value: Double(radiusVal),
-                              minValue: 0, maxValue: 30,
-                              target: self, action: #selector(cornerRadiusChanged(_:)))
+        let slider = makeSlider(.cornerRadiusSlider, value: Double(radiusVal), min: 0, max: 30,
+                                action: #selector(cornerRadiusChanged(_:)))
         slider.frame = NSRect(x: curX, y: (rowHeight - 20) / 2, width: 80, height: 20)
         slider.isContinuous = true
         addSubview(slider)
         curX += 80 + 4
 
-        let valLabel = NSTextField(labelWithString: "\(Int(radiusVal))px")
+        let valLabel = makeLabel(.cornerRadiusValue, text: "\(Int(radiusVal))px")
         valLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
         valLabel.textColor = panelForegroundColor
         valLabel.alignment = .right
@@ -1033,9 +1142,9 @@ class ToolOptionsRowView: ScreenshotPanelView {
         return curX
     }
 
-    private func addToggle(at x: CGFloat, title: String, isOn: Bool, action: @escaping (Bool) -> Void) -> CGFloat {
+    private func addToggle(_ role: ControlRole, at x: CGFloat, title: String, isOn: Bool, action: @escaping (Bool) -> Void) -> CGFloat {
         var curX = x
-        let btn = NSButton(checkboxWithTitle: title, target: nil, action: nil)
+        let btn = makeButton(role, title: title, type: .switch)
         btn.state = isOn ? .on : .off
         btn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         btn.contentTintColor = panelForegroundColor.withAlphaComponent(0.7)
@@ -1049,10 +1158,11 @@ class ToolOptionsRowView: ScreenshotPanelView {
         }
         btn.sizeToFit()
         btn.frame.origin = NSPoint(x: curX, y: (rowHeight - btn.frame.height) / 2)
-        let handler = ToggleHandler(action: action)
+        let handler = toggleHandlers[role] ?? ToggleHandler(action: action)
+        handler.action = action
+        toggleHandlers[role] = handler
         btn.target = handler
         btn.action = #selector(ToggleHandler.toggled(_:))
-        objc_setAssociatedObject(btn, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
         addSubview(btn)
         curX += btn.frame.width + 8
         return curX
@@ -1061,17 +1171,16 @@ class ToolOptionsRowView: ScreenshotPanelView {
     private func addNumberOptions(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
         let formats = ["1", "I", "A", "a"]
-        let seg = NSSegmentedControl(labels: formats, trackingMode: .selectOne,
-                                     target: self, action: #selector(numberFormatChanged(_:)))
+        let seg = makeSegments(.numberFormat, labels: formats, action: #selector(numberFormatChanged(_:)))
         seg.selectedSegment = ov.currentNumberFormat.rawValue
         seg.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: 100, height: 22)
         (seg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
         addSubview(seg)
         curX += 100
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .numberStartTitle)
 
-        let startLabel = NSTextField(labelWithString: L("Start:"))
+        let startLabel = makeLabel(.numberStartTitle, text: L("Start:"))
         startLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         startLabel.textColor = panelForegroundColor
         startLabel.sizeToFit()
@@ -1079,16 +1188,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(startLabel)
         curX += startLabel.frame.width + 4
 
-        let stepper = NSStepper()
-        stepper.minValue = 1
-        stepper.maxValue = 999
-        stepper.integerValue = ov.numberStartAt
-        stepper.target = self
-        stepper.action = #selector(numberStartChanged(_:))
+        let stepper = makeStepper(.numberStartStepper, value: ov.numberStartAt, min: 1, max: 999,
+                                  action: #selector(numberStartChanged(_:)))
         stepper.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: 19, height: 22)
         addSubview(stepper)
 
-        let valLabel = NSTextField(labelWithString: ov.currentNumberFormat.format(ov.numberStartAt))
+        let valLabel = makeLabel(.numberStartValue, text: ov.currentNumberFormat.format(ov.numberStartAt))
         valLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         valLabel.textColor = panelForegroundColor
         valLabel.tag = 999  // tag for finding later
@@ -1105,7 +1210,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
         // Font family dropdown
         let displayName = ov.textEditor.fontFamily == "System" ? "System" : ov.textEditor.fontFamily
-        let fontBtn = NSButton(title: "\(displayName) ▾", target: self, action: #selector(fontFamilyClicked(_:)))
+        let fontBtn = makeButton(.fontFamily, title: "\(displayName) ▾", action: #selector(fontFamilyClicked(_:)))
         fontBtn.bezelStyle = .recessed
         fontBtn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         fontBtn.attributedTitle = NSAttributedString(string: "\(displayName) ▾", attributes: [
@@ -1118,14 +1223,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += fontBtn.frame.width + 6
 
         // Bold / Italic / Underline / Strikethrough
-        let textStyles: [(String, String, Bool, Selector, Int)] = [
-            ("bold", "B", ov.textEditor.bold, #selector(boldToggled), 980),
-            ("italic", "I", ov.textEditor.italic, #selector(italicToggled), 981),
-            ("underline", "U", ov.textEditor.underline, #selector(underlineToggled), 982),
-            ("strikethrough", "S", ov.textEditor.strikethrough, #selector(strikethroughToggled), 983),
+        let textStyles: [(ControlRole, String, Bool, Selector, Int)] = [
+            (.textBold, "B", ov.textEditor.bold, #selector(boldToggled), 980),
+            (.textItalic, "I", ov.textEditor.italic, #selector(italicToggled), 981),
+            (.textUnderline, "U", ov.textEditor.underline, #selector(underlineToggled), 982),
+            (.textStrikethrough, "S", ov.textEditor.strikethrough, #selector(strikethroughToggled), 983),
         ]
-        for (_, label, isOn, sel, tag) in textStyles {
-            let btn = NSButton(title: label, target: self, action: sel)
+        for (role, label, isOn, sel, tag) in textStyles {
+            let btn = makeButton(role, title: label, action: sel)
             btn.bezelStyle = .smallSquare
             btn.isBordered = false
             btn.wantsLayer = true
@@ -1142,20 +1247,21 @@ class ToolOptionsRowView: ScreenshotPanelView {
             curX += 28
         }
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .alignmentLeft)
 
         // Alignment buttons
-        let alignments: [(String, NSTextAlignment)] = [
-            ("text.alignleft", .left), ("text.aligncenter", .center), ("text.alignright", .right)
+        let alignments: [(ControlRole, String, NSTextAlignment)] = [
+            (.alignmentLeft, "text.alignleft", .left),
+            (.alignmentCenter, "text.aligncenter", .center),
+            (.alignmentRight, "text.alignright", .right),
         ]
-        for (symbol, alignment) in alignments {
-            let btn = NSButton()
+        for (role, symbol, alignment) in alignments {
+            let btn = makeButton(role, type: .toggle)
             btn.bezelStyle = .recessed
             btn.isBordered = false
             btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
             btn.state = ov.textEditor.alignment == alignment ? .on : .off
-            btn.setButtonType(.toggle)
             btn.tag = alignment.rawValue
             btn.target = self
             btn.action = #selector(alignmentChanged(_:))
@@ -1164,10 +1270,10 @@ class ToolOptionsRowView: ScreenshotPanelView {
             curX += 28
         }
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .fontSizeDecrease)
 
         // Font size −/+
-        let minusBtn = NSButton(title: "−", target: self, action: #selector(fontSizeDecreased))
+        let minusBtn = makeButton(.fontSizeDecrease, title: "−", action: #selector(fontSizeDecreased))
         minusBtn.bezelStyle = .recessed
         minusBtn.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         minusBtn.isContinuous = true
@@ -1176,7 +1282,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(minusBtn)
         curX += 20
 
-        let sizeLabel = NSTextField(labelWithString: "\(Int(ov.textEditor.fontSize))")
+        let sizeLabel = makeLabel(.fontSizeValue, text: "\(Int(ov.textEditor.fontSize))")
         sizeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
         sizeLabel.textColor = panelForegroundColor
         sizeLabel.alignment = .center
@@ -1185,7 +1291,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(sizeLabel)
         curX += 26
 
-        let plusBtn = NSButton(title: "+", target: self, action: #selector(fontSizeIncreased))
+        let plusBtn = makeButton(.fontSizeIncrease, title: "+", action: #selector(fontSizeIncreased))
         plusBtn.bezelStyle = .recessed
         plusBtn.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         plusBtn.isContinuous = true
@@ -1194,13 +1300,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(plusBtn)
         curX += 24
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .textFillToggle)
 
         // Fill: clickable label (toggles on/off) + color swatch (opens color picker)
         let fillSwatchSize: CGFloat = 18
-        let fillLabelBtn = NSButton(title: L("Fill"), target: self, action: #selector(textBgToggled(_:)))
+        let fillLabelBtn = makeButton(.textFillToggle, title: L("Fill"), action: #selector(textBgToggled(_:)), type: .toggle)
         fillLabelBtn.bezelStyle = .recessed
-        fillLabelBtn.setButtonType(.toggle)
         fillLabelBtn.state = ov.textEditor.bgEnabled ? .on : .off
         fillLabelBtn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         fillLabelBtn.attributedTitle = NSAttributedString(string: L("Fill"), attributes: [
@@ -1212,7 +1317,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(fillLabelBtn)
         curX += fillLabelBtn.frame.width + 2
 
-        let fillSwatch = NSButton(frame: NSRect(x: curX, y: (rowHeight - fillSwatchSize) / 2, width: fillSwatchSize, height: fillSwatchSize))
+        let fillSwatch = makeButton(.textFillSwatch)
+        fillSwatch.frame = NSRect(x: curX, y: (rowHeight - fillSwatchSize) / 2, width: fillSwatchSize, height: fillSwatchSize)
         fillSwatch.title = ""
         fillSwatch.isBordered = false
         fillSwatch.wantsLayer = true
@@ -1228,9 +1334,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += fillSwatchSize + 6
 
         // Outline: clickable label (toggles on/off) + color swatch (opens color picker)
-        let outlineLabelBtn = NSButton(title: L("Outline"), target: self, action: #selector(textOutlineToggled(_:)))
+        let outlineLabelBtn = makeButton(.textOutlineToggle, title: L("Outline"), action: #selector(textOutlineToggled(_:)), type: .toggle)
         outlineLabelBtn.bezelStyle = .recessed
-        outlineLabelBtn.setButtonType(.toggle)
         outlineLabelBtn.state = ov.textEditor.outlineEnabled ? .on : .off
         outlineLabelBtn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         outlineLabelBtn.attributedTitle = NSAttributedString(string: L("Outline"), attributes: [
@@ -1242,7 +1347,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(outlineLabelBtn)
         curX += outlineLabelBtn.frame.width + 2
 
-        let outlineSwatch = NSButton(frame: NSRect(x: curX, y: (rowHeight - fillSwatchSize) / 2, width: fillSwatchSize, height: fillSwatchSize))
+        let outlineSwatch = makeButton(.textOutlineSwatch)
+        outlineSwatch.frame = NSRect(x: curX, y: (rowHeight - fillSwatchSize) / 2, width: fillSwatchSize, height: fillSwatchSize)
         outlineSwatch.title = ""
         outlineSwatch.isBordered = false
         outlineSwatch.wantsLayer = true
@@ -1258,9 +1364,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += fillSwatchSize + 6
 
         // Stroke (per-glyph): clickable label (toggles on/off) + color swatch
-        let strokeLabelBtn = NSButton(title: L("Stroke"), target: self, action: #selector(textGlyphStrokeToggled(_:)))
+        let strokeLabelBtn = makeButton(.textStrokeToggle, title: L("Stroke"), action: #selector(textGlyphStrokeToggled(_:)), type: .toggle)
         strokeLabelBtn.bezelStyle = .recessed
-        strokeLabelBtn.setButtonType(.toggle)
         strokeLabelBtn.state = ov.textEditor.glyphStrokeEnabled ? .on : .off
         strokeLabelBtn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         strokeLabelBtn.attributedTitle = NSAttributedString(string: L("Stroke"), attributes: [
@@ -1272,7 +1377,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(strokeLabelBtn)
         curX += strokeLabelBtn.frame.width + 2
 
-        let strokeSwatch = NSButton(frame: NSRect(x: curX, y: (rowHeight - fillSwatchSize) / 2, width: fillSwatchSize, height: fillSwatchSize))
+        let strokeSwatch = makeButton(.textStrokeSwatch)
+        strokeSwatch.frame = NSRect(x: curX, y: (rowHeight - fillSwatchSize) / 2, width: fillSwatchSize, height: fillSwatchSize)
         strokeSwatch.title = ""
         strokeSwatch.isBordered = false
         strokeSwatch.wantsLayer = true
@@ -1289,8 +1395,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
         // Cancel / Confirm — only when actively editing text, right-aligned
         if ov.textEditor.isEditing {
-            curX = addSeparator(at: curX)
-            let cancelBtn = NSButton(title: "✕", target: self, action: #selector(textCancelClicked))
+            curX = addSeparator(at: curX, before: .textCancel)
+            let cancelBtn = makeButton(.textCancel, title: "✕", action: #selector(textCancelClicked))
             cancelBtn.bezelStyle = .smallSquare
             cancelBtn.isBordered = false
             cancelBtn.wantsLayer = true
@@ -1303,7 +1409,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
             cancelBtn.tag = 990
             addSubview(cancelBtn)
 
-            let confirmBtn = NSButton(title: "✓", target: self, action: #selector(textConfirmClicked))
+            let confirmBtn = makeButton(.textConfirm, title: "✓", action: #selector(textConfirmClicked))
             confirmBtn.bezelStyle = .smallSquare
             confirmBtn.isBordered = false
             confirmBtn.wantsLayer = true
@@ -1323,21 +1429,20 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addMeasureToggle(at x: CGFloat, ov: OverlayView) -> CGFloat {
         var curX = x
-        let seg = NSSegmentedControl(labels: ["px", "pt"], trackingMode: .selectOne,
-                                     target: self, action: #selector(measureUnitChanged(_:)))
+        let seg = makeSegments(.measureUnits, labels: ["px", "pt"], action: #selector(measureUnitChanged(_:)))
         seg.selectedSegment = ov.currentMeasureInPoints ? 1 : 0
         seg.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: 60, height: 22)
         (seg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
         addSubview(seg)
         curX += 72
 
-        curX = addToggle(at: curX, title: L("Limit to selection"), isOn: ov.currentMeasureClampToSelection) { [weak ov] isOn in
+        curX = addToggle(.measureLimit, at: curX, title: L("Limit to selection"), isOn: ov.currentMeasureClampToSelection) { [weak ov] isOn in
             ov?.currentMeasureClampToSelection = isOn
             UserDefaults.standard.set(isOn, forKey: "measureClampToSelection")
         }
 
         // Hint
-        curX = addHintLabel(at: curX, text: L("Hold 1 auto-vertical  ·  Hold 2 auto-horizontal"))
+        curX = addHintLabel(.measureHint, at: curX, text: L("Hold 1 auto-vertical  ·  Hold 2 auto-horizontal"))
         return curX
     }
 
@@ -1348,7 +1453,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         // editing. Skipped for capture stamps ("Add Capture" images), which are usually far
         // larger than the slider range — those resize via their handles instead.
         if editingAnnotation?.isCaptureStamp != true {
-            let sizeLabel = NSTextField(labelWithString: L("Size"))
+            let sizeLabel = makeLabel(.stampSizeTitle, text: L("Size"))
             sizeLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
             sizeLabel.textColor = panelForegroundColor
             sizeLabel.sizeToFit()
@@ -1362,14 +1467,14 @@ class ToolOptionsRowView: ScreenshotPanelView {
             } else {
                 currentSize = ov.currentStampSize
             }
-            let sizeSlider = NSSlider(value: Double(currentSize), minValue: 16, maxValue: 256,
-                                      target: self, action: #selector(stampSizeChanged(_:)))
+            let sizeSlider = makeSlider(.stampSizeSlider, value: Double(currentSize), min: 16, max: 256,
+                                        action: #selector(stampSizeChanged(_:)))
             sizeSlider.frame = NSRect(x: curX, y: (rowHeight - 20) / 2, width: 80, height: 20)
             sizeSlider.isContinuous = true
             addSubview(sizeSlider)
             curX += 80 + 4
 
-            let sizeValLabel = NSTextField(labelWithString: "\(Int(currentSize))px")
+            let sizeValLabel = makeLabel(.stampSizeValue, text: "\(Int(currentSize))px")
             sizeValLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
             sizeValLabel.textColor = panelForegroundColor
             sizeValLabel.alignment = .right
@@ -1378,12 +1483,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
             addSubview(sizeValLabel)
             curX += 34
 
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .stampQuickChoices)
         }
 
         // Quick emoji buttons
         for emoji in StampEmojis.common {
-            let btn = NSButton(title: emoji, target: self, action: #selector(quickEmojiClicked(_:)))
+            let btn = makeButton(.stampEmoji(emoji), title: emoji, action: #selector(quickEmojiClicked(_:)))
             btn.bezelStyle = .recessed
             btn.isBordered = false
             btn.font = NSFont.systemFont(ofSize: 18)
@@ -1393,9 +1498,9 @@ class ToolOptionsRowView: ScreenshotPanelView {
         }
         curX += 4
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .stampMore)
 
-        let moreBtn = NSButton()
+        let moreBtn = makeButton(.stampMore)
         moreBtn.bezelStyle = .recessed
         moreBtn.isBordered = false
         moreBtn.image = NSImage(systemSymbolName: "face.smiling", accessibilityDescription: L("More Emojis"))?
@@ -1408,7 +1513,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         setForegroundTint(on: moreBtn)
         curX += 30
 
-        let loadBtn = NSButton()
+        let loadBtn = makeButton(.stampLoad)
         loadBtn.bezelStyle = .recessed
         loadBtn.isBordered = false
         loadBtn.image = NSImage(systemSymbolName: "photo", accessibilityDescription: L("Load Image"))?
@@ -1428,7 +1533,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         var curX = x
 
         // — Draw mode: All / Text Only segmented control —
-        let drawLabel = NSTextField(labelWithString: L("Draw:"))
+        let drawLabel = makeLabel(.censorDrawTitle, text: L("Draw:"))
         drawLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         drawLabel.textColor = panelForegroundColor
         drawLabel.sizeToFit()
@@ -1437,8 +1542,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += drawLabel.frame.width + 4
 
         let textOnly = UserDefaults.standard.bool(forKey: "censorTextOnly")
-        let drawSeg = NSSegmentedControl(labels: [L("All"), L("Text Only")], trackingMode: .selectOne,
-                                          target: self, action: #selector(drawModeChanged(_:)))
+        let drawSeg = makeSegments(.censorDrawMode, labels: [L("All"), L("Text Only")],
+                                   action: #selector(drawModeChanged(_:)))
         drawSeg.selectedSegment = textOnly ? 1 : 0
         drawSeg.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         (drawSeg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
@@ -1447,10 +1552,10 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(drawSeg)
         curX += drawSeg.frame.width + 4
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .censorAutoTitle)
 
         // — Auto-detect buttons —
-        let autoLabel = NSTextField(labelWithString: L("Auto:"))
+        let autoLabel = makeLabel(.censorAutoTitle, text: L("Auto:"))
         autoLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         autoLabel.textColor = panelForegroundColor
         autoLabel.sizeToFit()
@@ -1462,18 +1567,18 @@ class ToolOptionsRowView: ScreenshotPanelView {
         let btnFont = NSFont.systemFont(ofSize: 10, weight: .medium)
         let btnY = (rowHeight - btnH) / 2
 
-        curX = addRedactButton(at: curX, title: L("All Text"), action: #selector(redactAllTextClicked),
+        curX = addRedactButton(.redactText, at: curX, title: L("All Text"), action: #selector(redactAllTextClicked),
                                font: btnFont, height: btnH, y: btnY)
 
         // PII button with dropdown arrow for type selection
-        curX = addRedactButton(at: curX, title: L("PII"), action: #selector(redactPIIClicked),
+        curX = addRedactButton(.redactPII, at: curX, title: L("PII"), action: #selector(redactPIIClicked),
                                font: btnFont, height: btnH, y: btnY,
                                dropdownAction: #selector(redactTypesClicked(_:)))
 
-        curX = addRedactButton(at: curX, title: L("Faces"), action: #selector(redactFacesClicked),
+        curX = addRedactButton(.redactFaces, at: curX, title: L("Faces"), action: #selector(redactFacesClicked),
                                font: btnFont, height: btnH, y: btnY)
 
-        curX = addRedactButton(at: curX, title: L("People"), action: #selector(redactPeopleClicked),
+        curX = addRedactButton(.redactPeople, at: curX, title: L("People"), action: #selector(redactPeopleClicked),
                                font: btnFont, height: btnH, y: btnY)
 
         return curX
@@ -1485,9 +1590,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         let controlsEnabled = ov.beautifyEnabled
 
         // Keep the effect switch first so its enabled state and escape hatch are immediately visible.
-        let toggleBtn = NSButton(
-            checkboxWithTitle: L("Beautify"), target: self,
-            action: #selector(beautifyToggleChanged(_:)))
+        let toggleBtn = makeButton(.beautifyToggle, title: L("Beautify"),
+                                   action: #selector(beautifyToggleChanged(_:)), type: .switch)
         toggleBtn.state = controlsEnabled ? .on : .off
         toggleBtn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         if let cell = toggleBtn.cell as? NSButtonCell {
@@ -1502,64 +1606,63 @@ class ToolOptionsRowView: ScreenshotPanelView {
         addSubview(toggleBtn)
         curX += toggleBtn.frame.width + 4
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .beautifyMode)
 
         // Mode toggle: Window / Rounded — hidden for snapped windows (always uses native chrome)
         if !isSnap {
-            let modeSeg = NSSegmentedControl(labels: ["W", "R"], trackingMode: .selectOne,
-                                             target: self, action: #selector(beautifyModeChanged(_:)))
+            let modeSeg = makeSegments(.beautifyMode, labels: ["W", "R"],
+                                       action: #selector(beautifyModeChanged(_:)), isEnabled: controlsEnabled)
             modeSeg.selectedSegment = ov.beautifyMode == .window ? 0 : 1
-            modeSeg.isEnabled = controlsEnabled
             modeSeg.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: 56, height: 22)
             (modeSeg.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
             addSubview(modeSeg)
             curX += 56
 
-            curX = addSeparator(at: curX)
+            curX = addSeparator(at: curX, before: .beautifyTitle(.padding))
         }
 
         // Padding slider
-        curX = addBeautifySlider(at: curX, label: L("Padding"), value: ov.beautifyPadding, min: 16, max: 96, isEnabled: controlsEnabled, action: #selector(beautifyPaddingChanged(_:)))
+        curX = addBeautifySlider(.padding, at: curX, label: L("Padding"), value: ov.beautifyPadding, min: 16, max: 96, isEnabled: controlsEnabled, action: #selector(beautifyPaddingChanged(_:)))
 
         // Corner radius slider — hidden for snapped windows (native corners are baked in)
         if !isSnap {
-            curX = addBeautifySlider(at: curX, label: L("Radius"), value: ov.beautifyCornerRadius, min: 0, max: 30, isEnabled: controlsEnabled, action: #selector(beautifyCornerChanged(_:)))
+            curX = addBeautifySlider(.radius, at: curX, label: L("Radius"), value: ov.beautifyCornerRadius, min: 0, max: 30, isEnabled: controlsEnabled, action: #selector(beautifyCornerChanged(_:)))
         }
 
         // Shadow slider
-        curX = addBeautifySlider(at: curX, label: L("Shadow"), value: ov.beautifyShadowRadius, min: 0, max: 100, isEnabled: controlsEnabled, action: #selector(beautifyShadowChanged(_:)))
+        curX = addBeautifySlider(.shadow, at: curX, label: L("Shadow"), value: ov.beautifyShadowRadius, min: 0, max: 100, isEnabled: controlsEnabled, action: #selector(beautifyShadowChanged(_:)))
 
         // Blur slider — only shown for custom image backgrounds
         if ov.beautifyStyleIndex == -1 {
-            curX = addBeautifySlider(at: curX, label: L("Blur"), value: ov.beautifyBackgroundBlur, min: 0, max: 50, isEnabled: controlsEnabled, action: #selector(beautifyBlurChanged(_:)))
+            curX = addBeautifySlider(.blur, at: curX, label: L("Blur"), value: ov.beautifyBackgroundBlur, min: 0, max: 50, isEnabled: controlsEnabled, action: #selector(beautifyBlurChanged(_:)))
         }
 
-        curX = addSeparator(at: curX)
+        curX = addSeparator(at: curX, before: .beautifySwatch)
 
         // Gradient style picker — swatch preview + dropdown arrow
         curX += 2
         let swatchSize: CGFloat = 22
-        let swatchBtn = NSButton(frame: NSRect(x: curX, y: (rowHeight - swatchSize) / 2, width: swatchSize, height: swatchSize))
+        let swatchBtn = makeButton(.beautifySwatch, isEnabled: controlsEnabled)
+        swatchBtn.frame = NSRect(x: curX, y: (rowHeight - swatchSize) / 2, width: swatchSize, height: swatchSize)
         swatchBtn.bezelStyle = .recessed
         swatchBtn.isBordered = false
         swatchBtn.image = Self.gradientSwatchImage(styleIndex: ov.beautifyStyleIndex, size: swatchSize, color: panelForegroundColor)
         swatchBtn.imageScaling = .scaleProportionallyUpOrDown
         swatchBtn.target = self
         swatchBtn.action = #selector(beautifyGradientClicked(_:))
-        swatchBtn.isEnabled = controlsEnabled
         swatchBtn.toolTip = L("Gradient Style")
         swatchBtn.tag = 995
         addSubview(swatchBtn)
         curX += swatchSize + 2
 
-        let arrowBtn = NSButton(frame: NSRect(x: curX, y: (rowHeight - 16) / 2, width: 14, height: 16))
+        let arrowBtn = makeButton(.beautifyDisclosure, isEnabled: controlsEnabled)
+        arrowBtn.frame = NSRect(x: curX, y: (rowHeight - 16) / 2, width: 14, height: 16)
         arrowBtn.bezelStyle = .recessed
         arrowBtn.isBordered = false
         arrowBtn.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 9, weight: .semibold))
         arrowBtn.target = self
         arrowBtn.action = #selector(beautifyGradientClicked(_:))
-        arrowBtn.isEnabled = controlsEnabled
         addSubview(arrowBtn)
         setForegroundTint(on: arrowBtn, alpha: controlsEnabled ? 1 : 0.35)
         curX += 18
@@ -1567,20 +1670,18 @@ class ToolOptionsRowView: ScreenshotPanelView {
         return curX
     }
 
-    private func addBeautifySlider(at x: CGFloat, label: String, value: CGFloat, min: CGFloat, max: CGFloat, isEnabled: Bool, action: Selector) -> CGFloat {
+    private func addBeautifySlider(_ property: BeautifyProperty, at x: CGFloat, label: String, value: CGFloat, min: CGFloat, max: CGFloat, isEnabled: Bool, action: Selector) -> CGFloat {
         var curX = x
-        let lbl = NSTextField(labelWithString: label)
+        let lbl = makeLabel(.beautifyTitle(property), text: label, isEnabled: isEnabled)
         lbl.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-        lbl.isEnabled = isEnabled
         lbl.textColor = panelForegroundColor.withAlphaComponent(isEnabled ? 1 : 0.35)
         lbl.sizeToFit()
         lbl.frame.origin = NSPoint(x: curX, y: (rowHeight - lbl.frame.height) / 2)
         addSubview(lbl)
         curX += lbl.frame.width + 3
 
-        let slider = NSSlider(value: Double(value), minValue: Double(min), maxValue: Double(max),
-                              target: self, action: action)
-        slider.isEnabled = isEnabled
+        let slider = makeSlider(.beautifySlider(property), value: Double(value), min: Double(min), max: Double(max),
+                                action: action, isEnabled: isEnabled)
         slider.frame = NSRect(x: curX, y: (rowHeight - 18) / 2, width: 60, height: 18)
         slider.isContinuous = true
         addSubview(slider)
@@ -1650,8 +1751,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         ov.rebuildToolbarLayout()
     }
 
-    private func addHintLabel(at x: CGFloat, text: String) -> CGFloat {
-        let label = NSTextField(labelWithString: text)
+    private func addHintLabel(_ role: ControlRole, at x: CGFloat, text: String) -> CGFloat {
+        let label = makeLabel(role, text: text)
         label.font = NSFont.systemFont(ofSize: 9.5, weight: .medium)
         label.textColor = panelForegroundColor
         label.sizeToFit()
@@ -2065,9 +2166,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
             outlineEnabled = UserDefaults.standard.bool(forKey: "annotationOutlineEnabled")
             outlineCol = Self.savedOutlineColor
         }
-        let outlineBtn = NSButton(title: L("Outline"), target: self, action: #selector(annotationOutlineToggled(_:)))
+        let outlineBtn = makeButton(.annotationOutlineToggle, title: L("Outline"), action: #selector(annotationOutlineToggled(_:)), type: .toggle)
         outlineBtn.bezelStyle = .recessed
-        outlineBtn.setButtonType(.toggle)
         outlineBtn.state = outlineEnabled ? .on : .off
         outlineBtn.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         outlineBtn.attributedTitle = NSAttributedString(string: L("Outline"), attributes: [
@@ -2081,7 +2181,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += outlineBtn.frame.width + 2
 
         let swatchSize: CGFloat = 18
-        let swatch = NSButton(frame: NSRect(x: curX, y: (rowHeight - swatchSize) / 2, width: swatchSize, height: swatchSize))
+        let swatch = makeButton(.annotationOutlineSwatch)
+        swatch.frame = NSRect(x: curX, y: (rowHeight - swatchSize) / 2, width: swatchSize, height: swatchSize)
         swatch.title = ""
         swatch.isBordered = false
         swatch.wantsLayer = true
@@ -2146,9 +2247,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
             col = ov.currentLoupeOutlineColor
         }
 
-        let outlineBtn = NSButton(title: L("Outline"), target: self, action: #selector(loupeOutlineToggled(_:)))
+        let outlineBtn = makeButton(.loupeOutlineToggle, title: L("Outline"), action: #selector(loupeOutlineToggled(_:)), type: .toggle)
         outlineBtn.bezelStyle = .recessed
-        outlineBtn.setButtonType(.toggle)
         outlineBtn.state = enabled ? .on : .off
         outlineBtn.attributedTitle = NSAttributedString(string: L("Outline"), attributes: [
             .font: NSFont.systemFont(ofSize: 10, weight: .medium),
@@ -2161,7 +2261,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += outlineBtn.frame.width + 2
 
         let swatchSize: CGFloat = 18
-        let swatch = NSButton(frame: NSRect(x: curX, y: (rowHeight - swatchSize) / 2, width: swatchSize, height: swatchSize))
+        let swatch = makeButton(.loupeOutlineSwatch)
+        swatch.frame = NSRect(x: curX, y: (rowHeight - swatchSize) / 2, width: swatchSize, height: swatchSize)
         swatch.title = ""
         swatch.isBordered = false
         swatch.wantsLayer = true
@@ -2210,7 +2311,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
 // Helper for toggle closures
 private class ToggleHandler: NSObject {
-    let action: (Bool) -> Void
+    var action: (Bool) -> Void
     init(action: @escaping (Bool) -> Void) { self.action = action }
     @objc func toggled(_ sender: NSButton) { action(sender.state == .on) }
 }

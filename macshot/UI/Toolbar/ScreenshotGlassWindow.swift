@@ -1,14 +1,59 @@
 import AppKit
 import ObjectiveC
 
-/// Keeps native Clear glass active without changing keyboard focus, activation,
-/// window ordering, or event routing. The private appearance queries are validated
+/// Hosts screenshot command routing and native Clear glass without changing
+/// keyboard focus, activation, or window ordering. Appearance queries are validated
 /// on macOS 26; other releases retain AppKit behavior and use Classic chrome.
 class ScreenshotGlassWindow: NSWindow {
     var glassAlwaysActive = false {
         didSet {
             if oldValue != glassAlwaysActive { ScreenshotGlassAppearanceBridge.refresh(self) }
         }
+    }
+
+    override var contentView: NSView? {
+        didSet {
+            // AppKit completes the root responder chain after viewDidMoveToWindow.
+            if ScreenshotCommandResponder.forWindow(self) != nil {
+                ScreenshotCommandResponder.install(in: self, editor: nil)
+            }
+        }
+    }
+
+    override var contentViewController: NSViewController? {
+        didSet {
+            if ScreenshotCommandResponder.forWindow(self) != nil {
+                ScreenshotCommandResponder.install(in: self, editor: nil)
+            }
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if firstResponder === self,
+           ScreenshotCommandResponder.forWindow(self)?.dispatchKeyEvent(event) == true { return }
+        super.keyDown(with: event)
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if firstResponder === self,
+           ScreenshotCommandResponder.forWindow(self)?.dispatchKeyRelease(event) == true { return }
+        super.keyUp(with: event)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        if firstResponder === self,
+           ScreenshotCommandResponder.forWindow(self)?.dispatchModifierEvent(event) == true { return }
+        super.flagsChanged(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if ScreenshotCommandResponder.forWindow(self)?.handleCancellation() == true { return }
+        nextResponder?.tryToPerform(#selector(cancelOperation(_:)), with: sender)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if ScreenshotCommandResponder.forWindow(self)?.performEditorKeyEquivalent(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
     }
 
     static var supportedAppearance: Bool { ScreenshotGlassAppearanceBridge.supports(NSWindow.self) }
@@ -41,6 +86,51 @@ class ScreenshotGlassPanel: NSPanel {
         didSet {
             if oldValue != glassAlwaysActive { ScreenshotGlassAppearanceBridge.refresh(self) }
         }
+    }
+
+    override var contentView: NSView? {
+        didSet {
+            // AppKit completes the root responder chain after viewDidMoveToWindow.
+            if ScreenshotCommandResponder.forWindow(self) != nil {
+                ScreenshotCommandResponder.install(in: self, editor: nil)
+            }
+        }
+    }
+
+    override var contentViewController: NSViewController? {
+        didSet {
+            if ScreenshotCommandResponder.forWindow(self) != nil {
+                ScreenshotCommandResponder.install(in: self, editor: nil)
+            }
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if firstResponder === self,
+           ScreenshotCommandResponder.forWindow(self)?.dispatchKeyEvent(event) == true { return }
+        super.keyDown(with: event)
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if firstResponder === self,
+           ScreenshotCommandResponder.forWindow(self)?.dispatchKeyRelease(event) == true { return }
+        super.keyUp(with: event)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        if firstResponder === self,
+           ScreenshotCommandResponder.forWindow(self)?.dispatchModifierEvent(event) == true { return }
+        super.flagsChanged(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if ScreenshotCommandResponder.forWindow(self)?.handleCancellation() == true { return }
+        nextResponder?.tryToPerform(#selector(cancelOperation(_:)), with: sender)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if ScreenshotCommandResponder.forWindow(self)?.performEditorKeyEquivalent(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
     }
 
     static var supportedAppearance: Bool { ScreenshotGlassAppearanceBridge.supports(NSPanel.self) }

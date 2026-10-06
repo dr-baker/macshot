@@ -12,6 +12,7 @@ final class ScreenshotPanelViewTests: XCTestCase {
         let menuWindow = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
         menuWindow.isReleasedWhenClosed = false
         menuWindow.contentView = wrapper
+        wrapper.beginCommandScope()
         defer { controller.suspend(); editor.reset(); menuWindow.close(); parent.close() }
         let scroll = try XCTUnwrap(options.subviews.compactMap { $0 as? NSScrollView }.first)
         let stack = try XCTUnwrap(scroll.documentView as? NSStackView)
@@ -54,6 +55,7 @@ final class ScreenshotPanelViewTests: XCTestCase {
         let menuWindow = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
         menuWindow.isReleasedWhenClosed = false
         menuWindow.contentView = wrapper
+        wrapper.beginCommandScope()
         defer { controller.suspend(); editor.reset(); menuWindow.close(); parent.close() }
         let blur = try XCTUnwrap(options.subviews.first { $0.identifier?.rawValue == "stitch.seam.blur" } as? NSSlider)
         let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
@@ -166,6 +168,7 @@ final class ScreenshotPanelViewTests: XCTestCase {
             backing: .buffered, defer: false)
         popoverWindow.isReleasedWhenClosed = false
         popoverWindow.contentView = wrapper
+        wrapper.beginCommandScope()
         defer { popoverWindow.close(); parent.close() }
         let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
         wrapper.addSubview(slider)
@@ -182,6 +185,12 @@ final class ScreenshotPanelViewTests: XCTestCase {
         _ = popoverWindow.performKeyEquivalent(with: copy)
         XCTAssertEqual(capture.copyRequests, 1, "Copy in the submenu field must not copy the screenshot")
         XCTAssertTrue(popoverWindow.firstResponder === editor)
+        // AppKit may retain a closed popover's window and content view.
+        wrapper.endCommandScope()
+        XCTAssertTrue(popoverWindow.makeFirstResponder(nil))
+        XCTAssertFalse(popoverWindow.performKeyEquivalent(with: copy))
+        XCTAssertEqual(capture.copyRequests, 1)
+        XCTAssertFalse(ScreenshotCommandResponder.forWindow(parent)?.hasTransientScope ?? true)
     }
 
     func testNativeMenuEscapeDispatchClosesFromItsControlsAndDefaultResponder() throws {
@@ -190,6 +199,7 @@ final class ScreenshotPanelViewTests: XCTestCase {
         let window = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = wrapper
+        wrapper.beginCommandScope()
         defer { window.close() }
         let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
         let button = NSButton(title: "Wave", target: nil, action: nil)
@@ -540,12 +550,12 @@ private final class ScreenshotFocusProbeWindow: NSWindow {
 }
 
 @MainActor
-private final class ScreenshotCommandProbeView: NSView {
+private final class ScreenshotCommandProbeView: OverlayView {
     var copyRequests = 0
     override var acceptsFirstResponder: Bool { true }
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    override func handleEditorKeyEquivalent(_ event: NSEvent) -> Bool {
         guard KeyboardShortcutMatcher.matches(event, character: "c", modifiers: .command) else {
-            return super.performKeyEquivalent(with: event)
+            return false
         }
         copyRequests += 1
         return true

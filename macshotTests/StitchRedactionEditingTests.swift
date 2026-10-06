@@ -179,7 +179,7 @@ final class StitchRedactionEditingTests: XCTestCase {
             NSGraphicsContext.restoreGraphicsState()
         }
         let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil)))
-        // The move badge covers (95,90)..<(119,114). Its neutral opaque
+        // The move badge covers (95,90)..<(119,114). Its themed opaque
         // chrome may cover the placeholder, while these interior pixels must
         // remain exact black rather than exposing the blue source.
         for y in 116..<123 {
@@ -189,9 +189,7 @@ final class StitchRedactionEditingTests: XCTestCase {
             }
         }
         let badge = try XCTUnwrap(bitmap.colorAt(x: 105, y: 100))
-        XCTAssertEqual(badge.redComponent, badge.greenComponent)
-        XCTAssertEqual(badge.greenComponent, badge.blueComponent)
-        XCTAssertEqual(badge.alphaComponent, 1)
+        XCTAssertEqual(badge.alphaComponent, 1, "The themed move badge must remain opaque over a failed mask raster")
         let visible = try XCTUnwrap(bitmap.colorAt(x: 160, y: 100))
         XCTAssertEqual([visible.redComponent, visible.greenComponent, visible.blueComponent, visible.alphaComponent], [0, 1, 0, 1])
     }

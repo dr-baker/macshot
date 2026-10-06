@@ -5,7 +5,7 @@ import XCTest
 final class StitchInlineCanvasTests: XCTestCase {
     private final class KeyEditor: EditorView {
         var keys: [UInt16] = []
-        override func keyDown(with event: NSEvent) { keys.append(event.keyCode) }
+        override func handleEditorKeyEvent(_ event: NSEvent) -> Bool { keys.append(event.keyCode); return true }
     }
 
     func testInlineRefreshAndParentResizePreservePixelProjection() {
@@ -479,6 +479,39 @@ final class StitchInlineCanvasTests: XCTestCase {
         XCTAssertTrue(editor.undoStack.isEmpty)
     }
 
+    func testEscapePrioritySurvivesWindowFallbackAndSiblingFocus() throws {
+        let (editor, canvas) = fixture()
+        let window = host(editor)
+        defer { window.orderOut(nil) }
+        let commands = try XCTUnwrap(ScreenshotCommandResponder.forWindow(window))
+        canvas.mode = .move
+        canvas.selectedID = canvas.document.pieces[0].id
+        let menu = NSView(frame: .zero)
+        editor.addSubview(menu)
+        var closed = 0
+        commands.setTransientScope(owner: menu) {
+            closed += 1
+            commands.removeTransientScope(owner: menu)
+            menu.removeFromSuperview()
+        }
+        XCTAssertTrue(window.makeFirstResponder(nil))
+        let escape = TestKeyEvent.keyDown(characters: "\u{1B}", keyCode: 53)
+        window.sendEvent(escape)
+        XCTAssertEqual(closed, 1)
+        XCTAssertNotNil(canvas.selectedID)
+        XCTAssertTrue(editor.keys.isEmpty)
+        let sibling = NSView(frame: .zero)
+        let button = NSButton(title: "Options", target: nil, action: nil)
+        sibling.addSubview(button)
+        editor.addSubview(sibling)
+        XCTAssertTrue(window.makeFirstResponder(button))
+        window.sendEvent(escape)
+        XCTAssertNil(canvas.selectedID)
+        XCTAssertTrue(editor.keys.isEmpty)
+        window.sendEvent(escape)
+        XCTAssertEqual(editor.keys, [53])
+    }
+
     func testNativeToolAndCommandKeysForwardButMoveKeysStayLocal() {
         let (editor, canvas) = fixture()
         let window = host(editor)
@@ -806,7 +839,7 @@ final class StitchInlineCanvasTests: XCTestCase {
         return (editor, canvas)
     }
     private func host(_ editor: NSView) -> NSWindow {
-        let window = NSWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        let window = ScreenshotGlassWindow(contentRect: editor.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = editor
         return window
     }
