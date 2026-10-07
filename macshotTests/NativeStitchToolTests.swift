@@ -860,7 +860,7 @@ final class NativeStitchToolTests: XCTestCase {
             let options = controller.makeSeamOptions()
             let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
             let buttons = picker.subviews.compactMap { $0 as? NSButton }
-            XCTAssertEqual(buttons.map(\.title), ["Wave", "Blend", "Torn", "Fold", "Break"].map { L($0) })
+            XCTAssertEqual(buttons.map(\.title), ["Wave", "Blend", "Torn", "Fold", "Accordion", "Break"].map { L($0) })
             XCTAssertGreaterThanOrEqual(options.bounds.width, 350)
             XCTAssertLessThanOrEqual(options.bounds.width, 380)
             picker.layoutSubtreeIfNeeded()
@@ -880,7 +880,7 @@ final class NativeStitchToolTests: XCTestCase {
                 XCTAssertLessThan(titleWidth, button.bounds.width - 8)
                 XCTAssertTrue(picker.bounds.contains(button.frame))
             }
-            XCTAssertEqual(previews.count, 5, "Each treatment needs a preview that shows its rendered result")
+            XCTAssertEqual(previews.count, StitchTransition.allCases.count, "Each treatment needs a preview that shows its rendered result")
             let nativePopover = NSView(frame: options.frame)
             nativePopover.addSubview(options)
             for systemAppearance in [NSAppearance.Name.aqua, .darkAqua] {

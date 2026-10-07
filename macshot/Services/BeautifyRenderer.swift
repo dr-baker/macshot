@@ -33,11 +33,14 @@ struct BeautifyStyle {
 }
 
 struct BeautifyConfig {
+    static let defaultPadding: CGFloat = 12
+    static let defaultCornerRadius: CGFloat = 12
+    static let defaultShadow: CGFloat = 12
     var mode: BeautifyMode = .window
     var styleIndex: Int = 0
-    var padding: CGFloat = 48       // 16..96
-    var cornerRadius: CGFloat = 10  // 0..30
-    var shadowRadius: CGFloat = 20  // 0..100
+    var padding: CGFloat = defaultPadding // 0..96
+    var cornerRadius: CGFloat = defaultCornerRadius // 0..30
+    var shadowRadius: CGFloat = defaultShadow // 0..100
     var bgRadius: CGFloat = 8      // 0..30 (outer background corner radius)
     var isWindowSnap: Bool = false  // true = selection came from window snap, skip synthetic title bar
     var customBackgroundImage: NSImage?  // custom image background (nil = use gradient)

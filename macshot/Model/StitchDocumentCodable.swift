@@ -24,6 +24,8 @@ struct SavedStitchDocument: Codable, Equatable {
     var tearRoughness: CGFloat
     var foldDepth: CGFloat
     var foldStrength: CGFloat
+    var accordionWidth: CGFloat
+    var accordionPleats: CGFloat
     var breakSize: CGFloat
     var visible: Bool
     var background: String
@@ -35,6 +37,7 @@ struct SavedStitchDocument: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case images, pieces, transition, lineColor, lineWidth, wave, blur, feather, visible
         case tearWidth, tearRoughness, foldDepth, foldStrength, breakSize
+        case accordionWidth, accordionPleats
         case background, backgroundColor, packed, packingHorizontal, packingLength
     }
 
@@ -55,6 +58,8 @@ struct SavedStitchDocument: Codable, Equatable {
         tearRoughness = values.decode(.tearRoughness, or: wave)
         foldDepth = values.decode(.foldDepth, or: style.foldDepth)
         foldStrength = values.decode(.foldStrength, or: style.foldStrength)
+        accordionWidth = values.decode(.accordionWidth, or: style.accordionWidth)
+        accordionPleats = values.decode(.accordionPleats, or: style.accordionPleats)
         breakSize = values.decode(.breakSize, or: wave)
         visible = values.decode(.visible, or: style.visible)
         background = values.decode(.background, or: "automatic")
@@ -109,6 +114,8 @@ struct SavedStitchDocument: Codable, Equatable {
         tearRoughness = document.style.tearRoughness
         foldDepth = document.style.foldDepth
         foldStrength = document.style.foldStrength
+        accordionWidth = document.style.accordionWidth
+        accordionPleats = document.style.accordionPleats
         breakSize = document.style.breakSize
         visible = document.style.visible
         switch document.background {
@@ -130,6 +137,9 @@ struct SavedStitchDocument: Codable, Equatable {
               lineWidth <= 100, wave <= 100, blur <= 100, feather <= 4096,
               tearWidth <= 100, tearRoughness <= 100, foldDepth <= 100,
               foldStrength <= StitchStyle.maximumFoldStrength, breakSize <= 100,
+              accordionWidth.isFinite, (0...80).contains(accordionWidth),
+              accordionPleats.isFinite, (2...6).contains(accordionPleats),
+              accordionPleats.rounded() == accordionPleats,
               packingLength <= StitchDocument.maximumDimension,
               !packed || packingLength > 0, let color = Self.color(lineColor),
               let transition = StitchTransition(rawValue: transition) else { return nil }
@@ -175,6 +185,7 @@ struct SavedStitchDocument: Codable, Equatable {
         style.blur = blur; style.feather = feather; style.visible = visible
         style.tearWidth = tearWidth; style.tearRoughness = tearRoughness
         style.foldDepth = foldDepth; style.foldStrength = foldStrength
+        style.accordionWidth = accordionWidth; style.accordionPleats = accordionPleats
         style.breakSize = breakSize
         var document = StitchDocument(pieces: restored, style: style, background: fill)
         document.restorePackingState(packed: packed, horizontal: packingHorizontal, length: packingLength)

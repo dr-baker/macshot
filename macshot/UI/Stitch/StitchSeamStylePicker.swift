@@ -3,6 +3,7 @@ import AppKit
 /// Native buttons keep keyboard focus, actions, and selection available to AppKit and VoiceOver.
 @MainActor
 final class StitchSeamStylePicker: NSView {
+    static let preferredHeight: CGFloat = 124
     var onSelectionChanged: ((StitchTransition) -> Void)?
     var selection: StitchTransition = .wave { didSet { syncButtons() } }
     var isEnabled = true { didSet { syncButtons() } }
@@ -51,9 +52,14 @@ final class StitchSeamStylePicker: NSView {
     override func layout() {
         super.layout()
         let spacing: CGFloat = 6
-        let width = (bounds.width - spacing * CGFloat(buttons.count - 1)) / CGFloat(buttons.count)
+        let columns = 3
+        let rows = (buttons.count + columns - 1) / columns
+        let width = (bounds.width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+        let height = (bounds.height - spacing * CGFloat(rows - 1)) / CGFloat(rows)
         for (index, button) in buttons.enumerated() {
-            button.frame = NSRect(x: CGFloat(index) * (width + spacing), y: 0, width: width, height: bounds.height)
+            button.frame = NSRect(x: CGFloat(index % columns) * (width + spacing),
+                y: bounds.height - CGFloat(index / columns + 1) * height - CGFloat(index / columns) * spacing,
+                width: width, height: height)
         }
     }
 
@@ -63,6 +69,7 @@ final class StitchSeamStylePicker: NSView {
         case .blend: return L("Blend")
         case .torn: return L("Torn")
         case .fold: return L("Fold")
+        case .accordion: return L("Accordion")
         case .breakLine: return L("Break")
         }
     }

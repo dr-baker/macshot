@@ -473,19 +473,20 @@ class OverlayView: NSView {
     var beautifyEnabled: Bool = UserDefaults.standard.bool(forKey: "beautifyEnabled")
     var beautifyStyleIndex: Int = UserDefaults.standard.integer(
         forKey: "beautifyStyleIndex")
+    var beautifyWallpaperID: String? = UserDefaults.standard.string(forKey: "beautifyWallpaperID")
     var beautifyMode: BeautifyMode =
         BeautifyMode(rawValue: UserDefaults.standard.integer(forKey: "beautifyMode")) ?? .window
     var beautifyPadding: CGFloat = {
         let v = UserDefaults.standard.object(forKey: "beautifyPadding") as? Double
-        return v != nil ? CGFloat(v!) : 48
+        return v.map { CGFloat($0) } ?? BeautifyConfig.defaultPadding
     }()
     var beautifyCornerRadius: CGFloat = {
         let v = UserDefaults.standard.object(forKey: "beautifyCornerRadius") as? Double
-        return v != nil ? CGFloat(v!) : 10
+        return v.map { CGFloat($0) } ?? BeautifyConfig.defaultCornerRadius
     }()
     var beautifyShadowRadius: CGFloat = {
         let v = UserDefaults.standard.object(forKey: "beautifyShadowRadius") as? Double
-        return v != nil ? CGFloat(v!) : 20
+        return v.map { CGFloat($0) } ?? BeautifyConfig.defaultShadow
     }()
     private(set) var beautifyBgRadius: CGFloat = {
         let v = UserDefaults.standard.object(forKey: "beautifyBgRadius") as? Double
@@ -8519,6 +8520,8 @@ class OverlayView: NSView {
         case .beautifyStyle:
             beautifyStyleIndex = (beautifyStyleIndex + 1) % BeautifyRenderer.styles.count
             UserDefaults.standard.set(beautifyStyleIndex, forKey: "beautifyStyleIndex")
+            beautifyWallpaperID = nil
+            UserDefaults.standard.removeObject(forKey: "beautifyWallpaperID")
             needsDisplay = true
         case .delayCapture:
             break
@@ -10583,14 +10586,15 @@ class OverlayView: NSView {
         colorWheel.dismiss()
         beautifyEnabled = UserDefaults.standard.bool(forKey: "beautifyEnabled")
         beautifyStyleIndex = UserDefaults.standard.integer(forKey: "beautifyStyleIndex")
+        beautifyWallpaperID = UserDefaults.standard.string(forKey: "beautifyWallpaperID")
         beautifyMode =
             BeautifyMode(rawValue: UserDefaults.standard.integer(forKey: "beautifyMode")) ?? .window
         beautifyPadding = CGFloat(
-            UserDefaults.standard.object(forKey: "beautifyPadding") as? Double ?? 48)
+            UserDefaults.standard.object(forKey: "beautifyPadding") as? Double ?? Double(BeautifyConfig.defaultPadding))
         beautifyCornerRadius = CGFloat(
-            UserDefaults.standard.object(forKey: "beautifyCornerRadius") as? Double ?? 10)
+            UserDefaults.standard.object(forKey: "beautifyCornerRadius") as? Double ?? Double(BeautifyConfig.defaultCornerRadius))
         beautifyShadowRadius = CGFloat(
-            UserDefaults.standard.object(forKey: "beautifyShadowRadius") as? Double ?? 20)
+            UserDefaults.standard.object(forKey: "beautifyShadowRadius") as? Double ?? Double(BeautifyConfig.defaultShadow))
         beautifyBgRadius = CGFloat(
             UserDefaults.standard.object(forKey: "beautifyBgRadius") as? Double ?? 8)
         // The custom-style background is loaded here (not lazily in the

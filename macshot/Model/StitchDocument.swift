@@ -50,7 +50,7 @@ enum StitchBackground {
 enum StitchPlacement { case free, packed }
 
 enum StitchTransition: String, CaseIterable, Codable {
-    case wave, blend, torn, fold, breakLine
+    case wave, blend, torn, fold, accordion, breakLine
 
     var usesBlur: Bool { self == .wave || self == .blend || self == .breakLine }
     var hasEditableColor: Bool { self == .wave || self == .breakLine }
@@ -71,6 +71,8 @@ struct StitchStyle {
     var tearRoughness: CGFloat = 3
     var foldDepth: CGFloat = 18
     var foldStrength: CGFloat = 1
+    var accordionWidth: CGFloat = 30
+    var accordionPleats: CGFloat = 3
     var breakSize: CGFloat = 3
     var visible = true
 }

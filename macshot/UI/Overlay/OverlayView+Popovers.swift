@@ -144,14 +144,19 @@ extension OverlayView {
     }
 
     func showBeautifyGradientPopover(anchorView: NSView? = nil, anchorRect: NSRect = .zero) {
-        let picker = GradientPickerView(selectedIndex: beautifyStyleIndex)
-        picker.onSelect = { [weak self] idx in
+        let picker = BeautifyBackgroundPickerView(
+            styleIndex: beautifyStyleIndex,
+            wallpaperID: beautifyStyleIndex == -1 ? beautifyWallpaperID : nil,
+            padding: beautifyPadding, radius: beautifyCornerRadius, shadow: beautifyShadowRadius)
+        picker.onSelectGradient = { [weak self] idx in
             guard let self = self else { return }
             self.beautifyStyleIndex = idx
             UserDefaults.standard.set(idx, forKey: "beautifyStyleIndex")
             if idx >= 0 {
                 // Gradient selected — clear custom background
                 self.customBeautifyBackground = nil
+                self.beautifyWallpaperID = nil
+                UserDefaults.standard.removeObject(forKey: "beautifyWallpaperID")
             } else {
                 // Custom image selected — load from storage
                 self.loadCustomBeautifyBackground()
@@ -167,6 +172,14 @@ extension OverlayView {
             PopoverHelper.dismiss()
             self?.pickCustomBeautifyBackground()
         }
+        picker.onSelectWallpaper = { [weak self] wallpaper, image, data in
+            guard let self else { return }
+            self.setBeautifyBackground(NSImage(cgImage: image, size: .zero), pngData: data, wallpaperID: wallpaper.id)
+        }
+        picker.onSelectFrame = { [weak self] preset in
+            guard let self else { return }
+            self.applyBeautifyFrame(preset)
+        }
         if let anchor = anchorView {
             PopoverHelper.show(
                 picker, size: picker.preferredSize, relativeTo: anchor.bounds, of: anchor,
@@ -177,6 +190,34 @@ extension OverlayView {
                 at: NSPoint(x: anchorRect.midX, y: anchorRect.midY),
                 in: self, preferredEdge: .minY)
         }
+    }
+
+    func applyBeautifyFrame(_ preset: BeautifyFramePreset) {
+        beautifyPadding = preset.padding
+        beautifyCornerRadius = preset.radius
+        beautifyShadowRadius = preset.shadow
+        UserDefaults.standard.set(Double(preset.padding), forKey: "beautifyPadding")
+        UserDefaults.standard.set(Double(preset.radius), forKey: "beautifyCornerRadius")
+        UserDefaults.standard.set(Double(preset.shadow), forKey: "beautifyShadowRadius")
+        cachedCompositedImage = nil
+        needsDisplay = true
+        onContentChanged?()
+        rebuildToolbarLayout()
+    }
+
+    func setBeautifyBackground(_ image: NSImage, pngData: Data, wallpaperID: String? = nil) {
+        UserDefaults.standard.set(pngData, forKey: "beautifyCustomBgImageData")
+        UserDefaults.standard.set(wallpaperID, forKey: "beautifyWallpaperID")
+        beautifyWallpaperID = wallpaperID
+        customBeautifyBackground = image
+        prepareBeautifyBackgroundCache()
+        beautifyStyleIndex = -1
+        UserDefaults.standard.set(-1, forKey: "beautifyStyleIndex")
+        cachedCompositedImage = nil
+        needsDisplay = true
+        updateBeautifySwatch(styleIndex: -1)
+        onContentChanged?()
+        rebuildToolbarLayout()
     }
 
     func pickCustomBeautifyBackground() {
@@ -192,20 +233,9 @@ extension OverlayView {
             self?.window?.level = savedLevel ?? .normal
             guard let self = self, response == .OK, let url = panel.url,
                   let image = NSImage(contentsOf: url) else { return }
-            // Store image data (PNG) in UserDefaults for persistence
-            if let tiff = image.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiff),
-               let pngData = bitmap.representation(using: .png, properties: [:]) {
-                UserDefaults.standard.set(pngData, forKey: "beautifyCustomBgImageData")
-            }
-            self.customBeautifyBackground = image
-            self.prepareBeautifyBackgroundCache()
-            self.beautifyStyleIndex = -1
-            UserDefaults.standard.set(-1, forKey: "beautifyStyleIndex")
-            self.cachedCompositedImage = nil
-            self.needsDisplay = true
-            self.updateBeautifySwatch(styleIndex: -1)
-            self.rebuildToolbarLayout()
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                  let data = MacOSWallpapers.pngData(cgImage) else { return }
+            self.setBeautifyBackground(image, pngData: data)
         }
     }
 
