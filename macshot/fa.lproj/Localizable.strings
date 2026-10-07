@@ -1055,3 +1055,8 @@
 "Glass requires macOS 26. Classic is shown on this Mac." = "Glass requires macOS 26. Classic is shown on this Mac.";
 
 "Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "نسخهٔ آفلاین: یکپارچه‌سازی‌های بارگذاری و فضای ابری حذف شده‌اند. اسکرین‌شات‌ها و ضبط‌ها محلی می‌مانند مگر اینکه خودتان آن‌ها را به اشتراک بگذارید یا ذخیره کنید.";
+
+/* Accordion seam. English fallback pending translation. */
+"Accordion" = "Accordion";
+"Seam width" = "Seam width";
+"Pleats" = "Pleats";

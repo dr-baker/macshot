@@ -12,7 +12,7 @@ private final class StitchSlider: NSSlider {
 }
 
 private enum StitchSeamParameter: Int, CaseIterable {
-    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength
+    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength, accordionWidth, accordionPleats
 
     func keyPath(for transition: StitchTransition) -> WritableKeyPath<StitchStyle, CGFloat> {
         switch self {
@@ -28,6 +28,8 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .tearWidth: return \.tearWidth
         case .foldDepth: return \.foldDepth
         case .foldStrength: return \.foldStrength
+        case .accordionWidth: return \.accordionWidth
+        case .accordionPleats: return \.accordionPleats
         }
     }
 
@@ -40,6 +42,8 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .tearWidth: return 2...32
         case .foldDepth: return 0...80
         case .foldStrength: return 0...Double(StitchStyle.maximumFoldStrength)
+        case .accordionWidth: return 4...64
+        case .accordionPleats: return 2...6
         }
     }
 
@@ -57,11 +61,14 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .tearWidth: return L("Paper width")
         case .foldDepth: return L("Fold depth")
         case .foldStrength: return L("Strength")
+        case .accordionWidth: return L("Seam width")
+        case .accordionPleats: return L("Pleats")
         }
     }
 
     func formattedValue(_ value: CGFloat) -> String {
-        self == .foldStrength ? String(format: "%.0f%%", Double(value / StitchStyle.maximumFoldStrength) * 100)
+        if self == .accordionPleats { return String(Int(value.rounded())) }
+        return self == .foldStrength ? String(format: "%.0f%%", Double(value / StitchStyle.maximumFoldStrength) * 100)
             : String(format: "%.1f px", Double(value))
     }
 
@@ -71,6 +78,7 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .blend: return [.blur, .feather]
         case .torn: return [.tearWidth, .shape]
         case .fold: return [.foldDepth, .foldStrength]
+        case .accordion: return [.accordionWidth, .accordionPleats]
         }
     }
 }
@@ -149,9 +157,11 @@ final class StitchEditorController: NSObject {
             guard let self else { return }
             var next = self.document
             if next.collapse(axis: axis, from: from, to: to) {
+                let animation = self.canvas.prepareAccordionCollapse(axis: axis, from: from, to: to)
                 guard self.commitDocument(next) else { return }
                 self.canvas.selectedID = nil
                 self.refresh(); self.showFeedback(L("Space collapsed. Undo restores the original pieces."))
+                self.canvas.animateAccordionCollapse(animation)
             } else {
                 self.showFeedback(L("Select a band inside the canvas and leave some content on either side."))
             }
@@ -263,6 +273,10 @@ final class StitchEditorController: NSObject {
             slider.identifier = NSUserInterfaceItemIdentifier("stitch.seam.\(parameter)")
             slider.tag = parameter.rawValue
             slider.isContinuous = true
+            if parameter == .accordionPleats {
+                slider.numberOfTickMarks = 5
+                slider.allowsTickMarkValuesOnly = true
+            }
             slider.controlSize = .small
             slider.trackFillColor = ToolbarLayout.accentColor
             slider.setAccessibilityLabel(label.stringValue)
@@ -415,12 +429,12 @@ final class StitchEditorController: NSObject {
         for parameter in StitchSeamParameter.allCases where !s.visible || !parameters.contains(parameter) {
             PopoverHelper.moveFocusBeforeChanging(sliders[parameter.rawValue])
         }
-        let height = 136 + (hasColor ? 34 : 0) + CGFloat(parameters.count) * 38
+        let height = 72 + StitchSeamStylePicker.preferredHeight + (hasColor ? 34 : 0) + CGFloat(parameters.count) * 38
         let size = NSSize(width: 368, height: height)
         seamOptions.setFrameSize(size)
         // The popover grows above its anchor, so keep treatment choices beside that anchor.
         seamToggle.frame = NSRect(x: 12, y: 11, width: 344, height: 24)
-        seamStylePicker.frame = NSRect(x: 12, y: 46, width: 344, height: 64)
+        seamStylePicker.frame = NSRect(x: 12, y: 46, width: 344, height: StitchSeamStylePicker.preferredHeight)
         seamStylePicker.selection = s.transition
         seamStylePicker.isEnabled = s.visible
         seamToggle.state = s.visible ? .on : .off
@@ -655,14 +669,15 @@ final class StitchEditorController: NSObject {
         guard document.style.visible, let parameter = StitchSeamParameter(rawValue: sender.tag),
               StitchSeamParameter.visible(for: document.style.transition).contains(parameter) else { return }
         let keyPath = parameter.keyPath(for: document.style.transition)
+        let value = parameter == .accordionPleats ? sender.doubleValue.rounded() : sender.doubleValue
         if adjustingStyle {
-            document.style[keyPath: keyPath] = sender.doubleValue
+            document.style[keyPath: keyPath] = value
         } else {
             var next = document
-            next.style[keyPath: keyPath] = sender.doubleValue
+            next.style[keyPath: keyPath] = value
             guard commitDocument(next) else { syncSeamControls(); return }
         }
-        values[sender.tag].stringValue = parameter.formattedValue(sender.doubleValue)
+        values[sender.tag].stringValue = parameter.formattedValue(value)
         scheduleRender()
     }
     private func selectSeamTransition(_ transition: StitchTransition) {

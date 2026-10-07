@@ -16,7 +16,7 @@ enum StitchSeamDrawing {
                 displacement = sin(along * .pi * 2 / 28) * style.wave
             case .torn:
                 displacement = tearDisplacement(along) * style.tearRoughness
-            case .blend, .fold, .breakLine:
+            case .blend, .fold, .accordion, .breakLine:
                 displacement = 0
             }
             let p = point(join, along: join.start + along, normal: displacement * envelope)
@@ -34,6 +34,7 @@ enum StitchSeamDrawing {
         case .torn: return style.tearWidth > 0 ? style.tearRoughness + style.tearWidth / 2
             + min(style.tearRoughness * 0.4, style.tearWidth * 0.25) + 2 : 0
         case .fold: return StitchFoldGeometry.extent(style: style)
+        case .accordion: return style.accordionWidth > 0 ? style.accordionWidth / 2 + 3 : 0
         case .breakLine: return style.lineWidth > 0 ? max(3, style.breakSize * 1.5 + 3) + style.lineWidth / 2 : 0
         }
     }
@@ -56,6 +57,8 @@ enum StitchSeamDrawing {
             drawTear(join, style: style, palette: paper, in: context)
         case .fold:
             drawFold(join, style: style, paper: paper, in: context)
+        case .accordion:
+            drawAccordion(join, style: style, paper: paper, in: context)
         case .breakLine:
             guard style.lineWidth > 0 else { return }
             drawBreak(join, style: style, in: context)
@@ -225,6 +228,52 @@ enum StitchSeamDrawing {
                        space: CGColorSpace(name: CGColorSpace.sRGB)!,
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
+    private static func drawAccordion(_ join: StitchJoin, style: StitchStyle, paper: StitchPaperPalette, in context: CGContext) {
+        guard let geometry = StitchAccordionGeometry(join: join, style: style), paper.hasVisiblePaper else { return }
+        context.setBlendMode(.sourceAtop)
+        let half = geometry.width / 2
+        context.saveGState()
+        context.addPath(geometry.band(from: -half, to: half))
+        context.clip()
+        if let image = paperImage(paper, axis: join.axis, lift: 0) {
+            let rect = geometry.bounds(from: -half, to: half)
+            context.interpolationQuality = .high
+            context.translateBy(x: rect.minX, y: rect.maxY)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(image, in: CGRect(origin: .zero, size: rect.size))
+        }
+        context.restoreGState()
+        func shade(from start: CGFloat, to end: CGFloat, colors: [NSColor], locations: [CGFloat]) {
+            guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                colors: colors.map(\.cgColor) as CFArray, locations: locations) else { return }
+            context.saveGState()
+            context.addPath(geometry.band(from: start, to: end))
+            context.clip()
+            context.drawLinearGradient(gradient,
+                start: geometry.point(along: (join.start + join.end) / 2, normal: start),
+                end: geometry.point(along: (join.start + join.end) / 2, normal: end),
+                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+            context.restoreGState()
+        }
+        for face in geometry.faces {
+            // Broad front faces catch the light. Narrow return faces sit in shadow,
+            // with a sharp ridge rather than a blurred stripe across the screenshot.
+            if face.isReturn {
+                shade(from: face.start, to: face.end,
+                    colors: [NSColor.black.withAlphaComponent(0.40), NSColor.black.withAlphaComponent(0.10), .clear],
+                    locations: [0, 0.6, 1])
+            } else {
+                shade(from: face.start, to: face.end,
+                    colors: [NSColor.white.withAlphaComponent(0.18), NSColor.white.withAlphaComponent(0.04),
+                             NSColor.black.withAlphaComponent(0.24)], locations: [0, 0.38, 1])
+            }
+            shade(from: face.start, to: min(face.end, face.start + 0.7),
+                colors: [NSColor.white.withAlphaComponent(face.isReturn ? 0.10 : 0.26), .clear], locations: [0, 1])
+        }
+        shade(from: half, to: half + 2.5,
+            colors: [NSColor.black.withAlphaComponent(0.18), .clear], locations: [0, 1])
     }
 
     private static func drawFold(_ join: StitchJoin, style: StitchStyle, paper: StitchPaperPalette, in context: CGContext) {

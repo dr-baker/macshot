@@ -1053,3 +1053,8 @@
 "Glass requires macOS 26. Classic is shown on this Mac." = "Le verre nécessite macOS 26. Le style classique est affiché sur ce Mac.";
 
 "Offline build: upload and cloud storage integrations are removed. Screenshots and recordings stay local unless you share or save them yourself." = "Version hors ligne : les intégrations de téléversement et de stockage cloud sont supprimées. Les captures d'écran et les enregistrements restent locaux à moins que vous ne les partagiez ou ne les enregistriez vous-même.";
+
+/* Accordion seam. English fallback pending translation. */
+"Accordion" = "Accordion";
+"Seam width" = "Seam width";
+"Pleats" = "Pleats";

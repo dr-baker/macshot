@@ -363,12 +363,13 @@ enum StitchRenderer {
         }
         let usesPaper = (style.transition == .torn && style.tearWidth > 0)
             || (style.transition == .fold && style.foldDepth > 0 && style.foldStrength > 0)
+            || (style.transition == .accordion && style.accordionWidth > 0)
         if usesPaper && style.transition == .fold {
             StitchFoldWarp.apply(joins: joins, style: style, source: base, destination: final,
                 bounds: bounds, scale: scale, protectedRegions: protectedRegions,
                 coverage: coverage(document.pieces, bounds: bounds, scale: scale, width: width, height: height))
         }
-        if usesPaper && style.transition == .torn {
+        if usesPaper && (style.transition == .torn || style.transition == .accordion) {
             // Source alpha prevents paper, fibers, and shadows from inventing
             // pixels in transparent parts of an otherwise covered rectangle.
             // Use actual raster dimensions so rounded previews align exactly.

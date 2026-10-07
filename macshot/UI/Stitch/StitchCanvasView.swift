@@ -19,7 +19,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     }
     var mode = Mode.removeSpace {
         didSet {
-            if oldValue != mode { cancelGesture() }
+            if oldValue != mode { cancelCollapseAnimation(); cancelGesture() }
             window?.invalidateCursorRects(for: self)
             needsDisplay = true
         }
@@ -82,6 +82,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     private var moving = false
     private var dragPreviewOrigin: CGPoint?
     private var hoverTracking: NSTrackingArea?
+    private var collapseAnimation: StitchAccordionCollapseView?
     private(set) var hoveredID: UUID?
     struct AlignmentGuide: Equatable {
         let start: CGPoint
@@ -102,6 +103,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     required init?(coder: NSCoder) { fatalError() }
 
     func refresh(_ value: StitchDocument, preview: CGImage?) {
+        if !document.isIdentical(to: value) { cancelCollapseAnimation() }
         document = value
         if !value.pieces.contains(where: { $0.id == hoveredID }) { hoveredID = nil }
         self.preview = preview
@@ -321,7 +323,54 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         }
     }
 
-    func cancelEditingGesture() { cancelGesture() }
+    func cancelEditingGesture() { cancelCollapseAnimation(); cancelGesture() }
+
+    func prepareAccordionCollapse(axis: StitchAxis, from: CGFloat, to: CGFloat) -> StitchAccordionCollapseView.Snapshot? {
+        cancelCollapseAnimation()
+        guard inlineEditor != nil, window != nil, document.style.visible, document.style.transition == .accordion,
+              document.style.accordionWidth.isFinite, document.style.accordionWidth > 0,
+              document.style.accordionPleats.isFinite,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let band = document.removalBand(axis: axis, from: from, to: to),
+              let image = collapseTexture() else { return nil }
+        return StitchAccordionCollapseView.Snapshot(image: image, frame: frame, documentBounds: contentBounds,
+            band: band, axis: axis, style: document.style)
+    }
+
+    func animateAccordionCollapse(_ before: StitchAccordionCollapseView.Snapshot?) {
+        guard let before, let parent = superview, let after = collapseTexture(),
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let animation = StitchAccordionCollapseView(before: before, afterImage: after, afterFrame: frame)
+        collapseAnimation = animation
+        parent.addSubview(animation, positioned: .above, relativeTo: self)
+        animation.play { [weak self, weak animation] in
+            animation?.removeFromSuperview()
+            if self?.collapseAnimation === animation { self?.collapseAnimation = nil }
+        }
+    }
+
+    private func collapseTexture() -> CGImage? {
+        guard let editor = inlineEditor, document.canRender,
+              editor.annotations.isEmpty || annotationPreview != nil,
+              let source = editor.screenshotImage?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let scale = min(1, StitchAccordionCollapseView.maximumTextureDimension / max(contentBounds.width, contentBounds.height))
+        let width = max(1, Int(ceil(contentBounds.width * scale)))
+        let height = max(1, Int(ceil(contentBounds.height * scale)))
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        context.interpolationQuality = .high
+        context.draw(source, in: rect)
+        if let annotationPreview { context.draw(annotationPreview, in: rect) }
+        return context.makeImage()
+    }
+
+    private func cancelCollapseAnimation() {
+        collapseAnimation?.layer?.removeAllAnimations()
+        collapseAnimation?.removeFromSuperview()
+        collapseAnimation = nil
+    }
 
     var removalBand: CGRect? { removal?.rect }
     var removalAmountText: String? { removal.map { Self.formatRemovalAmount($0.length) } }
@@ -454,6 +503,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
         if window !== newWindow {
+            cancelCollapseAnimation()
             ScreenshotCommandResponder.uninstallStitchCanvas(self, in: window)
             cancelGesture()
         }
@@ -468,6 +518,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         }
     }
     @objc private func windowDidResignKey(_ notification: Notification) {
+        cancelCollapseAnimation()
         clearBandHover()
     }
     override func mouseMoved(with event: NSEvent) {
@@ -492,6 +543,7 @@ final class StitchCanvasView: NSView, NSMenuItemValidation {
         clearBandHover()
     }
     override func mouseDown(with event: NSEvent) {
+        cancelCollapseAnimation()
         window?.makeFirstResponder(self)
         hoveredID = nil; alignmentGuides = []; packedPreview = nil
         let p = canvasPoint(event)
