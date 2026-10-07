@@ -11,12 +11,13 @@ struct CaptureEditState: Codable, Equatable {
     var beautifyEnabled: Bool = false
     var beautifyModeRaw: Int = BeautifyMode.window.rawValue
     var beautifyStyleIndex: Int = 0
-    var beautifyPadding: Double = 48
-    var beautifyCornerRadius: Double = 10
-    var beautifyShadowRadius: Double = 20
+    var beautifyPadding: Double = Double(BeautifyConfig.defaultPadding)
+    var beautifyCornerRadius: Double = Double(BeautifyConfig.defaultCornerRadius)
+    var beautifyShadowRadius: Double = Double(BeautifyConfig.defaultShadow)
     var beautifyBackgroundBlur: Double = 0
     var beautifyIsWindowSnap: Bool = false
     var customBeautifyBackgroundPNG: Data?
+    var beautifyWallpaperID: String?
     var stitchDocument: SavedStitchDocument?
 
     var effectsPreset: ImageEffectPreset {
@@ -88,6 +89,7 @@ extension CaptureEditState {
         beautifyBackgroundBlur = c.decode(.beautifyBackgroundBlur, or: 0)
         beautifyIsWindowSnap = c.decode(.beautifyIsWindowSnap, or: false)
         customBeautifyBackgroundPNG = c.decodeOptional(.customBeautifyBackgroundPNG)
+        beautifyWallpaperID = c.decodeOptional(.beautifyWallpaperID)
         // A malformed present Stitch payload must make history use its saved
         // composite, rather than silently reopening incomplete editable data.
         stitchDocument = try c.decodeIfPresent(SavedStitchDocument.self, forKey: .stitchDocument)
@@ -133,6 +135,7 @@ extension OverlayView {
             beautifyBackgroundBlur: Double(beautifyBackgroundBlur),
             beautifyIsWindowSnap: selectionIsWindowSnap,
             customBeautifyBackgroundPNG: customBackgroundData,
+            beautifyWallpaperID: beautifyStyleIndex == -1 ? beautifyWallpaperID : nil,
             stitchDocument: (self as? ImageEditingView)?.savedStitchDocument
         )
     }
@@ -156,6 +159,7 @@ extension OverlayView {
         beautifyBackgroundBlur = CGFloat(state.beautifyBackgroundBlur)
         selectionIsWindowSnap = state.beautifyIsWindowSnap
         customBeautifyBackground = state.customBeautifyBackground
+        beautifyWallpaperID = state.beautifyWallpaperID
         if customBeautifyBackground != nil {
             prepareBeautifyBackgroundCache()
         } else {

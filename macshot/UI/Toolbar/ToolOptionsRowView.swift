@@ -1622,7 +1622,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         }
 
         // Padding slider
-        curX = addBeautifySlider(.padding, at: curX, label: L("Padding"), value: ov.beautifyPadding, min: 16, max: 96, isEnabled: controlsEnabled, action: #selector(beautifyPaddingChanged(_:)))
+        curX = addBeautifySlider(.padding, at: curX, label: L("Padding"), value: ov.beautifyPadding, min: 0, max: 96, isEnabled: controlsEnabled, action: #selector(beautifyPaddingChanged(_:)))
 
         // Corner radius slider — hidden for snapped windows (native corners are baked in)
         if !isSnap {
@@ -1650,7 +1650,8 @@ class ToolOptionsRowView: ScreenshotPanelView {
         swatchBtn.imageScaling = .scaleProportionallyUpOrDown
         swatchBtn.target = self
         swatchBtn.action = #selector(beautifyGradientClicked(_:))
-        swatchBtn.toolTip = L("Gradient Style")
+        swatchBtn.toolTip = L("Background and Frame")
+        swatchBtn.setAccessibilityLabel(L("Background and Frame"))
         swatchBtn.tag = 995
         addSubview(swatchBtn)
         curX += swatchSize + 2

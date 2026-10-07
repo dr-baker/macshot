@@ -1058,3 +1058,13 @@
 "Accordion" = "Accordion";
 "Seam width" = "Seam width";
 "Pleats" = "Pleats";
+
+/* Wallpaper framing. English fallback pending translation. */
+"Background and Frame" = "Background and Frame";
+"Background type" = "Background type";
+"Compact" = "Compact";
+"Frame spacing" = "Frame spacing";
+"Gradients" = "Gradients";
+"No installed wallpapers found. Choose an image from Gradients." = "No installed wallpapers found. Choose an image from Gradients.";
+"Roomy" = "Roomy";
+"Wallpapers" = "Wallpapers";

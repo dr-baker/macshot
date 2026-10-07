@@ -110,9 +110,13 @@ final class LegacyDecodingTests: XCTestCase {
         XCTAssertEqual(state.effectsBrightness, 0.2, accuracy: 0.0001)
     }
 
-    func testEmptyEditStateObjectDecodesToDefaults() throws {
+    func testEmptyEditStateObjectPreservesLegacyFrameDefaults() throws {
         let state = try XCTUnwrap(try? JSONDecoder().decode(CaptureEditState.self, from: Data("{}".utf8)))
-        XCTAssertEqual(state, CaptureEditState())
+        var expected = CaptureEditState()
+        expected.beautifyPadding = 48
+        expected.beautifyCornerRadius = 10
+        expected.beautifyShadowRadius = 20
+        XCTAssertEqual(state, expected, "Opening older captures must preserve their original framing")
     }
 
     func testEditStateRoundTrips() throws {

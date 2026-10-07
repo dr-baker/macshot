@@ -159,3 +159,17 @@ macshot-deploy
 Resolve any merge conflicts in the local development guards and script before
 deploying. Merge feature branches with `--no-ff` so each feature has a clear
 entry in the history.
+
+## Frame a screenshot
+
+Open **Beautify**, then **Background and Frame**. Choose **Gradients** or
+**Wallpapers**. The wallpaper gallery uses full-resolution images and still frames
+from wallpapers installed with macOS. Available choices depend on this Mac.
+The selected image is saved with the capture, so reopening history does not
+depend on the wallpaper file or the current desktop.
+
+Choose **Compact** for a narrow 12-point frame, coordinated corners, and a short
+shadow. **Roomy** restores wider spacing. The padding slider reaches zero for
+edge-to-edge output. New captures start with narrow spacing; saved preferences
+and existing history retain their frame dimensions. Custom images remain in
+the Gradients picker. Wallpaper decoding and thumbnails run off the main thread.
