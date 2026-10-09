@@ -470,9 +470,12 @@ class OverlayView: NSView {
     private var preSelectionPresetButtonRect: NSRect = .zero
 
     // Beautify
+    var beautifyBackgroundSelection = BeautifyBackgroundSelection()
     var beautifyEnabled: Bool = UserDefaults.standard.bool(forKey: "beautifyEnabled")
     var beautifyStyleIndex: Int = UserDefaults.standard.integer(
-        forKey: "beautifyStyleIndex")
+        forKey: "beautifyStyleIndex") {
+        didSet { beautifyBackgroundSelection.invalidate() }
+    }
     var beautifyWallpaperID: String? = UserDefaults.standard.string(forKey: "beautifyWallpaperID")
     var beautifyMode: BeautifyMode =
         BeautifyMode(rawValue: UserDefaults.standard.integer(forKey: "beautifyMode")) ?? .window
@@ -494,7 +497,10 @@ class OverlayView: NSView {
     }()
 
     var customBeautifyBackground: NSImage? {
-        didSet { cachedBeautifyBgCGImage = nil }
+        didSet {
+            beautifyBackgroundSelection.invalidate()
+            cachedBeautifyBgCGImage = nil
+        }
     }
     var beautifyBackgroundBlur: CGFloat = UserDefaults.standard.object(forKey: "beautifyBgBlur") as? CGFloat ?? 0 {
         didSet {
@@ -5441,6 +5447,18 @@ class OverlayView: NSView {
     }
 
     /// Reposition toolbar strips based on current selection/bounds. Cheap — safe to call from draw().
+    var screenshotPresentationRect: NSRect {
+        if (self as? ImageEditingView)?.isShowingStitchPaperPreview == true {
+            return selectionRect.insetBy(dx: -ScreenshotPresentation.paperPadding,
+                dy: -ScreenshotPresentation.paperPadding)
+        }
+        guard beautifyEnabled, !isScrollCapturing, !isRecording else { return selectionRect }
+        let config = beautifyConfig
+        return NSRect(x: selectionRect.minX - config.padding, y: selectionRect.minY - config.padding,
+            width: selectionRect.width + config.padding * 2,
+            height: selectionRect.height + (config.mode == .window ? 28 : 0) + config.padding * 2)
+    }
+
     private func repositionToolbars() {
         guard let bottomStrip = bottomStripView, let rightStrip = rightStripView else { return }
 
@@ -5465,8 +5483,8 @@ class OverlayView: NSView {
 
         // Anchor rect: beautify-expanded when active, selection otherwise
         let config = beautifyConfig
-        let bPad = config.padding
         let showingPaper = (self as? ImageEditingView)?.isShowingStitchPaperPreview == true
+        let bPad = showingPaper ? ScreenshotPresentation.paperPadding : config.padding
         let titleBarH: CGFloat = config.mode == .window && !showingPaper ? 28 : 0
         let expandedAnchor = NSRect(
             x: selectionRect.minX - bPad, y: selectionRect.minY - bPad,
@@ -5484,7 +5502,7 @@ class OverlayView: NSView {
                 width: fromRect.width + (toRect.width - fromRect.width) * eased,
                 height: fromRect.height + (toRect.height - fromRect.height) * eased
             )
-        } else if beautifyEnabled && !isScrollCapturing && !isRecording {
+        } else if (showingPaper || beautifyEnabled) && !isScrollCapturing && !isRecording {
             anchorRect = expandedAnchor
         } else {
             anchorRect = selectionRect

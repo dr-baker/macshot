@@ -1,28 +1,79 @@
 import Cocoa
 
-/// Backgrounds and coordinated frame presets share the existing Beautify menu.
+/// The editor owns pending background choices, so dismissing a gallery cannot
+/// discard the selection or let an older load replace a later choice.
+@MainActor
+final class BeautifyBackgroundSelection {
+    nonisolated struct LoadedWallpaper: @unchecked Sendable {
+        let image: CGImage
+        let pngData: Data
+    }
+
+    typealias Loader = (MacOSWallpaper, @escaping @MainActor (LoadedWallpaper?) -> Void) -> Void
+    private let loader: Loader
+    private var currentRequest: UUID?
+    private static let selectionQueue = DispatchQueue(label: "com.drbaker.macshot.wallpaper-selection", qos: .userInitiated)
+
+    init(loader: Loader? = nil) {
+        self.loader = loader ?? Self.loadWallpaper
+    }
+
+    func invalidate() { currentRequest = nil }
+
+    func select(_ wallpaper: MacOSWallpaper, completion: @escaping @MainActor (LoadedWallpaper?) -> Void) {
+        let request = UUID()
+        currentRequest = request
+        loader(wallpaper) { [weak self] result in
+            guard let self, self.currentRequest == request else { return }
+            self.currentRequest = nil
+            completion(result)
+        }
+    }
+
+    private static func loadWallpaper(_ wallpaper: MacOSWallpaper,
+                                      completion: @escaping @MainActor (LoadedWallpaper?) -> Void) {
+        selectionQueue.async {
+            let result = MacOSWallpapers.image(for: wallpaper, maxDimension: 4096).flatMap { image in
+                MacOSWallpapers.pngData(image).map { LoadedWallpaper(image: image, pngData: $0) }
+            }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+}
+
+/// Beautify's background gallery can also be used without its frame decoration.
 final class BeautifyBackgroundPickerView: NSView {
     var onSelectGradient: ((Int) -> Void)?
     var onCustomImage: (() -> Void)?
-    var onSelectWallpaper: ((MacOSWallpaper, CGImage, Data) -> Void)?
+    var onSelectWallpaper: (@MainActor (MacOSWallpaper, CGImage, Data) -> Void)?
     var onSelectFrame: ((BeautifyFramePreset) -> Void)?
+    var onChangeBackgroundBlur: ((CGFloat) -> Void)?
 
     private let gradients: GradientPickerView
     private let tabs = NSSegmentedControl(labels: [L("Gradients"), L("Wallpapers")], trackingMode: .selectOne, target: nil, action: nil)
     private let frames = NSSegmentedControl(labels: [L("Compact"), L("Roomy")], trackingMode: .selectOne, target: nil, action: nil)
+    private let blur = NSSlider(value: 0, minValue: 0, maxValue: 50, target: nil, action: nil)
+    private let blurValue = NSTextField(labelWithString: "")
     private let scrollView = NSScrollView()
     private let gallery = NSView()
     private let status = NSTextField(labelWithString: "")
     private let loading = NSProgressIndicator()
     private let wallpapers: [MacOSWallpaper]
+    private let backgroundOnly: Bool
+    private var usesImageBackground: Bool
     private var buttons: [NSButton] = []
-    private var selectionGeneration = 0
+    private let selectionRequests: BeautifyBackgroundSelection
     private let queue = DispatchQueue(label: "com.drbaker.macshot.wallpaper-images", qos: .userInitiated)
 
     init(styleIndex: Int, wallpaperID: String?, padding: CGFloat, radius: CGFloat, shadow: CGFloat,
-         wallpapers: [MacOSWallpaper] = MacOSWallpapers.installed) {
+         backgroundOnly: Bool = false, backgroundBlur: CGFloat = 0,
+         wallpapers: [MacOSWallpaper] = MacOSWallpapers.installed,
+         selectionRequests: BeautifyBackgroundSelection? = nil) {
         gradients = GradientPickerView(selectedIndex: styleIndex)
         self.wallpapers = wallpapers
+        self.backgroundOnly = backgroundOnly
+        usesImageBackground = styleIndex == -1
+        self.selectionRequests = selectionRequests ?? BeautifyBackgroundSelection()
         super.init(frame: NSRect(x: 0, y: 0, width: 320, height: max(280, gradients.preferredSize.height + 90)))
         tabs.target = self
         tabs.action = #selector(tabChanged)
@@ -35,11 +86,17 @@ final class BeautifyBackgroundPickerView: NSView {
         gradients.frame.origin = NSPoint(x: (bounds.width - gradients.frame.width) / 2,
                                          y: contentRect.maxY - gradients.frame.height)
         gradients.onSelect = { [weak self] index in
-            self?.selectionGeneration += 1
+            self?.selectionRequests.invalidate()
             self?.loading.stopAnimation(nil)
+            self?.usesImageBackground = index == -1
+            self?.updateBlurState()
             self?.onSelectGradient?(index)
         }
-        gradients.onCustomImage = { [weak self] in self?.onCustomImage?() }
+        gradients.onCustomImage = { [weak self] in
+            self?.selectionRequests.invalidate()
+            self?.loading.stopAnimation(nil)
+            self?.onCustomImage?()
+        }
         addSubview(gradients)
 
         scrollView.frame = contentRect
@@ -50,20 +107,36 @@ final class BeautifyBackgroundPickerView: NSView {
         addSubview(scrollView)
         buildGallery(selectedID: wallpaperID)
 
-        let label = NSTextField(labelWithString: L("Frame"))
+        let label = NSTextField(labelWithString: backgroundOnly ? L("Background blur") : L("Frame"))
         label.font = .systemFont(ofSize: 11, weight: .medium)
         label.textColor = screenshotForegroundColor
-        label.frame = NSRect(x: 12, y: 17, width: 44, height: 18)
+        label.frame = NSRect(x: 12, y: 17, width: backgroundOnly ? 100 : 44, height: 18)
         addSubview(label)
-        frames.target = self
-        frames.action = #selector(frameChanged)
-        frames.selectedSegment = -1
-        for preset in [BeautifyFramePreset.compact, .roomy] where preset.matches(padding: padding, radius: radius, shadow: shadow) {
-            frames.selectedSegment = preset.rawValue
+        if backgroundOnly {
+            blur.target = self
+            blur.action = #selector(blurChanged)
+            blur.doubleValue = backgroundBlur.isFinite ? min(max(Double(backgroundBlur), 0), 50) : 0
+            blur.frame = NSRect(x: 114, y: 14, width: 122, height: 24)
+            blur.controlSize = .small
+            blur.setAccessibilityLabel(L("Background blur"))
+            addSubview(blur)
+            blurValue.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            blurValue.textColor = screenshotForegroundColor
+            blurValue.alignment = .right
+            blurValue.frame = NSRect(x: 242, y: 17, width: 28, height: 18)
+            addSubview(blurValue)
+            updateBlurState()
+        } else {
+            frames.target = self
+            frames.action = #selector(frameChanged)
+            frames.selectedSegment = -1
+            for preset in [BeautifyFramePreset.compact, .roomy] where preset.matches(padding: padding, radius: radius, shadow: shadow) {
+                frames.selectedSegment = preset.rawValue
+            }
+            frames.frame = NSRect(x: 62, y: 14, width: 186, height: 24)
+            frames.setAccessibilityLabel(L("Frame spacing"))
+            addSubview(frames)
         }
-        frames.frame = NSRect(x: 62, y: 14, width: 186, height: 24)
-        frames.setAccessibilityLabel(L("Frame spacing"))
-        addSubview(frames)
         loading.style = .spinning
         loading.controlSize = .small
         loading.isDisplayedWhenStopped = false
@@ -120,7 +193,7 @@ final class BeautifyBackgroundPickerView: NSView {
                     return image.cropping(to: CGRect(x: (CGFloat(image.width) - width) / 2,
                         y: (CGFloat(image.height) - height) / 2, width: width, height: height))
                 }
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self, weak button] in
                     guard let self, let button else { return }
                     if let image { button.image = NSImage(cgImage: image, size: NSSize(width: 88, height: 52)) }
                     else { button.isEnabled = false }
@@ -148,24 +221,34 @@ final class BeautifyBackgroundPickerView: NSView {
         if let preset = BeautifyFramePreset(rawValue: frames.selectedSegment) { onSelectFrame?(preset) }
     }
 
+    private func updateBlurState() {
+        guard backgroundOnly else { return }
+        blur.isEnabled = usesImageBackground
+        blurValue.stringValue = String(Int(blur.doubleValue.rounded()))
+    }
+
+    @objc private func blurChanged() {
+        updateBlurState()
+        onChangeBackgroundBlur?(CGFloat(blur.doubleValue))
+    }
+
     @objc private func wallpaperClicked(_ sender: NSButton) {
         guard wallpapers.indices.contains(sender.tag) else { return }
-        selectionGeneration += 1
-        let generation = selectionGeneration
         let wallpaper = wallpapers[sender.tag]
+        let selectedIndex = sender.tag
+        let applySelection = onSelectWallpaper
         loading.startAnimation(nil)
-        queue.async { [weak self] in
-            let image = MacOSWallpapers.image(for: wallpaper, maxDimension: 4096)
-            let data = image.flatMap(MacOSWallpapers.pngData)
-            DispatchQueue.main.async {
-                guard let self, generation == self.selectionGeneration else { return }
-                self.loading.stopAnimation(nil)
-                guard let image, let data else { NSSound.beep(); return }
-                for button in self.buttons { button.state = button === sender ? .on : .off }
+        selectionRequests.select(wallpaper) { [weak self] result in
+            self?.loading.stopAnimation(nil)
+            guard let result else { NSSound.beep(); return }
+            if let self {
+                for button in self.buttons { button.state = button.tag == selectedIndex ? .on : .off }
                 self.gradients.selectedIndex = -1
+                self.usesImageBackground = true
+                self.updateBlurState()
                 self.updateSelectionBorders()
-                self.onSelectWallpaper?(wallpaper, image, data)
             }
+            applySelection?(wallpaper, result.image, result.pngData)
         }
     }
 }

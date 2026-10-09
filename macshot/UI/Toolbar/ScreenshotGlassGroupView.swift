@@ -25,12 +25,26 @@ final class ScreenshotGlassGroupView: NSView {
     }
 
     private func placeBelowControls(in parent: NSView) {
-        // Recheck after insertion as well: viewDidMoveToSuperview can register a
-        // panel before its caller finishes positioned:addSubview ordering.
-        guard let first = parent.subviews.first(where: { $0 is ScreenshotPanelView }),
-              let firstIndex = parent.subviews.firstIndex(of: first),
-              let groupIndex = parent.subviews.firstIndex(of: self), groupIndex > firstIndex else { return }
-        parent.addSubview(self, positioned: .below, relativeTo: first)
+        if parent is ScreenshotPanelView {
+            // A panel can own its own material, for example in a native popover.
+            // Its buttons stay above the backdrop rather than becoming siblings.
+            guard let first = parent.subviews.first(where: { $0 !== self }),
+                  let firstIndex = parent.subviews.firstIndex(of: first),
+                  let groupIndex = parent.subviews.firstIndex(of: self), groupIndex > firstIndex else { return }
+            parent.addSubview(self, positioned: .below, relativeTo: first)
+            return
+        }
+        // Material and controls form one chrome plane. A newly inserted opaque
+        // image canvas must not cover their sibling SwiftUI backdrop while a
+        // submenu's controls remain visible above it.
+        let controls = parent.subviews.filter { $0 is ScreenshotPanelView }
+        guard !controls.isEmpty, let groupIndex = parent.subviews.firstIndex(of: self) else { return }
+        let content = parent.subviews.filter { $0 !== self && !($0 is ScreenshotPanelView) }
+        let coversMaterial = content.contains { (parent.subviews.firstIndex(of: $0) ?? 0) > groupIndex }
+        let coversControls = controls.contains { (parent.subviews.firstIndex(of: $0) ?? 0) < groupIndex }
+        guard coversMaterial || coversControls else { return }
+        parent.addSubview(self, positioned: .above, relativeTo: nil)
+        for control in controls { parent.addSubview(control, positioned: .above, relativeTo: nil) }
     }
 
     override init(frame: NSRect) {
@@ -55,6 +69,14 @@ final class ScreenshotGlassGroupView: NSView {
         guard !updating else { return }
         if isHidden { isHidden = false }
         needsLayout = true
+    }
+
+    /// Menus start with a sized material scene on their first displayed frame.
+    /// Native control reveal does not wait for a separate SwiftUI layout pass.
+    func prepareForPresentation() {
+        invalidate()
+        layoutSubtreeIfNeeded()
+        host.layoutSubtreeIfNeeded()
     }
 
     override func layout() {

@@ -260,7 +260,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
             XCTAssertNil(StitchAccordionProjection(document: document))
         }
         document.style.accordionWidth = 30
-        for value in [CGFloat.nan, .infinity, -1, 31] {
+        for value in [CGFloat.nan, .infinity, -31, 31] {
             document.style.accordionPerspective = value
             XCTAssertNil(StitchAccordionProjection(document: document))
         }

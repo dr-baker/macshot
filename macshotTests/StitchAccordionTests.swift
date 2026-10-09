@@ -71,7 +71,7 @@ final class StitchAccordionTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
         for (key, value) in [("accordionWidth", -1.0), ("accordionWidth", 81.0),
                              ("accordionPleats", 0.0), ("accordionPleats", 7.0), ("accordionPleats", 2.5),
-                             ("accordionPerspective", -1.0), ("accordionPerspective", 31.0)] {
+                             ("accordionPerspective", -31.0), ("accordionPerspective", 31.0)] {
             var invalid = object
             invalid[key] = value
             let restored = try JSONDecoder().decode(SavedStitchDocument.self, from: JSONSerialization.data(withJSONObject: invalid))
@@ -232,16 +232,16 @@ final class StitchAccordionTests: XCTestCase {
         let controller = StitchEditorController(document: document, window: window)
         controller.attach(to: editor)
         defer { controller.suspend() }
-        XCTAssertEqual(scroll.contentInsets.top, 32)
-        XCTAssertEqual(scroll.contentInsets.left, 32)
-        XCTAssertEqual(scroll.contentInsets.bottom, 116)
-        XCTAssertEqual(scroll.contentInsets.right, 82)
+        XCTAssertEqual(scroll.contentInsets.top, 12)
+        XCTAssertEqual(scroll.contentInsets.left, 12)
+        XCTAssertEqual(scroll.contentInsets.bottom, 96)
+        XCTAssertEqual(scroll.contentInsets.right, 62)
         XCTAssertEqual(editor.frame, originalFrame)
         XCTAssertEqual(editor.bounds, originalBounds)
         XCTAssertEqual(editor.selectionRect, originalSelection)
         editor.beautifyPadding = 48
         controller.annotationPreview = nil // The host refreshes presentation after a Background change.
-        XCTAssertEqual(scroll.contentInsets.left, 48)
+        XCTAssertEqual(scroll.contentInsets.left, 12)
         editor.stitchPreviewEnabled = false
         XCTAssertEqual(scroll.contentInsets.top, 0)
         XCTAssertEqual(scroll.contentInsets.left, 0)

@@ -102,6 +102,18 @@ enum PopoverHelper {
         installOutsideClickMonitors()
     }
 
+    /// Expand the native options stack away from the screenshot or projected
+    /// paper. The footprint belongs to `referenceView`'s coordinate space.
+    static func showToolbarTray(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect,
+                                of view: NSView, avoiding paperRect: NSRect, in referenceView: NSView) {
+        dismiss()
+        if showInline(contentView, size: size, relativeTo: rect, of: view, preferredEdge: .minY,
+                      avoiding: paperRect, in: referenceView) { return }
+        // An anchor that is no longer mounted cannot have an attached tray.
+        // Retain the existing native presentation for unsupported host windows.
+        show(contentView, size: size, relativeTo: rect, of: view, preferredEdge: .minY)
+    }
+
     /// Show a popover anchored to a specific point in a view (for overlay mode where buttons aren't real views).
 
     static func showAtPoint(_ contentView: NSView, size: NSSize, at point: NSPoint, in parentView: NSView, preferredEdge: NSRectEdge = .minY) {
@@ -252,9 +264,11 @@ enum PopoverHelper {
     }
 
     private static func showInline(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect,
-                                   of view: NSView, preferredEdge: NSRectEdge) -> Bool {
+                                   of view: NSView, preferredEdge: NSRectEdge,
+                                   avoiding paperRect: NSRect? = nil, in referenceView: NSView? = nil) -> Bool {
         guard let submenu = ScreenshotSubmenuPresenter(contentView: contentView, size: size,
-            relativeTo: rect, of: view, preferredEdge: preferredEdge) else { return false }
+            relativeTo: rect, of: view, preferredEdge: preferredEdge,
+            avoiding: paperRect, in: referenceView) else { return false }
         activeSubmenu = submenu
         toggleState.opened(from: view)
         submenu.onNeedsNativePresentation = { [weak submenu] in

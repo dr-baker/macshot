@@ -99,8 +99,7 @@ final class ScreenshotPanelViewTests: XCTestCase {
         XCTAssertEqual(dismissals, 3)
     }
 
-    func testInlinePiecesMenuReturnsEscapeToTheCaptureAfterSelectingAPiece() throws {
-        guard ScreenshotGlassAvailability.isAvailable else { throw XCTSkip("Native glass requires supported macOS") }
+    func testAttachedPiecesTrayReturnsEscapeToTheCaptureAfterSelectingAPiece() throws {
         defer { NotificationCenter.default.post(name: ScreenshotPanelStyle.didChange, object: nil) }
         try withDefaults([ScreenshotPanelStyle.defaultsKey: nil]) {
             ScreenshotPanelStyle(material: .clear).save()
@@ -110,8 +109,9 @@ final class ScreenshotPanelViewTests: XCTestCase {
             editor.addSubview(anchor)
             XCTAssertTrue(window.makeFirstResponder(canvas))
             controller.showOptions(.pieces, at: anchor)
-            let wrapper = try XCTUnwrap(editor.subviews.first { $0.identifier?.rawValue == "screenshot.submenu" })
-            let options = try XCTUnwrap(wrapper.subviews.first { $0 is StitchOptionsView })
+            let wrapper = try XCTUnwrap(editor.subviews.first { $0.identifier?.rawValue == "screenshot.toolbar-tray" })
+            let viewport = try XCTUnwrap(wrapper.subviews.compactMap { $0 as? NSScrollView }.first)
+            let options = try XCTUnwrap(viewport.documentView as? StitchOptionsView)
             let scroll = try XCTUnwrap(options.subviews.compactMap { $0 as? NSScrollView }.first)
             let stack = try XCTUnwrap(scroll.documentView as? NSStackView)
             let button = try XCTUnwrap(stack.arrangedSubviews.compactMap { $0 as? NSButton }.first)
@@ -120,9 +120,46 @@ final class ScreenshotPanelViewTests: XCTestCase {
             XCTAssertTrue(window.firstResponder === wrapper)
             XCTAssertTrue(PopoverHelper.isVisible)
             window.sendEvent(try escape(in: window))
-            XCTAssertFalse(PopoverHelper.isVisible, "Escape after rebuilding inline pieces must close its menu")
+            XCTAssertFalse(PopoverHelper.isVisible, "Escape after rebuilding the pieces list must close its tray")
             XCTAssertTrue(window.firstResponder === canvas)
         }
+    }
+
+    func testAnglePadReleasesFocusWhenHiddenOrDisabledAndEscapeStillClosesItsMenu() throws {
+        let (editor, controller, _, parent) = try stitchMenuFixture()
+        let options = controller.makeSeamOptions()
+        let wrapper = ArrowCursorView(frame: options.frame)
+        wrapper.parentWindow = parent
+        wrapper.addSubview(options)
+        let menu = NSWindow(contentRect: wrapper.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        menu.isReleasedWhenClosed = false
+        menu.contentView = wrapper
+        wrapper.beginCommandScope()
+        defer { controller.suspend(); editor.reset(); menu.close(); parent.close() }
+        let angle = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchPaperAngleControl }.first)
+        let picker = try XCTUnwrap(options.subviews.compactMap { $0 as? StitchSeamStylePicker }.first)
+        let toggle = try XCTUnwrap(options.subviews.first { $0.identifier?.rawValue == "stitch.seam.visibility" } as? NSButton)
+        func select(_ transition: StitchTransition) throws {
+            try XCTUnwrap(picker.subviews.compactMap { $0 as? NSButton }.first {
+                $0.identifier?.rawValue == "stitch.transition.\(transition.rawValue)"
+            }).performClick(nil)
+        }
+        var cancellations = 0
+        wrapper.onCancel = { cancellations += 1 }
+        try select(.accordion)
+        XCTAssertTrue(menu.makeFirstResponder(angle))
+        try select(.torn)
+        XCTAssertTrue(angle.isHidden)
+        XCTAssertTrue(menu.firstResponder === wrapper)
+        menu.sendEvent(try escape(in: menu))
+        try select(.accordion)
+        XCTAssertTrue(menu.makeFirstResponder(angle))
+        toggle.performClick(nil)
+        XCTAssertFalse(angle.isEnabled)
+        XCTAssertTrue(angle.subviews.compactMap { $0 as? NSButton }.allSatisfy { !$0.isEnabled })
+        XCTAssertTrue(menu.firstResponder === wrapper)
+        menu.sendEvent(try escape(in: menu))
+        XCTAssertEqual(cancellations, 2)
     }
 
     private func escape(in window: NSWindow) throws -> NSEvent {

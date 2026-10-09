@@ -1,5 +1,37 @@
 import AppKit
 
+/// Camera angles and native drag behavior, independent of the document and UI.
+nonisolated struct StitchPaperCamera: Sendable, Equatable {
+    static let defaultPerspective: CGFloat = 14
+    static let defaultYaw: CGFloat = 11.2
+    static let perspectiveRange: ClosedRange<CGFloat> = -30...30
+    static let yawRange: ClosedRange<CGFloat> = -35...35
+
+    let perspective: CGFloat
+    let yaw: CGFloat
+
+    init(perspective: CGFloat = defaultPerspective, yaw: CGFloat = defaultYaw) {
+        self.perspective = Self.clamp(perspective, to: Self.perspectiveRange, fallback: Self.defaultPerspective)
+        self.yaw = Self.clamp(yaw, to: Self.yawRange, fallback: Self.defaultYaw)
+    }
+
+    /// Displacement is in view points with positive y downward. Modifiers scale
+    /// or constrain the full displacement from the drag origin.
+    func dragged(by displacement: CGPoint, precision: Bool = false, axisLock: Bool = false) -> Self {
+        guard displacement.x.isFinite, displacement.y.isFinite else { return self }
+        var dx = displacement.x, dy = displacement.y
+        if axisLock {
+            if abs(dx) >= abs(dy) { dy = 0 } else { dx = 0 }
+        }
+        let degreesPerPoint: CGFloat = precision ? 0.0375 : 0.15
+        return Self(perspective: perspective + dy * degreesPerPoint, yaw: yaw + dx * degreesPerPoint)
+    }
+
+    private static func clamp(_ value: CGFloat, to range: ClosedRange<CGFloat>, fallback: CGFloat) -> CGFloat {
+        value.isFinite ? min(range.upperBound, max(range.lowerBound, value)) : fallback
+    }
+}
+
 /// A textured sheet in top-down document coordinates. Rendering and hit testing use
 /// the same triangles, including the perspective denominator at every vertex.
 nonisolated struct StitchAccordionProjection: Sendable {
@@ -61,6 +93,88 @@ nonisolated struct StitchAccordionProjection: Sendable {
         }
     }
 
+    /// Validated geometry without captured pixels or UI objects. Reusing it for
+    /// animation frames avoids repeated join merging and mesh edge collection.
+    nonisolated struct Source: Sendable {
+        let documentBounds: CGRect
+        let camera: StitchPaperCamera
+        fileprivate let folds: [Fold]
+        fileprivate let columns: [CGFloat]
+        fileprivate let rows: [CGFloat]
+
+        @MainActor
+        init?(document: StitchDocument) {
+            guard document.canRender else { return nil }
+            let bounds = document.bounds.integral
+            guard bounds.minX.isFinite, bounds.minY.isFinite,
+                  bounds.maxX.isFinite, bounds.maxY.isFinite else { return nil }
+            let style = document.style
+            let active = style.visible && style.transition == .accordion && !document.joins.isEmpty && style.accordionWidth != 0
+            let folds: [Fold]
+            if active {
+                guard style.accordionWidth.isFinite, style.accordionWidth > 0, style.accordionWidth <= 80,
+                      style.accordionPleats.isFinite, (2...6).contains(style.accordionPleats),
+                      style.accordionPerspective.isFinite, StitchPaperCamera.perspectiveRange.contains(style.accordionPerspective),
+                      style.accordionYaw.isFinite, StitchPaperCamera.yawRange.contains(style.accordionYaw) else { return nil }
+                let joins = StitchAccordionProjection.mergedJoins(document.joins, bounds: bounds)
+                folds = joins.compactMap { join in
+                    var room = min(join.position - (join.horizontal ? bounds.minY : bounds.minX),
+                                   (join.horizontal ? bounds.maxY : bounds.maxX) - join.position)
+                    for other in joins where other.horizontal == join.horizontal
+                        && abs(other.position - join.position) > 0.001
+                        && min(other.end, join.end) > max(other.start, join.start) {
+                        room = min(room, abs(other.position - join.position))
+                    }
+                    // A narrow capture keeps most of each adjoining piece flat.
+                    for piece in document.pieces {
+                        let frame = piece.frame
+                        let alongMin = join.horizontal ? frame.minX : frame.minY
+                        let alongMax = join.horizontal ? frame.maxX : frame.maxY
+                        guard min(alongMax, join.end) > max(alongMin, join.start) else { continue }
+                        let lo = join.horizontal ? frame.minY : frame.minX
+                        let hi = join.horizontal ? frame.maxY : frame.maxX
+                        if abs(hi - join.position) < 0.5 { room = min(room, join.position - lo) }
+                        if abs(lo - join.position) < 0.5 { room = min(room, hi - join.position) }
+                    }
+                    let halfWidth = min(style.accordionWidth * 2, room * 0.45, (join.end - join.start) * 0.4)
+                    guard halfWidth.isFinite, halfWidth > 0.001, join.end - join.start > 0.001 else { return nil }
+                    return Fold(join: join, halfWidth: halfWidth,
+                                pleats: Int(style.accordionPleats.rounded()), bounds: bounds)
+                }
+            } else {
+                folds = []
+            }
+
+            var xEdges = [bounds.minX, bounds.maxX], yEdges = [bounds.minY, bounds.maxY]
+            for fold in folds {
+                let normal = (0...fold.pleats * 2).map {
+                    fold.join.position - fold.halfWidth + CGFloat($0) * fold.segmentLength
+                }
+                if fold.join.horizontal {
+                    yEdges += normal
+                    xEdges += fold.alongEdges
+                } else {
+                    xEdges += normal
+                    yEdges += fold.alongEdges
+                }
+            }
+            let columns = StitchAccordionProjection.uniqueEdges(xEdges)
+            let rows = StitchAccordionProjection.uniqueEdges(yEdges)
+            // Fragmented collages fail before allocating an oversized mesh.
+            guard columns.count * rows.count <= 16_384 else { return nil }
+            self.documentBounds = bounds
+            self.camera = StitchPaperCamera(perspective: style.accordionPerspective, yaw: style.accordionYaw)
+            self.folds = folds
+            self.columns = columns
+            self.rows = rows
+        }
+
+        func projection(progress: CGFloat = 1) -> StitchAccordionProjection? {
+            StitchAccordionProjection(source: self, progress: progress)
+        }
+    }
+
+    let source: Source
     let documentBounds: CGRect
     let hasProjectedOutput: Bool
     /// Source order is stable throughout an animation, including at progress zero.
@@ -73,65 +187,22 @@ nonisolated struct StitchAccordionProjection: Sendable {
 
     @MainActor
     init?(document: StitchDocument, progress proposedProgress: CGFloat = 1) {
-        guard document.canRender, proposedProgress.isFinite else { return nil }
-        let bounds = document.bounds.integral
-        let style = document.style
-        let progress = max(0, min(1, proposedProgress))
-        let active = style.visible && style.transition == .accordion && !document.joins.isEmpty && style.accordionWidth != 0
-        let folds: [Fold]
-        if active {
-            guard style.accordionWidth.isFinite, style.accordionWidth > 0, style.accordionWidth <= 80,
-                  style.accordionPleats.isFinite, (2...6).contains(style.accordionPleats),
-                  style.accordionPerspective.isFinite, (0...30).contains(style.accordionPerspective) else { return nil }
-            let joins = Self.mergedJoins(document.joins, bounds: bounds)
-            folds = joins.compactMap { join in
-                var room = min(join.position - (join.horizontal ? bounds.minY : bounds.minX),
-                               (join.horizontal ? bounds.maxY : bounds.maxX) - join.position)
-                for other in joins where other.horizontal == join.horizontal
-                    && abs(other.position - join.position) > 0.001
-                    && min(other.end, join.end) > max(other.start, join.start) {
-                    room = min(room, abs(other.position - join.position))
-                }
-                // A narrow capture still keeps most of each adjoining piece flat.
-                for piece in document.pieces {
-                    let frame = piece.frame
-                    let alongMin = join.horizontal ? frame.minX : frame.minY
-                    let alongMax = join.horizontal ? frame.maxX : frame.maxY
-                    guard min(alongMax, join.end) > max(alongMin, join.start) else { continue }
-                    let lo = join.horizontal ? frame.minY : frame.minX
-                    let hi = join.horizontal ? frame.maxY : frame.maxX
-                    if abs(hi - join.position) < 0.5 { room = min(room, join.position - lo) }
-                    if abs(lo - join.position) < 0.5 { room = min(room, hi - join.position) }
-                }
-                let halfWidth = min(style.accordionWidth * 2, room * 0.45, (join.end - join.start) * 0.4)
-                guard halfWidth.isFinite, halfWidth > 0.001, join.end - join.start > 0.001 else { return nil }
-                return Fold(join: join, halfWidth: halfWidth,
-                            pleats: Int(style.accordionPleats.rounded()), bounds: bounds)
-            }
-        } else {
-            folds = []
-        }
+        guard let source = Source(document: document),
+              let projection = Self(source: source, progress: proposedProgress) else { return nil }
+        self = projection
+    }
 
-        var xEdges = [bounds.minX, bounds.maxX], yEdges = [bounds.minY, bounds.maxY]
-        for fold in folds {
-            let normal = (0...fold.pleats * 2).map {
-                fold.join.position - fold.halfWidth + CGFloat($0) * fold.segmentLength
-            }
-            if fold.join.horizontal {
-                yEdges += normal
-                xEdges += fold.alongEdges
-            } else {
-                xEdges += normal
-                yEdges += fold.alongEdges
-            }
-        }
-        let columns = Self.uniqueEdges(xEdges), rows = Self.uniqueEdges(yEdges)
-        // A malformed or exceptionally fragmented collage must fail closed before allocating a large mesh.
-        guard columns.count * rows.count <= 16_384 else { return nil }
+    init?(source: Source, progress proposedProgress: CGFloat = 1) {
+        guard proposedProgress.isFinite else { return nil }
+        let bounds = source.documentBounds
+        let progress = max(0, min(1, proposedProgress))
+        let folds = source.folds, columns = source.columns, rows = source.rows
         let angle = acos(CGFloat(0.45)) * progress
         let compression = cos(angle)
         let ridgeSlope = sin(angle)
-        let camera = Camera(bounds: bounds, degrees: folds.isEmpty ? 0 : style.accordionPerspective * progress)
+        let camera = Camera(bounds: bounds,
+                            perspective: folds.isEmpty ? 0 : source.camera.perspective * progress,
+                            yaw: folds.isEmpty ? 0 : source.camera.yaw * progress)
         var sourcePoints: [CGPoint] = [], points3D: [Point3] = [], rawPoints: [(CGPoint, CGFloat)] = []
         sourcePoints.reserveCapacity(columns.count * rows.count)
         points3D.reserveCapacity(columns.count * rows.count)
@@ -201,6 +272,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
                 faces.append(face(a, c, d))
             }
         }
+        self.source = source
         self.documentBounds = bounds
         self.hasProjectedOutput = hasOutput
         self.columns = columns
@@ -295,7 +367,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
             || (abs(a.y - b.y) < 0.000001 && (abs(a.y - bounds.minY) < 0.000001 || abs(a.y - bounds.maxY) < 0.000001))
     }
 
-    private nonisolated struct Join: Sendable {
+    fileprivate nonisolated struct Join: Sendable {
         let horizontal: Bool
         let position: CGFloat
         let start: CGFloat
@@ -323,7 +395,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         }
     }
 
-    private nonisolated struct Fold: Sendable {
+    fileprivate nonisolated struct Fold: Sendable {
         let join: Join
         let halfWidth: CGFloat
         let pleats: Int
@@ -368,11 +440,10 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let distance: CGFloat
         let pitch: CGFloat
         let yaw: CGFloat
-        init(bounds: CGRect, degrees: CGFloat) {
+        init(bounds: CGRect, perspective: CGFloat, yaw: CGFloat) {
             distance = max(bounds.width, bounds.height) * 3.2
-            let angle = degrees * .pi / 180
-            pitch = -angle
-            yaw = angle * 0.8
+            pitch = -perspective * .pi / 180
+            self.yaw = yaw * .pi / 180
         }
         func rotate(_ point: Point3) -> Point3 {
             let x = point.x * cos(yaw) + point.z * sin(yaw)

@@ -12,8 +12,26 @@ final class ScreenshotCommandResponder: NSResponder {
     private(set) weak var editor: OverlayView?
     private weak var stitchCanvas: StitchCanvasView?
     private weak var linkedParent: NSWindow?
-    private weak var transientOwner: NSView?
-    private var cancelTransient: (() -> Void)?
+    /// Menus and gestures nest in one window. Their owners remain weak, and a
+    /// removed gesture reveals the still-mounted menu's cancellation handler.
+    @MainActor
+    private final class TransientScope {
+        weak var owner: NSView?
+        weak var ownerWindow: NSWindow?
+        let cancel: () -> Void
+
+        init(owner: NSView, cancel: @escaping () -> Void) {
+            self.owner = owner
+            ownerWindow = owner.window
+            self.cancel = cancel
+        }
+
+        var isMounted: Bool {
+            guard let ownerWindow else { return false }
+            return owner?.window === ownerWindow
+        }
+    }
+    private var transientScopes: [TransientScope] = []
 
     static func forWindow(_ window: NSWindow?) -> ScreenshotCommandResponder? {
         guard let window else { return nil }
@@ -81,8 +99,7 @@ final class ScreenshotCommandResponder: NSResponder {
         detachFromChain()
         editor = nil
         stitchCanvas = nil
-        transientOwner = nil
-        cancelTransient = nil
+        transientScopes.removeAll()
         linkedParent = nil
     }
 
@@ -106,17 +123,33 @@ final class ScreenshotCommandResponder: NSResponder {
         editor = Self.forWindow(parent)?.editor
     }
 
-    var hasTransientScope: Bool { transientOwner?.window != nil && cancelTransient != nil }
+    private var activeTransientScope: TransientScope? {
+        let hadScopes = !transientScopes.isEmpty
+        transientScopes.removeAll { !$0.isMounted }
+        if hadScopes, transientScopes.isEmpty { releaseTransientRouting() }
+        return transientScopes.last
+    }
+
+    var hasTransientScope: Bool { activeTransientScope != nil }
 
     func setTransientScope(owner: NSView, cancel: @escaping () -> Void) {
-        transientOwner = owner
-        cancelTransient = cancel
+        // Re-registering an owner replaces its callback and makes it the most
+        // recent scope. Do not clear a freshly linked popover editor between
+        // pruning an old owner and inserting its replacement.
+        transientScopes.removeAll { !$0.isMounted || $0.owner === owner }
+        guard owner.window != nil else {
+            if transientScopes.isEmpty { releaseTransientRouting() }
+            return
+        }
+        transientScopes.append(TransientScope(owner: owner, cancel: cancel))
     }
 
     func removeTransientScope(owner: NSView) {
-        guard transientOwner === owner else { return }
-        transientOwner = nil
-        cancelTransient = nil
+        transientScopes.removeAll { !$0.isMounted || $0.owner === owner }
+        if transientScopes.isEmpty { releaseTransientRouting() }
+    }
+
+    private func releaseTransientRouting() {
         if linkedParent != nil {
             editor = nil
             linkedParent = nil
@@ -145,8 +178,8 @@ final class ScreenshotCommandResponder: NSResponder {
 
     @discardableResult
     func dispatchKeyEvent(_ event: NSEvent) -> Bool {
-        if event.keyCode == 53, hasTransientScope {
-            cancelTransient?()
+        if event.keyCode == 53, let scope = activeTransientScope {
+            scope.cancel()
             return true
         }
         guard !isNativeTextEditing else { return false }

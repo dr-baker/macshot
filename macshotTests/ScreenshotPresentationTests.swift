@@ -126,7 +126,7 @@ final class ScreenshotPresentationTests: XCTestCase {
         let flat = try XCTUnwrap(view.captureSelectedRegion())
         view.reset()
         let result = try XCTUnwrap(presentation.render(flat))
-        XCTAssertEqual(result.size, NSSize(width: 218, height: 178))
+        XCTAssertEqual(result.size, NSSize(width: 224, height: 184))
     }
 
     func testOrdinaryWindowRoundedAndSnappedScreenshotsKeepExistingPresentation() throws {
@@ -145,11 +145,15 @@ final class ScreenshotPresentationTests: XCTestCase {
         XCTAssertTrue(identity === source)
     }
 
-    func testInvalidPaperAllocationOrFrameDoesNotFallBackToFlatPixels() throws {
+    func testPaperIgnoresDecorationAndRejectsInvalidBackgroundBlur() throws {
         let source = ImageProbe.solidImage(width: 200, height: 160)
         let projection = try XCTUnwrap(StitchAccordionProjection(document: accordionDocument()))
         for padding in [CGFloat.nan, .infinity, -1, 100_000] {
             let config = BeautifyConfig(padding: padding)
+            XCTAssertNotNil(ScreenshotPresentation(beautify: config, projection: projection).render(source))
+        }
+        for blur in [CGFloat.nan, .infinity, -1, 51] {
+            let config = BeautifyConfig(backgroundBlur: blur)
             XCTAssertNil(ScreenshotPresentation(beautify: config, projection: projection).render(source))
         }
     }
@@ -165,7 +169,7 @@ final class ScreenshotPresentationTests: XCTestCase {
         XCTAssertEqual(texture.width, 1600)
         XCTAssertEqual(texture.height, 1280)
         let bitmap = NSBitmapImageRep(cgImage: texture)
-        XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 0, y: 0)).alphaComponent, 0, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 0, y: 0)).alphaComponent, 1, accuracy: 0.01)
         XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 800, y: 100)).redComponent, 0.99,
                              "Animation textures retain the flat composite without a background or folded shading")
         for limit in [CGFloat.nan, .infinity, 0, -1] { XCTAssertNil(prepared.animationTexture(maxDimension: limit)) }

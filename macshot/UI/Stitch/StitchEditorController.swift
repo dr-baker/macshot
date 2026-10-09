@@ -12,7 +12,7 @@ private final class StitchSlider: NSSlider {
 }
 
 private enum StitchSeamParameter: Int, CaseIterable {
-    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength, accordionWidth, accordionPleats, accordionPerspective
+    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength, accordionWidth, accordionPleats
 
     func keyPath(for transition: StitchTransition) -> WritableKeyPath<StitchStyle, CGFloat> {
         switch self {
@@ -30,7 +30,6 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .foldStrength: return \.foldStrength
         case .accordionWidth: return \.accordionWidth
         case .accordionPleats: return \.accordionPleats
-        case .accordionPerspective: return \.accordionPerspective
         }
     }
 
@@ -45,7 +44,6 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .foldStrength: return 0...Double(StitchStyle.maximumFoldStrength)
         case .accordionWidth: return 4...64
         case .accordionPleats: return 2...6
-        case .accordionPerspective: return 0...30
         }
     }
 
@@ -65,13 +63,11 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .foldStrength: return L("Strength")
         case .accordionWidth: return L("Fold width")
         case .accordionPleats: return L("Pleats")
-        case .accordionPerspective: return L("Perspective")
         }
     }
 
     func formattedValue(_ value: CGFloat) -> String {
         if self == .accordionPleats { return String(Int(value.rounded())) }
-        if self == .accordionPerspective { return String(format: "%.0f°", Double(value)) }
         return self == .foldStrength ? String(format: "%.0f%%", Double(value / StitchStyle.maximumFoldStrength) * 100)
             : String(format: "%.1f px", Double(value))
     }
@@ -82,12 +78,12 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .blend: return [.blur, .feather]
         case .torn: return [.tearWidth, .shape]
         case .fold: return [.foldDepth, .foldStrength]
-        case .accordion: return [.accordionWidth, .accordionPleats, .accordionPerspective]
+        case .accordion: return [.accordionWidth, .accordionPleats]
         }
     }
 }
 
-enum StitchOptionsAction { case seams, pieces, canvas, background }
+enum StitchOptionsAction { case seams, pieces, canvas, background, animation }
 
 /// Edits source pieces on the main editor canvas; the host owns all chrome and output actions.
 @MainActor
@@ -106,6 +102,11 @@ final class StitchEditorController: NSObject {
     var annotationPreview: CGImage? {
         didSet {
             canvas.annotationPreview = annotationPreview
+            if cameraSnapshot != nil {
+                _ = paperPreview.cancelCameraGesture()
+                _ = angleControl.cancelCameraGesture()
+                endCameraGesture(commit: false)
+            }
             schedulePaperPreview()
         }
     }
@@ -120,6 +121,16 @@ final class StitchEditorController: NSObject {
     private var savedPreviewInsets: NSEdgeInsets?
     private var savedPreviewClipping: Bool?
     private var animatesNextPaperPreview = false
+    private var cameraSnapshot: StitchDocument?
+    private var committingCamera = false
+    private weak var cameraScopeOwner: NSView?
+    private var interactiveTexture: CGImage?
+    private var interactiveBackground: CGImage?
+    private var interactivePaperFrame: CGRect?
+    private let angleControl = StitchPaperAngleControl(frame: .zero)
+    private let angleHint = NSTextField(wrappingLabelWithString: L("Drag the paper to tilt it. Hold ⌥ for precision or ⇧ to stay on one axis."))
+    private lazy var animationButton = button("film", title: L("Save Animation"), action: #selector(saveAnimation))
+    private var animationSavePanel: StitchAnimationSavePanel?
     var isAttached: Bool { canvas.superview != nil }
     private var document: StitchDocument
     private var dragSnapshot: StitchDocument?
@@ -158,7 +169,9 @@ final class StitchEditorController: NSObject {
     func attach(to editor: ImageEditingView) {
         editorView = editor
         canvas.inlineEditor = editor
-        if canvas.superview !== editor { editor.addSubview(canvas) }
+        if canvas.superview !== editor {
+            editor.addSubview(canvas, positioned: .below, relativeTo: editor.subviews.first)
+        }
         if paperPreview.superview !== editor {
             editor.addSubview(paperPreview, positioned: .below, relativeTo: editor.subviews.first)
         }
@@ -167,6 +180,20 @@ final class StitchEditorController: NSObject {
             editor?.stitchPreviewEnabled = false
             self?.focus()
         }
+        paperPreview.onCameraBegin = { [weak self] in
+            guard let self else { return }
+            self.beginCameraGesture(owner: self.paperPreview)
+        }
+        paperPreview.onCameraChanged = { [weak self] camera in self?.changeCamera(camera) }
+        paperPreview.onCameraEnd = { [weak self] commit in self?.endCameraGesture(commit: commit) }
+        paperPreview.onReset = { [weak self] in self?.resetCamera() }
+        angleControl.onCameraBegin = { [weak self] in
+            guard let self else { return }
+            self.beginCameraGesture(owner: self.angleControl)
+        }
+        angleControl.onCameraChanged = { [weak self] camera in self?.changeCamera(camera) }
+        angleControl.onCameraEnd = { [weak self] commit in self?.endCameraGesture(commit: commit) }
+        angleControl.onReset = { [weak self] in self?.resetCamera() }
         editor.onStitchPreviewChanged = { [weak self] in
             self?.updatePaperVisibility()
             self?.schedulePaperPreview()
@@ -224,8 +251,8 @@ final class StitchEditorController: NSObject {
         case .pieces: showPieces(at: anchor)
         case .canvas: showCanvasOptions(at: anchor)
         case .background:
-            editorView?.setBeautifyEnabled(true)
-            editorView?.showBeautifyGradientPopover(anchorView: anchor)
+            editorView?.showBeautifyGradientPopover(anchorView: anchor, backgroundOnly: true)
+        case .animation: saveAnimation()
         }
     }
 
@@ -243,6 +270,9 @@ final class StitchEditorController: NSObject {
 
     func restore(_ value: StitchDocument) {
         restoring = true
+        _ = paperPreview.cancelCameraGesture()
+        _ = angleControl.cancelCameraGesture()
+        endCameraGesture(commit: false)
         canvas.cancelEditingGesture()
         dragSnapshot = nil
         document = value
@@ -251,6 +281,9 @@ final class StitchEditorController: NSObject {
     }
 
     func suspend() {
+        _ = paperPreview.cancelCameraGesture()
+        _ = angleControl.cancelCameraGesture()
+        endCameraGesture(commit: false)
         restorePreviewInsets()
         canvas.cancelEditingGesture()
         PopoverHelper.dismiss()
@@ -260,6 +293,14 @@ final class StitchEditorController: NSObject {
         paperPreview.cancelAnimation()
         paperPreview.image = nil
         paperPreview.onEdit = nil
+        paperPreview.onCameraBegin = nil
+        paperPreview.onCameraChanged = nil
+        paperPreview.onCameraEnd = nil
+        paperPreview.onReset = nil
+        interactiveTexture = nil
+        interactiveBackground = nil
+        interactivePaperFrame = nil
+        cameraSnapshot = nil
         pendingPaperPreview?.cancel()
         paperRenderCancellation?.cancel()
         paperGeneration = UUID()
@@ -292,6 +333,13 @@ final class StitchEditorController: NSObject {
         view.addSubview(seamToggle)
         seamStylePicker.onSelectionChanged = { [weak self] transition in self?.selectSeamTransition(transition) }
         view.addSubview(seamStylePicker)
+        angleControl.identifier = NSUserInterfaceItemIdentifier("stitch.seam.angle")
+        angleControl.foregroundColor = view.screenshotForegroundColor
+        animationButton.identifier = NSUserInterfaceItemIdentifier("stitch.seam.animation")
+        animationButton.setAccessibilityLabel(L("Save Animation"))
+        angleHint.font = .systemFont(ofSize: 11)
+        angleHint.textColor = view.screenshotForegroundColor
+        for child in [angleControl, angleHint, animationButton] { view.addSubview(child) }
         let colorLabel = NSTextField(labelWithString: L("Line color"))
         colorLabel.identifier = NSUserInterfaceItemIdentifier("stitch.seam.color.label")
         colorLabel.font = .systemFont(ofSize: 11)
@@ -344,14 +392,18 @@ final class StitchEditorController: NSObject {
     private func showSeams(at anchor: NSView) {
         feedback.removeFromSuperview()
         if PopoverHelper.toggleClosedIfOpen(anchorView: anchor) { return }
-        PopoverHelper.show(seamOptions, size: seamOptions.frame.size,
-                           relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        showTray(seamOptions, at: anchor)
+    }
+    private func showTray(_ content: NSView, at anchor: NSView) {
+        guard let editor = editorView else { return }
+        PopoverHelper.showToolbarTray(content, size: content.frame.size,
+            relativeTo: anchor.bounds, of: anchor, avoiding: editor.screenshotPresentationRect, in: editor)
     }
     private func showPieces(at anchor: NSView) {
         feedback.removeFromSuperview()
         if PopoverHelper.toggleClosedIfOpen(anchorView: anchor) { return }
         let view = makePieceOptions()
-        PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        showTray(view, at: anchor)
     }
 
     func makePieceOptions() -> NSView {
@@ -408,7 +460,7 @@ final class StitchEditorController: NSObject {
         hint.textColor = view.screenshotForegroundColor
         hint.frame = NSRect(x: 12, y: 13, width: 240, height: 16)
         for child in [title, backgroundChoice, canvasColor, hint] { view.addSubview(child) }
-        PopoverHelper.show(view, size: view.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        showTray(view, at: anchor)
     }
     @objc private func changeBackground() {
         var next = document
@@ -475,12 +527,18 @@ final class StitchEditorController: NSObject {
         for parameter in StitchSeamParameter.allCases where !s.visible || !parameters.contains(parameter) {
             PopoverHelper.moveFocusBeforeChanging(sliders[parameter.rawValue])
         }
-        let height = 72 + StitchSeamStylePicker.preferredHeight + (hasColor ? 34 : 0) + CGFloat(parameters.count) * 38
+        let showsAngle = s.transition == .accordion
+        if !showsAngle || !s.visible { PopoverHelper.moveFocusBeforeChanging(angleControl) }
+        if !showsAngle || editorView?.canPreviewStitchPaper != true {
+            PopoverHelper.moveFocusBeforeChanging(animationButton)
+        }
+        let height = 58 + StitchSeamStylePicker.preferredHeight + (hasColor ? 34 : 0)
+            + CGFloat(parameters.count) * 38 + (showsAngle ? 110 : 0)
         let size = NSSize(width: 368, height: height)
         seamOptions.setFrameSize(size)
-        // The popover grows above its anchor, so keep treatment choices beside that anchor.
-        seamToggle.frame = NSRect(x: 12, y: 11, width: 344, height: 24)
-        seamStylePicker.frame = NSRect(x: 12, y: 46, width: 344, height: StitchSeamStylePicker.preferredHeight)
+        seamToggle.frame = NSRect(x: 12, y: height - 36, width: 344, height: 24)
+        seamStylePicker.frame = NSRect(x: 12, y: height - 40 - StitchSeamStylePicker.preferredHeight,
+            width: 344, height: StitchSeamStylePicker.preferredHeight)
         seamStylePicker.selection = s.transition
         seamStylePicker.isEnabled = s.visible
         seamToggle.state = s.visible ? .on : .off
@@ -489,11 +547,12 @@ final class StitchEditorController: NSObject {
         color.isHidden = !hasColor
         color.isEnabled = s.visible && hasColor
         color.alphaValue = s.visible ? 1 : 0.35
-        color.frame = NSRect(x: 308, y: height - 37, width: 46, height: 24)
+        let parametersTop = seamStylePicker.frame.minY - 26
+        color.frame = NSRect(x: 308, y: parametersTop - 4, width: 46, height: 24)
         let colorLabel = seamLabels[0]
         colorLabel.isHidden = !hasColor
         colorLabel.alphaValue = s.visible ? 1 : 0.35
-        colorLabel.frame = NSRect(x: 12, y: height - 33, width: 258, height: 18)
+        colorLabel.frame = NSRect(x: 12, y: parametersTop, width: 258, height: 18)
         for parameter in StitchSeamParameter.allCases {
             let index = parameter.rawValue
             let slider = sliders[index]
@@ -514,12 +573,23 @@ final class StitchEditorController: NSObject {
             label.alphaValue = s.visible ? 1 : 0.35
             value.alphaValue = s.visible ? 1 : 0.35
             if let visibleIndex {
-                let y = height - 28 - (hasColor ? 34 : 0) - CGFloat(visibleIndex) * 38
+                let y = parametersTop - (hasColor ? 34 : 0) - CGFloat(visibleIndex) * 38
                 label.frame = NSRect(x: 12, y: y, width: 260, height: 16)
                 value.frame = NSRect(x: 289, y: y, width: 65, height: 16)
                 slider.frame = NSRect(x: 10, y: y - 19, width: 346, height: 20)
             }
         }
+        angleControl.camera = StitchPaperCamera(perspective: s.accordionPerspective, yaw: s.accordionYaw)
+        angleControl.isHidden = !showsAngle
+        angleControl.isEnabled = s.visible
+        angleControl.alphaValue = s.visible ? 1 : 0.35
+        angleControl.frame = NSRect(x: 12, y: 12, width: 176, height: 92)
+        angleHint.isHidden = !showsAngle
+        angleHint.alphaValue = s.visible ? 1 : 0.35
+        angleHint.frame = NSRect(x: 202, y: 48, width: 150, height: 56)
+        animationButton.isHidden = !showsAngle
+        animationButton.isEnabled = editorView?.canPreviewStitchPaper == true
+        animationButton.frame = NSRect(x: 202, y: 14, width: 150, height: 28)
         PopoverHelper.resize(seamOptions, to: size)
     }
     private func previewSeamColor(_ color: NSColor?) {
@@ -622,7 +692,7 @@ final class StitchEditorController: NSObject {
             }
         }
         guard let original = savedPreviewInsets else { return }
-        let padding = editor.beautifyEnabled ? editor.beautifyPadding : 0
+        let padding = ScreenshotPresentation.paperPadding
         scroll.contentInsets = NSEdgeInsets(top: original.top + padding, left: original.left + padding,
             bottom: original.bottom + padding, right: original.right + padding)
     }
@@ -641,14 +711,20 @@ final class StitchEditorController: NSObject {
         editorView?.stitchPreviewEnabled = false
     }
 
-    private func schedulePaperPreview() {
+    private func schedulePaperPreview(keepsCurrentPaper: Bool = false) {
+        guard cameraSnapshot == nil else { return }
         pendingPaperPreview?.cancel()
         paperRenderCancellation?.cancel()
         let generation = UUID(); paperGeneration = generation
         guard let editor = editorView, editor.stitchPreviewEnabled, editor.canPreviewStitchPaper,
               paperPreview.superview != nil else { return }
         paperPreview.cancelAnimation()
-        paperPreview.image = nil
+        if !keepsCurrentPaper && !committingCamera {
+            paperPreview.image = nil
+            interactiveTexture = nil
+            interactiveBackground = nil
+            interactivePaperFrame = nil
+        }
         updatePreviewInsets()
         let cancellation = StitchPreviewCancellation()
         paperRenderCancellation = cancellation
@@ -675,20 +751,18 @@ final class StitchEditorController: NSObject {
             bitmap.draw(pixels, in: CGRect(x: 0, y: 0, width: width, height: height))
             guard let texture = bitmap.makeImage() else { self.failPaperPreview(); return }
             let presentation = ScreenshotPresentation(effects: editor.effectsConfig,
-                beautify: editor.beautifyEnabled ? editor.beautifyConfig : nil, projection: projection)
+                beautify: editor.beautifyConfig, projection: projection)
             guard let prepared = presentation.prepare(NSImage(cgImage: texture, size: composite.size)) else {
                 self.failPaperPreview(); return
             }
-            let padding = editor.beautifyEnabled ? editor.beautifyPadding : 0
+            let padding = ScreenshotPresentation.paperPadding
             self.paperPreview.frame = CGRect(x: editor.selectionRect.minX - padding,
                 y: editor.selectionRect.minY - padding, width: prepared.imageSize.width, height: prepared.imageSize.height)
-            let shouldAnimate = self.animatesNextPaperPreview
             self.renderQueue.async { [weak self] in
                 guard !cancellation.isCancelled else { return }
                 let (rendered, animationTexture) = autoreleasepool {
                     let rendered = prepared.renderCGImage()
-                    return (rendered, shouldAnimate && !cancellation.isCancelled
-                        ? prepared.animationTexture(maxDimension: 1600) : nil)
+                    return (rendered, !cancellation.isCancelled ? prepared.animationTexture(maxDimension: 1600) : nil)
                 }
                 guard !cancellation.isCancelled else { return }
                 DispatchQueue.main.async { [weak self, weak editor] in
@@ -700,9 +774,16 @@ final class StitchEditorController: NSObject {
                         return
                     }
                     self.paperPreview.image = NSImage(cgImage: rendered, size: prepared.imageSize)
+                    let paperFrame = self.paperPreview.convert(editor.selectionRect, from: editor)
+                    self.interactiveTexture = animationTexture
+                    self.interactiveBackground = prepared.paperBackground?.pixels
+                    self.interactivePaperFrame = paperFrame
+                    self.paperPreview.paperFrame = paperFrame
+                    self.paperPreview.projection = projection
+                    self.paperPreview.camera = StitchPaperCamera(perspective: snapshot.style.accordionPerspective,
+                        yaw: snapshot.style.accordionYaw)
                     if self.animatesNextPaperPreview, let animationTexture {
                         self.animatesNextPaperPreview = false
-                        let paperFrame = self.paperPreview.convert(editor.selectionRect, from: editor)
                         self.paperPreview.animate(texture: animationTexture, document: snapshot,
                             frame: paperFrame, background: prepared.paperBackground?.pixels)
                     }
@@ -846,6 +927,97 @@ final class StitchEditorController: NSObject {
         editorView?.refreshStitchOptions()
         if focusCanvas { window?.makeFirstResponder(canvas) }
     }
+    private func beginCameraGesture(owner: NSView? = nil) {
+        guard cameraSnapshot == nil, let editor = editorView,
+              document.style.visible, document.style.transition == .accordion else { return }
+        cameraSnapshot = document
+        if let owner {
+            cameraScopeOwner = owner
+            ScreenshotCommandResponder.forWindow(window)?.setTransientScope(owner: owner) { [weak self] in
+                guard let self else { return }
+                _ = self.paperPreview.cancelCameraGesture()
+                _ = self.angleControl.cancelCameraGesture()
+                self.endCameraGesture(commit: false)
+            }
+        }
+        pendingPaperPreview?.cancel()
+        paperRenderCancellation?.cancel()
+        paperGeneration = UUID()
+        paperPreview.cancelAnimation()
+        if editor.canPreviewStitchPaper { editor.stitchPreviewEnabled = true }
+    }
+    private func changeCamera(_ camera: StitchPaperCamera) {
+        guard cameraSnapshot != nil else { return }
+        document.style.accordionPerspective = camera.perspective
+        document.style.accordionYaw = camera.yaw
+        angleControl.camera = camera
+        paperPreview.camera = camera
+        guard let texture = interactiveTexture, let frame = interactivePaperFrame else { return }
+        _ = paperPreview.showInteractivePaper(texture: texture, document: document,
+            frame: frame, background: interactiveBackground)
+    }
+    private func endCameraGesture(commit: Bool) {
+        if let owner = cameraScopeOwner {
+            ScreenshotCommandResponder.forWindow(window)?.removeTransientScope(owner: owner)
+        }
+        cameraScopeOwner = nil
+        guard let original = cameraSnapshot else { return }
+        let next = document
+        cameraSnapshot = nil
+        document = original
+        committingCamera = true
+        if commit && !original.isIdentical(to: next) { _ = commitDocument(next) }
+        committingCamera = false
+        syncSeamControls()
+        paperPreview.camera = StitchPaperCamera(perspective: document.style.accordionPerspective,
+            yaw: document.style.accordionYaw)
+        schedulePaperPreview(keepsCurrentPaper: true)
+    }
+    private func resetCamera() {
+        guard document.style.visible, document.style.transition == .accordion else { return }
+        beginCameraGesture()
+        changeCamera(StitchPaperCamera())
+        endCameraGesture(commit: true)
+    }
+    @objc private func saveAnimation() {
+        guard animationSavePanel == nil, let editor = editorView,
+              editor.canPreviewStitchPaper, let window,
+              let composite = editor.captureSelectedRegion() else { return }
+        do {
+            guard let prepared = ScreenshotPresentation(view: editor).prepare(composite) else {
+                throw StitchAnimationExporter.ExportError.invalidSnapshot
+            }
+            let plan = try StitchAnimationExporter.prepare(document: document, presentation: prepared)
+            PopoverHelper.dismiss()
+            let savePanel = StitchAnimationSavePanel()
+            animationSavePanel = savePanel
+            savePanel.present(in: window) { [weak self] choice in
+                self?.animationSavePanel = nil
+                guard let choice else { return }
+                let accessing = choice.url.startAccessingSecurityScopedResource()
+                let access = SaveDirectoryLease(alreadyAccessing: accessing ? choice.url : nil)
+                let job = MediaExportCoordinator.shared.start(title: choice.url.lastPathComponent,
+                    status: L("Saving animation…"), operation: { cancellation, progress in
+                        defer { withExtendedLifetime(access) {} }
+                        try await StitchAnimationExporter.export(plan, to: choice.url, format: choice.format,
+                            cancellation: cancellation, progress: progress)
+                    }, completion: { [weak self] result in
+                        switch result {
+                        case .success: self?.showFeedback(L("Animation saved."))
+                        case .failure(let error) where error is CancellationError:
+                            self?.showFeedback(L("Cancelled"))
+                        case .failure(let error):
+                            let message = L("Unable to save animation.") + " " + error.localizedDescription
+                            if let self, self.editorView?.window != nil { self.showFeedback(message) }
+                            else { ImageSaveService.onFailure?(message) }
+                        }
+                    })
+                MediaExportProgressController.show(for: job)
+            }
+        } catch {
+            editor.showOverlayError(L("Unable to save animation.") + " " + error.localizedDescription)
+        }
+    }
     @objc private func changeStyle(_ sender: NSSlider) {
         guard document.style.visible, let parameter = StitchSeamParameter(rawValue: sender.tag),
               StitchSeamParameter.visible(for: document.style.transition).contains(parameter) else { return }
@@ -868,7 +1040,6 @@ final class StitchEditorController: NSObject {
         next.style.transition = transition
         guard commitDocument(next) else { syncSeamControls(); return }
         if transition == .accordion {
-            editorView?.setBeautifyEnabled(true)
             editorView?.stitchPreviewEnabled = editorView?.canPreviewStitchPaper == true
             animatesNextPaperPreview = true
         } else { editorView?.stitchPreviewEnabled = false }
