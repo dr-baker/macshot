@@ -15,7 +15,8 @@ extension StitchDocument {
             style.foldDepth == other.style.foldDepth,
             style.foldStrength == other.style.foldStrength,
             style.accordionWidth == other.style.accordionWidth,
-            style.accordionPleats == other.style.accordionPleats, style.visible == other.style.visible else { return false }
+            style.accordionPleats == other.style.accordionPleats,
+            style.accordionPerspective == other.style.accordionPerspective, style.visible == other.style.visible else { return false }
         switch (background, other.background) {
         case (.automatic, .automatic), (.transparent, .transparent): break
         case (.color(let a), .color(let b)): guard a == b else { return false }

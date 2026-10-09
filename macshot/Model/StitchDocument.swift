@@ -73,6 +73,8 @@ struct StitchStyle {
     var foldStrength: CGFloat = 1
     var accordionWidth: CGFloat = 30
     var accordionPleats: CGFloat = 3
+    /// Camera tilt in degrees. The sheet keeps its content, with perspective around real creases.
+    var accordionPerspective: CGFloat = 14
     var breakSize: CGFloat = 3
     var visible = true
 }

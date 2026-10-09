@@ -756,18 +756,26 @@ class OverlayWindowController {
         return result
     }
 
-    private func applyBeautifyIfNeeded(_ image: NSImage?) -> NSImage? {
-        guard let image = image, let view = overlayView else { return image }
-        var result = image
-        // Apply image effects first (non-destructive CIFilter adjustments)
-        if view.effectsActive {
-            result = ImageEffects.apply(to: result, config: view.effectsConfig)
+    /// Freeze settings and the composited input before any output action tears down the view.
+    private func capturePresentationInput() -> (image: NSImage, presentation: ScreenshotPresentation)? {
+        guard let view = overlayView, let composited = captureRegion() else { return nil }
+        let presentation = ScreenshotPresentation(view: view)
+        var image = composited
+        if view.stitchDocument == nil, presentation.beautify?.isWindowSnap == true,
+           let snappedWindow = view.snappedWindowImage {
+            image = compositeAnnotationsOnSnappedWindow(snappedWindow,
+                annotations: view.annotations.map { $0.clone() }, selectionRect: view.selectionRect)
         }
-        // Apply beautify second (gradient background wrapping)
-        if view.beautifyEnabled {
-            result = BeautifyRenderer.render(image: result, config: view.beautifyConfig)
+        return (image, presentation)
+    }
+
+    private func capturePresentedImage() -> NSImage? {
+        guard let snapshot = capturePresentationInput(),
+              let image = snapshot.presentation.render(snapshot.image) else {
+            overlayView?.showOverlayError(L("Unable to render this canvas. Reduce its size and try again."))
+            return nil
         }
-        return result
+        return image
     }
 
     private func copyImageToClipboard(_ image: NSImage) {
@@ -809,50 +817,11 @@ extension OverlayWindowController: OverlayViewDelegate {
             finishRawSelection(selectionRect)
             return
         }
-        // Snapshot post-processing config before dismissing (view will be torn down)
-        let hasEffects = overlayView?.effectsActive ?? false
-        let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
-        let hasBeautify = overlayView?.beautifyEnabled ?? false
-        let beautifyCfg = overlayView?.beautifyConfig ?? BeautifyConfig()
-        let snapWindowImg = overlayView?.stitchDocument == nil ? overlayView?.snappedWindowImage : nil
-
-        // Capture the composited image (screenshot + annotations baked in).
-        // This is a single render — no double capture.
-        guard let compositedImage = captureRegion() else {
-            dismiss()
-            overlayDelegate?.overlayDidCancel(self)
-            return
-        }
-
-        // Snapshot annotations + selection rect before dismiss (view will be torn down)
-        let snapshotAnnotations = overlayView?.annotations ?? []
-        let snapshotSelRect = overlayView?.selectionRect ?? .zero
-
+        guard let finalImage = capturePresentedImage() else { return }
         let annotationData = currentAnnotationDataForHistory()
 
-        // Dismiss immediately — user is free to continue working
         playCopySound()
         dismiss()
-
-        // Apply post-processing if needed
-        var finalImage = compositedImage
-        if hasEffects {
-            finalImage = ImageEffects.apply(to: finalImage, config: effectsCfg)
-        }
-        if hasBeautify {
-            // For snapped windows, use the independently captured window image (transparent corners)
-            // with annotations composited on top (using pre-dismiss snapshot)
-            var beautifyInput = finalImage
-            if beautifyCfg.isWindowSnap, let snapWindowImg {
-                // The snapped window is its own capture, so the effects applied
-                // to `finalImage` above have to be applied to it as well —
-                // otherwise turning on beautify silently discarded them.
-                let snapped = compositeAnnotationsOnSnappedWindow(
-                    snapWindowImg, annotations: snapshotAnnotations, selectionRect: snapshotSelRect)
-                beautifyInput = hasEffects ? ImageEffects.apply(to: snapped, config: effectsCfg) : snapped
-            }
-            finalImage = BeautifyRenderer.render(image: beautifyInput, config: beautifyCfg)
-        }
 
         // Copy button / Cmd+C always copies to clipboard
         ImageEncoder.copyToClipboard(finalImage)
@@ -861,9 +830,8 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     func overlayViewDidRequestPin() {
-        guard var image = captureRegion() else { return }
+        guard let image = capturePresentedImage() else { return }
         let annotationData = currentAnnotationDataForHistory()
-        image = applyBeautifyIfNeeded(image) ?? image
         playCopySound()
         dismiss()
         overlayDelegate?.overlayDidRequestPin(self, image: image, annotationData: annotationData)
@@ -890,9 +858,8 @@ extension OverlayWindowController: OverlayViewDelegate {
 
     func overlayViewDidRequestUpload() {
         #if !OFFLINE
-        guard var image = captureRegion() else { return }
+        guard let image = capturePresentedImage() else { return }
         let annotationData = currentAnnotationDataForHistory()
-        image = applyBeautifyIfNeeded(image) ?? image
         playCopySound()
         dismiss()
         overlayDelegate?.overlayDidRequestUpload(self, image: image, annotationData: annotationData)
@@ -906,8 +873,7 @@ extension OverlayWindowController: OverlayViewDelegate {
             return
         }
 
-        guard var image = captureRegion() else { return }
-        image = applyBeautifyIfNeeded(image) ?? image
+        guard let image = capturePresentedImage() else { return }
         let annotationData = currentAnnotationDataForHistory()
         guard let imageData = ImageEncoder.encode(image) else { return }
         let tempURL = TmpScratchDirectory.makeURL(
@@ -1106,8 +1072,7 @@ extension OverlayWindowController: OverlayViewDelegate {
     @available(macOS 14.0, *)
     func overlayViewDidRequestRemoveBackground() {
         let appName = resolvedAppName()
-        guard var image = captureRegion() else { return }
-        image = applyBeautifyIfNeeded(image) ?? image
+        guard let image = capturePresentedImage() else { return }
 
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return
@@ -1185,39 +1150,10 @@ extension OverlayWindowController: OverlayViewDelegate {
             return
         }
         let appName = resolvedAppName()
-        // Snapshot post-processing config before dismissing
-        let hasEffects = overlayView?.effectsActive ?? false
-        let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
-        let hasBeautify = overlayView?.beautifyEnabled ?? false
-        let beautifyCfg = overlayView?.beautifyConfig ?? BeautifyConfig()
-        let snapWindowImg = overlayView?.stitchDocument == nil ? overlayView?.snappedWindowImage : nil
-
-        guard let compositedImage = captureRegion() else {
-            dismiss()
-            overlayDelegate?.overlayDidCancel(self)
-            return
-        }
-
-        // Snapshot annotations + selection rect before dismiss
-        let snapshotAnns = overlayView?.annotations ?? []
-        let snapshotSel = overlayView?.selectionRect ?? .zero
-
+        guard let image = capturePresentedImage() else { return }
         let annotationData = currentAnnotationDataForHistory()
 
         dismiss()
-
-        // Apply post-processing
-        var image = compositedImage
-        if hasEffects { image = ImageEffects.apply(to: image, config: effectsCfg) }
-        if hasBeautify {
-            var beautifyInput = image
-            if beautifyCfg.isWindowSnap, let snapWindowImg {
-                let snapped = compositeAnnotationsOnSnappedWindow(
-                    snapWindowImg, annotations: snapshotAnns, selectionRect: snapshotSel)
-                beautifyInput = hasEffects ? ImageEffects.apply(to: snapped, config: effectsCfg) : snapped
-            }
-            image = BeautifyRenderer.render(image: beautifyInput, config: beautifyCfg)
-        }
 
         let mode = QuickCaptureMode.current
 
@@ -1240,11 +1176,7 @@ extension OverlayWindowController: OverlayViewDelegate {
 
     func overlayViewDidRequestFileSave() {
         let appName = resolvedAppName()
-        guard let image = captureImageForSave() else {
-            dismiss()
-            overlayDelegate?.overlayDidCancel(self)
-            return
-        }
+        guard let image = captureImageForSave() else { return }
         let annotationData = currentAnnotationDataForHistory()
 
         dismiss()
@@ -1300,28 +1232,7 @@ extension OverlayWindowController: OverlayViewDelegate {
     }
 
     private func captureImageForSave() -> NSImage? {
-        let hasEffects = overlayView?.effectsActive ?? false
-        let effectsCfg = overlayView?.effectsConfig ?? ImageEffectsConfig()
-        let hasBeautify = overlayView?.beautifyEnabled ?? false
-        let beautifyCfg = overlayView?.beautifyConfig ?? BeautifyConfig()
-        let snapWindowImg = overlayView?.stitchDocument == nil ? overlayView?.snappedWindowImage : nil
-        let snapshotAnns = overlayView?.annotations ?? []
-        let snapshotSel = overlayView?.selectionRect ?? .zero
-
-        guard var image = captureRegion() else { return nil }
-        if hasEffects {
-            image = ImageEffects.apply(to: image, config: effectsCfg)
-        }
-        if hasBeautify {
-            var beautifyInput = image
-            if beautifyCfg.isWindowSnap, let snapWindowImg {
-                let snapped = compositeAnnotationsOnSnappedWindow(
-                    snapWindowImg, annotations: snapshotAnns, selectionRect: snapshotSel)
-                beautifyInput = hasEffects ? ImageEffects.apply(to: snapped, config: effectsCfg) : snapped
-            }
-            image = BeautifyRenderer.render(image: beautifyInput, config: beautifyCfg)
-        }
-        return image
+        capturePresentedImage()
     }
 }
 

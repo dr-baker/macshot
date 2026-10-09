@@ -88,6 +88,7 @@ final class CaptureStitchImageTests: XCTestCase {
 
     func testStitchOnlyHistoryRestoresEditablePiecesAndCorrectRawPixels() throws {
         let view = try capture()
+        view.beautifyEnabled = false
         XCTAssertTrue(view.beginStitchEditing())
         var next = try XCTUnwrap(view.stitchDocument)
         XCTAssertTrue(next.collapse(axis: .vertical, from: 40, to: 80))

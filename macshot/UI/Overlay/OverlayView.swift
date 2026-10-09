@@ -2057,8 +2057,9 @@ class OverlayView: NSView {
             // (Text move handle removed — standard annotation chrome handles movement)
 
             // Live beautify preview — draw gradient background, shadow, and rounded image around selection
-            let showBeautifyPreview = beautifyEnabled && state == .selected && !isScrollCapturing && !isRecording
-            let showEffectsPreview = effectsActive && state == .selected && !isScrollCapturing && !isRecording && !beautifyEnabled
+            let showingPaper = (self as? ImageEditingView)?.isShowingStitchPaperPreview == true
+            let showBeautifyPreview = !showingPaper && beautifyEnabled && state == .selected && !isScrollCapturing && !isRecording
+            let showEffectsPreview = !showingPaper && effectsActive && state == .selected && !isScrollCapturing && !isRecording && !beautifyEnabled
 
             if showBeautifyPreview {
                 context.saveGraphicsState()
@@ -5465,7 +5466,8 @@ class OverlayView: NSView {
         // Anchor rect: beautify-expanded when active, selection otherwise
         let config = beautifyConfig
         let bPad = config.padding
-        let titleBarH: CGFloat = config.mode == .window ? 28 : 0
+        let showingPaper = (self as? ImageEditingView)?.isShowingStitchPaperPreview == true
+        let titleBarH: CGFloat = config.mode == .window && !showingPaper ? 28 : 0
         let expandedAnchor = NSRect(
             x: selectionRect.minX - bPad, y: selectionRect.minY - bPad,
             width: selectionRect.width + bPad * 2,

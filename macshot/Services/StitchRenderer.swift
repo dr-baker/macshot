@@ -325,7 +325,7 @@ enum StitchRenderer {
         guard let original = base.makeImage() else { return nil }
         let style = document.style
         let joins = document.joins
-        guard style.visible && !joins.isEmpty else { return original }
+        guard style.visible && !joins.isEmpty && style.transition != .accordion else { return original }
         guard let final = makeContext() else { return original }
         final.draw(original, in: CGRect(x: 0, y: 0, width: width, height: height))
         if style.transition.usesBlur && style.blur > 0 && style.feather > 0,
@@ -363,13 +363,13 @@ enum StitchRenderer {
         }
         let usesPaper = (style.transition == .torn && style.tearWidth > 0)
             || (style.transition == .fold && style.foldDepth > 0 && style.foldStrength > 0)
-            || (style.transition == .accordion && style.accordionWidth > 0)
+
         if usesPaper && style.transition == .fold {
             StitchFoldWarp.apply(joins: joins, style: style, source: base, destination: final,
                 bounds: bounds, scale: scale, protectedRegions: protectedRegions,
                 coverage: coverage(document.pieces, bounds: bounds, scale: scale, width: width, height: height))
         }
-        if usesPaper && (style.transition == .torn || style.transition == .accordion) {
+        if usesPaper && style.transition == .torn {
             // Source alpha prevents paper, fibers, and shadows from inventing
             // pixels in transparent parts of an otherwise covered rectangle.
             // Use actual raster dimensions so rounded previews align exactly.

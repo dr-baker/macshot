@@ -166,7 +166,7 @@ final class NativeStitchToolTests: XCTestCase {
         let modes = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.mode" } as? NSSegmentedControl)
         XCTAssertEqual(modes.selectedSegment, 0)
         XCTAssertEqual(view.stitchMode, .removeSpace)
-        XCTAssertEqual(modes.segmentCount, 2)
+        XCTAssertEqual(modes.segmentCount, 3)
         XCTAssertEqual(modes.label(forSegment: 0), L("Remove Space"))
         XCTAssertEqual(modes.label(forSegment: 1), L("Move"))
         XCTAssertEqual(modes.toolTip(forSegment: 0),
@@ -194,15 +194,17 @@ final class NativeStitchToolTests: XCTestCase {
         var options: [StitchOptionsAction] = []
         var anchors: [NSView] = []
         view.onStitchOptions = { options.append($0); anchors.append($1) }
-        for name in ["stitch.seams", "stitch.pieces", "stitch.canvas"] {
+        for name in ["stitch.seams", "stitch.pieces", "stitch.canvas", "stitch.background"] {
             let button = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == name } as? NSButton)
             button.performClick(nil)
             XCTAssertTrue(anchors.last === button)
         }
-        XCTAssertEqual(options.count, 3)
+        XCTAssertEqual(options.count, 4)
         if case .seams = options[0] {} else { XCTFail("Wrong seam action") }
         if case .pieces = options[1] {} else { XCTFail("Wrong piece action") }
         if case .canvas = options[2] {} else { XCTFail("Wrong canvas action") }
+        if case .background = options[3] {} else { XCTFail("Wrong background action") }
+        XCTAssertFalse(modes.isEnabled(forSegment: 2), "Preview becomes available after an Accordion join exists")
         XCTAssertEqual(row.frame.height, 34)
         view.currentTool = .arrow
     }

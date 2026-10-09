@@ -1068,3 +1068,11 @@
 "No installed wallpapers found. Choose an image from Gradients." = "No installed wallpapers found. Choose an image from Gradients.";
 "Roomy" = "Roomy";
 "Wallpapers" = "Wallpapers";
+
+/* Perspective accordion preview */
+"Fold width" = "Fold width";
+"Perspective" = "Perspective";
+"Folded screenshot preview" = "Folded screenshot preview";
+"Click the paper to unfold and edit." = "Click the paper to unfold and edit.";
+"See the folded paper and background. Click the paper to edit again." = "See the folded paper and background. Click the paper to edit again.";
+"Preview" = "Preview";
