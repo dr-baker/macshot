@@ -201,6 +201,7 @@ final class StitchEditorDocumentTests: XCTestCase {
 
     func testStitchOnlyHistorySnapshotRetainsRawAndSidecarAndAppliesWithoutReplacingRaw() throws {
         let original = document(), view = editor(original)
+        view.beautifyEnabled = false
         let raw = try XCTUnwrap(view.screenshotImage)
         let state = view.captureEditState()
         XCTAssertFalse(state.hasPostProcessing)

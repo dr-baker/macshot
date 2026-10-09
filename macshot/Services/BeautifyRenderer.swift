@@ -493,6 +493,116 @@ class BeautifyRenderer {
         }
     }
 
+    /// A rasterized Beautify background and point-based frame settings, ready for a render queue.
+    nonisolated struct PaperBackground: @unchecked Sendable {
+        let pixels: CGImage
+        let imageSize: NSSize
+        let contentSize: NSSize
+        let padding: CGFloat
+        let shadowRadius: CGFloat
+        let shadowAlpha: CGFloat
+        let shadowOffset: CGFloat
+        let contactRadius: CGFloat
+        let contactAlpha: CGFloat
+        let contactOffset: CGFloat
+    }
+
+    /// Projected paper uses its own alpha outline and the selected Beautify background.
+    /// Window chrome would paint over the perspective cutouts, so it is never added here.
+    static func renderPaper(image: NSImage, config: BeautifyConfig) -> NSImage? {
+        guard let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let background = preparePaperBackground(imageSize: image.size, pixelWidth: pixels.width,
+                  pixelHeight: pixels.height, config: config),
+              let finished = renderPaper(image: pixels, background: background) else { return nil }
+        return NSImage(cgImage: finished, size: background.imageSize)
+    }
+
+    /// SwiftUI mesh gradients and NSImage drawing stay on the main actor during preparation.
+    static func preparePaperBackground(imageSize: NSSize, pixelWidth: Int, pixelHeight: Int,
+                                       config: BeautifyConfig) -> PaperBackground? {
+        guard imageSize.width.isFinite, imageSize.height.isFinite,
+              imageSize.width > 0, imageSize.height > 0, pixelWidth > 0, pixelHeight > 0,
+              config.padding.isFinite, config.padding >= 0,
+              config.shadowRadius.isFinite, config.shadowRadius >= 0 else { return nil }
+        let size = NSSize(width: imageSize.width + config.padding * 2,
+                          height: imageSize.height + config.padding * 2)
+        let scaleX = CGFloat(pixelWidth) / imageSize.width
+        let scaleY = CGFloat(pixelHeight) / imageSize.height
+        let rawWidth = (size.width * scaleX).rounded()
+        let rawHeight = (size.height * scaleY).rounded()
+        guard rawWidth.isFinite, rawHeight.isFinite, rawWidth > 0, rawHeight > 0,
+              rawWidth <= 32_000, rawHeight <= 32_000,
+              rawWidth * rawHeight <= StitchDocument.maximumPixels,
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: Int(rawWidth), height: Int(rawHeight),
+                  bitsPerComponent: 8, bytesPerRow: Int(rawWidth) * 4, space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        var frozenConfig = config
+        if frozenConfig.customBackgroundImage != nil, frozenConfig.cachedBackgroundCGImage == nil {
+            frozenConfig.prepareBackgroundCache()
+        }
+        if frozenConfig.customBackgroundImage != nil, frozenConfig.cachedBackgroundCGImage == nil { return nil }
+        let mesh = prerenderBackground(config: frozenConfig, width: Int(rawWidth), height: Int(rawHeight))
+        context.scaleBy(x: rawWidth / size.width, y: rawHeight / size.height)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        drawGradientBackground(in: NSRect(origin: .zero, size: size), config: frozenConfig,
+                               context: context, prerenderedMesh: mesh)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let pixels = context.makeImage() else { return nil }
+        return PaperBackground(pixels: pixels, imageSize: size, contentSize: imageSize,
+            padding: config.padding, shadowRadius: config.shadowRadius,
+            shadowAlpha: shadowAlpha(for: config.shadowRadius), shadowOffset: shadowOffset(for: config.shadowRadius),
+            contactRadius: contactShadowBlur(for: config.shadowRadius),
+            contactAlpha: contactShadowAlpha(for: config.shadowRadius),
+            contactOffset: contactShadowOffset(for: config.shadowRadius))
+    }
+
+    private nonisolated static let paperShadowContext = CIContext(options: [.cacheIntermediates: false])
+
+    /// Draw alpha-derived shadows only. The paper's translucent edges are composited once.
+    nonisolated static func renderPaper(image: CGImage, background: PaperBackground) -> CGImage? {
+        let width = background.pixels.width, height = background.pixels.height
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height,
+                  bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let pixelRect = CGRect(x: 0, y: 0, width: width, height: height)
+        context.draw(background.pixels, in: pixelRect)
+        let scaleX = CGFloat(width) / background.imageSize.width
+        let scaleY = CGFloat(height) / background.imageSize.height
+        let paperRect = CGRect(x: background.padding * scaleX, y: background.padding * scaleY,
+            width: background.contentSize.width * scaleX, height: background.contentSize.height * scaleY)
+
+        if background.shadowRadius > 0 {
+            let paper = CIImage(cgImage: image).transformed(by: CGAffineTransform(
+                a: paperRect.width / CGFloat(image.width), b: 0, c: 0,
+                d: paperRect.height / CGFloat(image.height), tx: paperRect.minX, ty: paperRect.minY))
+            func drawShadow(radius: CGFloat, alpha: CGFloat, offset: CGFloat) -> Bool {
+                let black = paper.applyingFilter("CIColorMatrix", parameters: [
+                    "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                    "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                    "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: alpha),
+                    "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                ])
+                let shadow = black.transformed(by: CGAffineTransform(translationX: 0, y: -offset * scaleY))
+                    .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius * scaleX])
+                    .cropped(to: pixelRect)
+                guard let pixels = paperShadowContext.createCGImage(shadow, from: pixelRect,
+                    format: .RGBA8, colorSpace: colorSpace) else { return false }
+                context.draw(pixels, in: pixelRect)
+                return true
+            }
+            guard drawShadow(radius: background.shadowRadius, alpha: background.shadowAlpha,
+                             offset: background.shadowOffset),
+                  drawShadow(radius: background.contactRadius, alpha: background.contactAlpha,
+                             offset: background.contactOffset) else { return nil }
+        }
+        context.draw(image, in: paperRect)
+        return context.makeImage()
+    }
+
     static func shadowAlpha(for radius: CGFloat) -> CGFloat {
         guard radius > 0 else { return 0 }
         let t = min(max(radius / 100, 0), 1)

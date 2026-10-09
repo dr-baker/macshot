@@ -122,7 +122,14 @@ final class StitchSeamStylePicker: NSView {
             style.breakSize = 5
             style.blur = 3
             style.feather = 20
-            guard let rendered = StitchRenderer.render(StitchDocument(pieces: pieces, style: style)) else { return nil }
+            let document = StitchDocument(pieces: pieces, style: style)
+            guard let flat = StitchRenderer.render(document) else { return nil }
+            let rendered: CGImage
+            if transition == .accordion {
+                guard let projection = StitchAccordionProjection(document: document),
+                      let paper = StitchAccordionWarp.render(flat, projection: projection) else { return nil }
+                rendered = paper
+            } else { rendered = flat }
             let image = NSImage(cgImage: rendered, size: NSSize(width: 56, height: 35))
             return (transition, image)
         })

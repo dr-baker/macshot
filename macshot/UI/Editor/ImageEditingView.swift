@@ -44,6 +44,23 @@ class ImageEditingView: OverlayView, NSMenuItemValidation {
         }
     }
     var onStitchModeChanged: ((StitchCanvasView.Mode) -> Void)?
+    /// Editing uses the source geometry; Preview shows the paper used by every output action.
+    var stitchPreviewEnabled = false {
+        didSet {
+            guard stitchPreviewEnabled != oldValue else { return }
+            onStitchPreviewChanged?()
+            refreshStitchOptions()
+        }
+    }
+    var onStitchPreviewChanged: (() -> Void)?
+    var isShowingStitchPaperPreview: Bool {
+        currentTool == .stitch && stitchPreviewEnabled && canPreviewStitchPaper
+    }
+    var canPreviewStitchPaper: Bool {
+        guard let document = stitchDocument else { return false }
+        return document.style.visible && document.style.transition == .accordion
+            && document.style.accordionWidth > 0 && !document.joins.isEmpty
+    }
     var onStitchToolChanged: ((Bool) -> Void)?
     var onStitchOptions: ((StitchOptionsAction, NSView) -> Void)?
     var onStitchPlacementChanged: ((StitchPlacement) -> Void)?
@@ -460,6 +477,7 @@ class ImageEditingView: OverlayView, NSMenuItemValidation {
 
     override func reset() {
         onStitchToolChanged?(false)
+        stitchPreviewEnabled = false
         stitchDocument = nil
         stitchCaptureBackdrop = nil
         stitchCaptureSelectionRect = nil

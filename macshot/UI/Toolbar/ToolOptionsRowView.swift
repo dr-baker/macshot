@@ -33,7 +33,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         case lineStyle, arrowStyle, shapeFill, censorMode
         case cornerRadiusTitle, cornerRadiusSlider, cornerRadiusValue
         case arrowFlip, pencilSmooth, pencilPressure, markerSmart
-        case stitchMode, stitchPlacement, stitchSeams, stitchPieces, stitchCanvas
+        case stitchMode, stitchPlacement, stitchSeams, stitchPieces, stitchCanvas, stitchBackground
         case numberFormat, numberStartTitle, numberStartStepper, numberStartValue
         case fontFamily, textBold, textItalic, textUnderline, textStrikethrough
         case alignmentLeft, alignmentCenter, alignmentRight
@@ -528,10 +528,9 @@ class ToolOptionsRowView: ScreenshotPanelView {
     func refreshStitchState() {
         guard currentTool == .stitch, let editor = overlayView as? ImageEditingView else { return }
         if let modes = subviews.first(where: { $0.identifier?.rawValue == "stitch.mode" }) as? NSSegmentedControl {
-            switch editor.stitchMode {
-            case .removeSpace: modes.selectedSegment = 0
-            case .move: modes.selectedSegment = 1
-            }
+            modes.setEnabled(editor.canPreviewStitchPaper, forSegment: 2)
+            modes.selectedSegment = editor.stitchPreviewEnabled && editor.canPreviewStitchPaper
+                ? 2 : (editor.stitchMode == .removeSpace ? 0 : 1)
         }
         if let placement = subviews.first(where: { $0.identifier?.rawValue == "stitch.placement" }) as? NSPopUpButton {
             placement.selectItem(at: editor.stitchDocument?.placement == .packed ? 1 : 0)
@@ -540,19 +539,19 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     private func addStitchOptions(at x: CGFloat, editor: ImageEditingView) -> CGFloat {
         var curX = x
-        let modes = makeSegments(.stitchMode, labels: [L("Remove Space"), L("Move")],
+        let modes = makeSegments(.stitchMode, labels: [L("Remove Space"), L("Move"), L("Preview")],
             action: #selector(stitchModeChanged(_:)))
         modes.identifier = NSUserInterfaceItemIdentifier("stitch.mode")
-        switch editor.stitchMode {
-        case .removeSpace: modes.selectedSegment = 0
-        case .move: modes.selectedSegment = 1
-        }
+        modes.setEnabled(editor.canPreviewStitchPaper, forSegment: 2)
+        modes.selectedSegment = editor.stitchPreviewEnabled && editor.canPreviewStitchPaper
+            ? 2 : (editor.stitchMode == .removeSpace ? 0 : 1)
         modes.font = NSFont.systemFont(ofSize: 10, weight: .medium)
         (modes.cell as? NSSegmentedCell)?.segmentStyle = .roundRect
         modes.sizeToFit()
         modes.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: modes.frame.width, height: 22)
         modes.setToolTip(L("Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides."), forSegment: 0)
         modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 1)
+        modes.setToolTip(L("See the folded paper and background. Click the paper to edit again."), forSegment: 2)
         addSubview(modes)
         curX += modes.frame.width + 4
         curX = addSeparator(at: curX, before: .stitchPlacement)
@@ -572,11 +571,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
         curX += placement.frame.width + 4
         curX = addSeparator(at: curX, before: .stitchSeams)
 
-        let options: [(String, String, Int, ControlRole)] = [
+        var options: [(String, String, Int, ControlRole)] = [
             (L("Seams"), "stitch.seams", 0, .stitchSeams),
             (L("Pieces"), "stitch.pieces", 1, .stitchPieces),
             (L("Canvas"), "stitch.canvas", 2, .stitchCanvas),
         ]
+        options.append((L("Background"), "stitch.background", 3, .stitchBackground))
         for (label, identifier, tag, role) in options {
             let button = makeButton(role, title: label, action: #selector(stitchOptionsClicked(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(identifier)
@@ -594,10 +594,15 @@ class ToolOptionsRowView: ScreenshotPanelView {
 
     @objc private func stitchModeChanged(_ sender: NSSegmentedControl) {
         guard let editor = overlayView as? ImageEditingView else { return }
-        switch sender.selectedSegment {
-        case 0: editor.stitchMode = .removeSpace
-        case 1: editor.stitchMode = .move
-        default: break
+        if sender.selectedSegment == 2 {
+            editor.stitchPreviewEnabled = editor.canPreviewStitchPaper
+        } else {
+            editor.stitchPreviewEnabled = false
+            switch sender.selectedSegment {
+            case 0: editor.stitchMode = .removeSpace
+            case 1: editor.stitchMode = .move
+            default: break
+            }
         }
     }
 
@@ -611,6 +616,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         switch sender.tag {
         case 0: option = .seams
         case 1: option = .pieces
+        case 3: option = .background
         default: option = .canvas
         }
         editor.onStitchOptions?(option, sender)

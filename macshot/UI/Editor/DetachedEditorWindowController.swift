@@ -445,7 +445,11 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
 
     private func captureHistorySave() -> HistorySave? {
         guard let view = overlayView, let composited = view.captureSelectedRegion() else { return nil }
-        return HistorySave(image: applyPostProcessing(composited), annotationData: currentAnnotationData(),
+        guard let image = applyPostProcessing(composited) else {
+            view.showOverlayError(L("Unable to render this canvas. Reduce its size and try again."))
+            return nil
+        }
+        return HistorySave(image: image, annotationData: currentAnnotationData(),
             undoState: view.undoStateIdentity, editState: view.captureEditState(), revision: contentRevision)
     }
 
@@ -529,16 +533,9 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         )
     }
 
-    /// Apply image effects and beautify to the captured image.
-    private func applyPostProcessing(_ image: NSImage) -> NSImage {
-        var result = image
-        if let view = overlayView, view.effectsActive {
-            result = ImageEffects.apply(to: result, config: view.effectsConfig)
-        }
-        if let view = overlayView, view.beautifyEnabled {
-            result = BeautifyRenderer.render(image: result, config: view.beautifyConfig)
-        }
-        return result
+    private func applyPostProcessing(_ image: NSImage) -> NSImage? {
+        guard let view = overlayView else { return nil }
+        return ScreenshotPresentation(view: view).render(image)
     }
 }
 
