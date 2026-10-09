@@ -5,7 +5,7 @@ import XCTest
 final class BeautifyWallpaperTests: XCTestCase {
     private var savedPreferences: [String: Any] = [:]
     private let keys = ["beautifyPadding", "beautifyCornerRadius", "beautifyShadowRadius", "beautifyStyleIndex",
-                        "beautifyCustomBgImageData", "beautifyWallpaperID"]
+                        "beautifyCustomBgImageData", "beautifyWallpaperID", "beautifyBgBlur"]
 
     override func setUp() {
         super.setUp()
@@ -98,6 +98,134 @@ final class BeautifyWallpaperTests: XCTestCase {
         }
     }
 
+    func testWallpaperChoiceSurvivesDismissingItsPicker() throws {
+        let deferred = DeferredWallpaperLoader()
+        let view = backgroundEditor(loader: deferred)
+        let wallpaper = testWallpaper("Tahoe Day")
+        weak var releasedPicker: BeautifyBackgroundPickerView?
+        try autoreleasepool {
+            let picker = backgroundPicker(view: view, wallpapers: [wallpaper])
+            releasedPicker = picker
+            try clickWallpaper(wallpaper, in: picker)
+        }
+        XCTAssertEqual(deferred.requests.count, 1)
+        XCTAssertNil(releasedPicker, "Pending wallpaper work must not retain the dismissed gallery")
+
+        deferred.complete(0, with: try loadedWallpaper(color: .blue))
+        XCTAssertEqual(view.beautifyWallpaperID, wallpaper.id)
+        let background = try XCTUnwrap(view.customBeautifyBackground)
+        XCTAssertGreaterThan(try XCTUnwrap(ImageProbe.pixelColor(background, x: 2, y: 2)).blueComponent, 0.9)
+        XCTAssertFalse(view.beautifyEnabled, "Background selection must not enable frame decoration")
+    }
+
+    func testLaterPickerSelectionRejectsEarlierWallpaperCompletion() throws {
+        let deferred = DeferredWallpaperLoader()
+        let view = backgroundEditor(loader: deferred)
+        let first = testWallpaper("Tahoe Day"), second = testWallpaper("Sonoma")
+        var oldPicker: BeautifyBackgroundPickerView? = backgroundPicker(view: view, wallpapers: [first])
+        try clickWallpaper(first, in: XCTUnwrap(oldPicker))
+        oldPicker = nil
+        let newPicker = backgroundPicker(view: view, wallpapers: [second])
+        try clickWallpaper(second, in: newPicker)
+        XCTAssertEqual(deferred.requests.map(\.id), [first.id, second.id])
+
+        deferred.complete(0, with: try loadedWallpaper(color: .red))
+        XCTAssertNil(view.beautifyWallpaperID, "An older completion cannot apply while a later choice is pending")
+        deferred.complete(1, with: try loadedWallpaper(color: .blue))
+        deferred.complete(0, with: try loadedWallpaper(color: .red))
+        XCTAssertEqual(view.beautifyWallpaperID, second.id)
+        let color = try XCTUnwrap(ImageProbe.pixelColor(XCTUnwrap(view.customBeautifyBackground), x: 2, y: 2))
+        XCTAssertGreaterThan(color.blueComponent, 0.9)
+        XCTAssertLessThan(color.redComponent, 0.1)
+    }
+
+    func testGradientAndCustomImageChoicesCancelAClosedPickersWallpaperLoad() throws {
+        for customImage in [false, true] {
+            let deferred = DeferredWallpaperLoader()
+            let view = backgroundEditor(loader: deferred)
+            let wallpaper = testWallpaper("Tahoe Day")
+            var oldPicker: BeautifyBackgroundPickerView? = backgroundPicker(view: view, wallpapers: [wallpaper])
+            try clickWallpaper(wallpaper, in: XCTUnwrap(oldPicker))
+            oldPicker = nil
+            let newPicker = backgroundPicker(view: view, wallpapers: [])
+            let gradients = try XCTUnwrap(newPicker.subviews.compactMap { $0 as? GradientPickerView }.first)
+            if customImage {
+                newPicker.onCustomImage = { [weak view] in
+                    view?.customBeautifyBackground = ImageProbe.solidImage(width: 12, height: 12, color: NSColor.green.cgColor)
+                    view?.beautifyStyleIndex = -1
+                }
+                gradients.onCustomImage?()
+            } else {
+                gradients.onSelect?(3)
+            }
+            deferred.complete(0, with: try loadedWallpaper(color: .red))
+            XCTAssertNil(view.beautifyWallpaperID)
+            XCTAssertEqual(view.beautifyStyleIndex, customImage ? -1 : 3)
+            if customImage {
+                let color = try XCTUnwrap(ImageProbe.pixelColor(XCTUnwrap(view.customBeautifyBackground), x: 2, y: 2))
+                XCTAssertGreaterThan(color.greenComponent, 0.9)
+                XCTAssertLessThan(color.redComponent, 0.1)
+            } else {
+                XCTAssertNil(view.customBeautifyBackground)
+            }
+        }
+    }
+
+    func testWallpaperCompletionCannotChangeAResetOrRestoredCapture() throws {
+        for restoreHistory in [false, true] {
+            let deferred = DeferredWallpaperLoader()
+            let view = backgroundEditor(loader: deferred)
+            view.beautifyStyleIndex = 3
+            let original = view.captureEditState()
+            let wallpaper = testWallpaper("Tahoe Day")
+            let picker = backgroundPicker(view: view, wallpapers: [wallpaper])
+            try clickWallpaper(wallpaper, in: picker)
+            if restoreHistory { view.applyCaptureEditState(original) }
+            else { view.reset() }
+            let expectedIndex = view.beautifyStyleIndex
+            let expectedWallpaper = view.beautifyWallpaperID
+            let expectedBackground = FieldDescriber.describe(view.customBeautifyBackground as Any)
+            deferred.complete(0, with: try loadedWallpaper(color: .red))
+            XCTAssertEqual(view.beautifyStyleIndex, expectedIndex)
+            XCTAssertEqual(view.beautifyWallpaperID, expectedWallpaper)
+            XCTAssertEqual(FieldDescriber.describe(view.customBeautifyBackground as Any), expectedBackground)
+        }
+    }
+
+    func testWallpaperWorkDoesNotKeepAClosedEditorAlive() throws {
+        let deferred = DeferredWallpaperLoader()
+        let wallpaper = testWallpaper("Tahoe Day")
+        weak var releasedEditor: OverlayView?
+        weak var releasedPicker: BeautifyBackgroundPickerView?
+        try autoreleasepool {
+            let view = backgroundEditor(loader: deferred)
+            let picker = backgroundPicker(view: view, wallpapers: [wallpaper])
+            releasedEditor = view
+            releasedPicker = picker
+            try clickWallpaper(wallpaper, in: picker)
+        }
+        XCTAssertNil(releasedPicker)
+        XCTAssertNil(releasedEditor)
+        let savedID = UserDefaults.standard.string(forKey: "beautifyWallpaperID")
+        deferred.complete(0, with: try loadedWallpaper(color: .red))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "beautifyWallpaperID"), savedID)
+    }
+
+    func testBackgroundPickerBlurPersistsForAFreshOverlay() throws {
+        let view = OverlayView(frame: CGRect(x: 0, y: 0, width: 120, height: 80))
+        view.beautifyStyleIndex = -1
+        view.customBeautifyBackground = ImageProbe.solidImage(width: 12, height: 12)
+        let picker = view.makeBeautifyBackgroundPicker(backgroundOnly: true, wallpapers: [])
+        let slider = try XCTUnwrap(picker.subviews.compactMap { $0 as? NSSlider }.first)
+        XCTAssertTrue(slider.isEnabled)
+        slider.doubleValue = 23
+        XCTAssertTrue(NSApplication.shared.sendAction(try XCTUnwrap(slider.action), to: slider.target, from: slider))
+        XCTAssertEqual(view.beautifyBackgroundBlur, 23)
+        XCTAssertEqual(UserDefaults.standard.double(forKey: "beautifyBgBlur"), 23)
+        XCTAssertEqual(OverlayView().beautifyBackgroundBlur, 23,
+            "The next capture must restore the blur selected through the actual background picker callback")
+    }
+
     func testOptionalWallpaperVisualProof() throws {
         guard let directory = ProcessInfo.processInfo.environment["TEST_RUNNER_MACSHOT_SEAM_PREVIEW_DIR"]
             ?? ProcessInfo.processInfo.environment["MACSHOT_SEAM_PREVIEW_DIR"] else { return }
@@ -125,5 +253,53 @@ final class BeautifyWallpaperTests: XCTestCase {
         let url = URL(fileURLWithPath: directory).appendingPathComponent("wallpaper-compact.png")
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url)
+    }
+
+    private func backgroundEditor(loader: DeferredWallpaperLoader) -> OverlayView {
+        let view = OverlayView(frame: CGRect(x: 0, y: 0, width: 120, height: 80))
+        view.beautifyBackgroundSelection = BeautifyBackgroundSelection(loader: loader.load)
+        view.beautifyEnabled = false
+        view.beautifyStyleIndex = 0
+        view.beautifyWallpaperID = nil
+        view.customBeautifyBackground = nil
+        view.screenshotImage = ImageProbe.solidImage(width: 120, height: 80)
+        view.applySelection(view.bounds)
+        return view
+    }
+
+    private func backgroundPicker(view: OverlayView, wallpapers: [MacOSWallpaper]) -> BeautifyBackgroundPickerView {
+        view.makeBeautifyBackgroundPicker(backgroundOnly: true, wallpapers: wallpapers)
+    }
+
+    private func clickWallpaper(_ wallpaper: MacOSWallpaper, in picker: BeautifyBackgroundPickerView) throws {
+        let gallery = try XCTUnwrap(picker.subviews.compactMap { $0 as? NSScrollView }.first?.documentView)
+        let button = try XCTUnwrap(gallery.subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == wallpaper.title })
+        XCTAssertTrue(NSApplication.shared.sendAction(try XCTUnwrap(button.action), to: button.target, from: button))
+    }
+
+    private func testWallpaper(_ title: String) -> MacOSWallpaper {
+        MacOSWallpaper(id: title, title: title, url: URL(fileURLWithPath: "/unused-test-wallpapers/\(title).heic"))
+    }
+
+    private func loadedWallpaper(color: NSColor) throws -> BeautifyBackgroundSelection.LoadedWallpaper {
+        let image = try XCTUnwrap(ImageProbe.solidImage(width: 12, height: 12, color: color.cgColor)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        return BeautifyBackgroundSelection.LoadedWallpaper(image: image, pngData: try XCTUnwrap(MacOSWallpapers.pngData(image)))
+    }
+
+    @MainActor
+    private final class DeferredWallpaperLoader {
+        var requests: [MacOSWallpaper] = []
+        private var completions: [@MainActor (BeautifyBackgroundSelection.LoadedWallpaper?) -> Void] = []
+
+        func load(_ wallpaper: MacOSWallpaper,
+                  completion: @escaping @MainActor (BeautifyBackgroundSelection.LoadedWallpaper?) -> Void) {
+            requests.append(wallpaper)
+            completions.append(completion)
+        }
+
+        func complete(_ index: Int, with result: BeautifyBackgroundSelection.LoadedWallpaper) {
+            completions[index](result)
+        }
     }
 }

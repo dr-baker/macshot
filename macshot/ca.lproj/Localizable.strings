@@ -1078,3 +1078,20 @@
 "Click the paper to unfold and edit." = "Click the paper to unfold and edit.";
 "See the folded paper and background. Click the paper to edit again." = "See the folded paper and background. Click the paper to edit again.";
 "Preview" = "Preview";
+
+/* Stitch paper controls and animation export. */
+"Animated GIF" = "GIF animat";
+"Animation format" = "Format de l'animació";
+"Animation saved." = "Animació desada.";
+"Drag the folded paper to change its angle. Choose Remove Space or Move to edit." = "Arrossega el paper plegat per canviar-ne l'angle. Tria Remove Space o Move per editar.";
+"Drag the paper to change the view angle. Double-click to reset." = "Arrossega el paper per canviar l'angle de visió. Fes doble clic per restablir-lo.";
+"Drag the paper to tilt it. Hold ⌥ for precision or ⇧ to stay on one axis." = "Arrossega el paper per inclinar-lo. Mantén ⌥ per tenir més precisió o ⇧ per moure’t en un sol eix.";
+"Drag to tilt and turn. Hold Option for precision or Shift to lock an axis." = "Arrossega per inclinar i girar. Mantén Option per tenir més precisió o Shift per bloquejar un eix.";
+"MP4 video" = "Vídeo MP4";
+"Reset view angle" = "Restableix l'angle de visió";
+"Save Animation" = "Desa l'animació";
+"Saving animation…" = "S'està desant l'animació…";
+"Tilt" = "Inclinació";
+"Turn" = "Gir";
+"Unable to save animation." = "No s'ha pogut desar l'animació.";
+"View angle" = "Angle de visió";

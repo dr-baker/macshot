@@ -8,7 +8,11 @@ final class StitchAccordionCollapseView: NSView {
     static let duration: CFTimeInterval = 0.48
     static let maximumTextureDimension: CGFloat = 1600
     private let texture: CGImage
-    private let plans: [StitchAccordionProjection]
+    private var plans: [StitchAccordionProjection]
+    private var faceLayers: [Int: CALayer] = [:]
+    private var sourceRects: [Int: CGRect] = [:]
+    private var builtSize: CGSize = .zero
+    private let interactive: Bool
     private static let fractions: [CGFloat] = [0, 0.2, 0.45, 0.72, 1]
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -17,11 +21,13 @@ final class StitchAccordionCollapseView: NSView {
     init?(texture: CGImage, document: StitchDocument, frame: CGRect) {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               texture.width <= Int(Self.maximumTextureDimension), texture.height <= Int(Self.maximumTextureDimension) else { return nil }
-        let plans = Self.fractions.compactMap { StitchAccordionProjection(document: document, progress: $0) }
+        guard let source = StitchAccordionProjection.Source(document: document) else { return nil }
+        let plans = Self.fractions.compactMap { StitchAccordionProjection(source: source, progress: $0) }
         guard plans.count == Self.fractions.count, let final = plans.last, final.hasProjectedOutput,
               final.faces.count <= 512, plans.allSatisfy({ $0.faces.count == final.faces.count }) else { return nil }
         self.texture = texture
         self.plans = plans
+        interactive = false
         super.init(frame: frame)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -29,11 +35,55 @@ final class StitchAccordionCollapseView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Orbiting updates only textured face transforms and lighting. Reduce Motion
+    /// removes the folding animation, while direct manipulation remains available.
+    init?(interactiveTexture texture: CGImage, projection: StitchAccordionProjection, frame: CGRect) {
+        guard texture.width <= Int(Self.maximumTextureDimension),
+              texture.height <= Int(Self.maximumTextureDimension),
+              projection.hasProjectedOutput, projection.faces.count <= 512,
+              frame.width > 0, frame.height > 0 else { return nil }
+        self.texture = texture
+        plans = [projection]
+        interactive = true
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        setAccessibilityElement(false)
+        renderFaces(animated: false)
+    }
+
+    func uses(texture: CGImage) -> Bool { self.texture === texture }
+
+    @discardableResult
+    func updateInteractive(projection: StitchAccordionProjection, frame: CGRect) -> Bool {
+        guard interactive, projection.hasProjectedOutput, projection.faces.count <= 512,
+              frame.width > 0, frame.height > 0 else { return false }
+        self.frame = frame
+        plans = [projection]
+        renderFaces(animated: false)
+        return true
+    }
+
     func play(completion: @escaping () -> Void) {
-        guard let layer, let final = plans.last, let first = plans.first else { completion(); return }
+        guard !interactive, layer != nil, !plans.isEmpty else { completion(); return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         CATransaction.setCompletionBlock(completion)
+        renderFaces(animated: true)
+        CATransaction.commit()
+    }
+
+    private func renderFaces(animated: Bool) {
+        guard let layer, let final = plans.last, let first = plans.first,
+              bounds.width > 0, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if builtSize != bounds.size || faceLayers.count != final.faces.count {
+            layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            faceLayers.removeAll()
+            sourceRects.removeAll()
+            builtSize = bounds.size
+        }
         let documentBounds = final.documentBounds
         let scaleX = bounds.width / documentBounds.width, scaleY = bounds.height / documentBounds.height
         let referenceDepth = first.faces.first?.a.depth ?? 1
@@ -47,38 +97,48 @@ final class StitchAccordionCollapseView: NSView {
                 width: source.map(\.x).max()! - source.map(\.x).min()!,
                 height: source.map(\.y).max()! - source.map(\.y).min()!)
             guard sourceRect.width > 0, sourceRect.height > 0 else { continue }
-            let sheet = CALayer()
-            sheet.name = "accordion.face.\(index)"
-            sheet.bounds = CGRect(origin: .zero, size: sourceRect.size)
-            sheet.anchorPoint = .zero
-            sheet.position = .zero
-            sheet.contents = texture
-            sheet.contentsRect = CGRect(x: sourceRect.minX / bounds.width, y: sourceRect.minY / bounds.height,
-                width: sourceRect.width / bounds.width, height: sourceRect.height / bounds.height)
-            sheet.contentsGravity = .resize
-            let mask = CAShapeLayer()
-            mask.frame = sheet.bounds
-            let path = CGMutablePath()
-            path.addLines(between: source.map { CGPoint(x: $0.x - sourceRect.minX, y: $0.y - sourceRect.minY) })
-            path.closeSubpath()
-            mask.path = path
-            mask.fillColor = NSColor.black.cgColor
-            // Cover shared triangle antialiasing pixels so flat faces never show diagonal mesh cracks.
-            mask.strokeColor = NSColor.black.cgColor
-            mask.lineWidth = 0.8
-            sheet.mask = mask
+            let sheet: CALayer
+            if let existing = faceLayers[index], sourceRects[index] == sourceRect {
+                sheet = existing
+            } else {
+                faceLayers[index]?.removeFromSuperlayer()
+                sheet = CALayer()
+                sheet.name = "accordion.face.\(index)"
+                sheet.bounds = CGRect(origin: .zero, size: sourceRect.size)
+                sheet.anchorPoint = .zero
+                sheet.position = .zero
+                sheet.contents = texture
+                sheet.contentsRect = CGRect(x: sourceRect.minX / bounds.width, y: sourceRect.minY / bounds.height,
+                    width: sourceRect.width / bounds.width, height: sourceRect.height / bounds.height)
+                sheet.contentsGravity = .resize
+                let mask = CAShapeLayer()
+                mask.frame = sheet.bounds
+                let path = CGMutablePath()
+                path.addLines(between: source.map { CGPoint(x: $0.x - sourceRect.minX, y: $0.y - sourceRect.minY) })
+                path.closeSubpath()
+                mask.path = path
+                mask.fillColor = NSColor.black.cgColor
+                // Cover shared triangle antialiasing pixels so flat faces never show diagonal mesh cracks.
+                mask.strokeColor = NSColor.black.cgColor
+                mask.lineWidth = 0.8
+                sheet.mask = mask
+                faceLayers[index] = sheet
+                sourceRects[index] = sourceRect
+            }
+            sheet.removeAllAnimations()
             let transforms = plans.map {
                 Self.transform(face: $0.faces[index], sourceRect: sourceRect,
                     documentBounds: documentBounds, size: bounds.size, referenceDepth: referenceDepth)
             }
             sheet.transform = transforms.last!
             sheet.opacity = face.isFrontFacing ? 1 : 0
-            layer.addSublayer(sheet)
-            animate("transform", values: transforms.map { NSValue(caTransform3D: $0) }, on: sheet)
-            animate("opacity", values: plans.map { NSNumber(value: $0.faces[index].isFrontFacing ? 1 : 0) }, on: sheet)
+            if animated {
+                animate("transform", values: transforms.map { NSValue(caTransform3D: $0) }, on: sheet)
+                animate("opacity", values: plans.map { NSNumber(value: $0.faces[index].isFrontFacing ? 1 : 0) }, on: sheet)
+            }
             // Multiply printed RGB, including highlights, while leaving source alpha unchanged.
             // A color overlay would brighten dark paper differently and fill transparent holes.
-            if let lighting = CIFilter(name: "CIColorMatrix") {
+            if let lighting = (sheet.filters?.first as? CIFilter) ?? CIFilter(name: "CIColorMatrix") {
                 lighting.setDefaults()
                 lighting.name = "paperLighting"
                 let parameters = ["inputRVector", "inputGVector", "inputBVector"].enumerated().map { channel, key in
@@ -91,10 +151,23 @@ final class StitchAccordionCollapseView: NSView {
                 }
                 for parameter in parameters { lighting.setValue(parameter.values.last, forKey: parameter.key) }
                 sheet.filters = [lighting]
-                for parameter in parameters {
-                    animate("filters.paperLighting.\(parameter.key)", values: parameter.values, on: sheet)
+                if animated {
+                    for parameter in parameters {
+                        animate("filters.paperLighting.\(parameter.key)", values: parameter.values, on: sheet)
+                    }
                 }
             }
+        }
+        layer.sublayers = final.drawingOrder.compactMap { faceLayers[$0] }
+        if interactive {
+            let shadow = BeautifyRenderer.stitchPaperShadow
+            var mapping = CGAffineTransform(translationX: -documentBounds.minX, y: -documentBounds.minY)
+                .concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
+            layer.shadowPath = final.paperPath.copy(using: &mapping)
+            layer.shadowColor = NSColor.black.cgColor
+            layer.shadowOpacity = Float(shadow.alpha)
+            layer.shadowRadius = shadow.radius
+            layer.shadowOffset = CGSize(width: 0, height: shadow.offset)
         }
         CATransaction.commit()
     }

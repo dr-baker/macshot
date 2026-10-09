@@ -143,11 +143,14 @@ extension OverlayView {
         }
     }
 
-    func showBeautifyGradientPopover(anchorView: NSView? = nil, anchorRect: NSRect = .zero) {
+    func makeBeautifyBackgroundPicker(backgroundOnly: Bool = false,
+                                     wallpapers: [MacOSWallpaper] = MacOSWallpapers.installed) -> BeautifyBackgroundPickerView {
         let picker = BeautifyBackgroundPickerView(
             styleIndex: beautifyStyleIndex,
             wallpaperID: beautifyStyleIndex == -1 ? beautifyWallpaperID : nil,
-            padding: beautifyPadding, radius: beautifyCornerRadius, shadow: beautifyShadowRadius)
+            padding: beautifyPadding, radius: beautifyCornerRadius, shadow: beautifyShadowRadius,
+            backgroundOnly: backgroundOnly, backgroundBlur: beautifyBackgroundBlur,
+            wallpapers: wallpapers, selectionRequests: beautifyBackgroundSelection)
         picker.onSelectGradient = { [weak self] idx in
             guard let self = self else { return }
             self.beautifyStyleIndex = idx
@@ -177,13 +180,32 @@ extension OverlayView {
             self.setBeautifyBackground(NSImage(cgImage: image, size: .zero), pngData: data, wallpaperID: wallpaper.id)
         }
         picker.onSelectFrame = { [weak self] preset in
-            guard let self else { return }
+            guard !backgroundOnly, let self else { return }
             self.applyBeautifyFrame(preset)
         }
+        picker.onChangeBackgroundBlur = { [weak self] value in
+            guard let self else { return }
+            self.beautifyBackgroundBlur = value
+            UserDefaults.standard.set(Double(value), forKey: "beautifyBgBlur")
+            self.cachedCompositedImage = nil
+            self.needsDisplay = true
+            self.onContentChanged?()
+        }
+        return picker
+    }
+
+    func showBeautifyGradientPopover(anchorView: NSView? = nil, anchorRect: NSRect = .zero,
+                                    backgroundOnly: Bool = false) {
+        if PopoverHelper.toggleClosedIfOpen(anchorView: anchorView) { return }
+        let picker = makeBeautifyBackgroundPicker(backgroundOnly: backgroundOnly)
         if let anchor = anchorView {
-            PopoverHelper.show(
-                picker, size: picker.preferredSize, relativeTo: anchor.bounds, of: anchor,
-                preferredEdge: .minY)
+            if backgroundOnly {
+                PopoverHelper.showToolbarTray(picker, size: picker.preferredSize,
+                    relativeTo: anchor.bounds, of: anchor, avoiding: screenshotPresentationRect, in: self)
+            } else {
+                PopoverHelper.show(picker, size: picker.preferredSize, relativeTo: anchor.bounds,
+                    of: anchor, preferredEdge: .minY)
+            }
         } else {
             PopoverHelper.showAtPoint(
                 picker, size: picker.preferredSize,
@@ -221,6 +243,7 @@ extension OverlayView {
     }
 
     func pickCustomBeautifyBackground() {
+        beautifyBackgroundSelection.invalidate()
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false

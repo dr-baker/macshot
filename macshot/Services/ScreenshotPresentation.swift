@@ -3,6 +3,8 @@ import AppKit
 /// Finishes fully composited, flat screenshot pixels. Editable history keeps the flat source.
 @MainActor
 struct ScreenshotPresentation {
+    nonisolated static let paperPadding: CGFloat = 12
+
     let effects: ImageEffectsConfig
     let beautify: BeautifyConfig?
     let projection: StitchAccordionProjection?
@@ -12,7 +14,6 @@ struct ScreenshotPresentation {
 
     init(view: OverlayView) {
         effects = view.effectsConfig
-        beautify = view.beautifyEnabled ? Self.snapshot(view.beautifyConfig) : nil
         if let document = (view as? ImageEditingView)?.stitchDocument {
             projection = StitchAccordionProjection(document: document)
             projectionPlanningFailed = projection == nil
@@ -20,12 +21,21 @@ struct ScreenshotPresentation {
             projection = nil
             projectionPlanningFailed = false
         }
+        // Folded paper always needs a backdrop. Beautify's separate frame toggle
+        // only controls ordinary screenshot decoration.
+        if projection?.hasProjectedOutput == true {
+            beautify = Self.paperBackgroundConfig(view.beautifyConfig)
+        } else {
+            beautify = view.beautifyEnabled ? Self.snapshot(view.beautifyConfig) : nil
+        }
     }
 
-    init(effects: ImageEffectsConfig = ImageEffectsConfig(), beautify: BeautifyConfig? = nil,
+    init(effects: ImageEffectsConfig? = nil, beautify: BeautifyConfig? = nil,
          projection: StitchAccordionProjection? = nil) {
-        self.effects = effects
-        self.beautify = beautify.map { Self.snapshot($0) }
+        self.effects = effects ?? ImageEffectsConfig()
+        self.beautify = beautify.map {
+            projection?.hasProjectedOutput == true ? Self.paperBackgroundConfig($0) : Self.snapshot($0)
+        }
         self.projection = projection
         projectionPlanningFailed = false
     }
@@ -45,7 +55,7 @@ struct ScreenshotPresentation {
               effected.size.width > 0, effected.size.height > 0 else { return nil }
         let background: BeautifyRenderer.PaperBackground?
         if let beautify {
-            guard let prepared = BeautifyRenderer.preparePaperBackground(
+            guard let prepared = BeautifyRenderer.prepareStitchPaperBackground(
                 imageSize: effected.size, pixelWidth: pixels.width, pixelHeight: pixels.height,
                 config: beautify) else { return nil }
             background = prepared
@@ -53,7 +63,15 @@ struct ScreenshotPresentation {
             background = nil
         }
         return Prepared(pixels: pixels, sourceSize: effected.size, projection: projection,
-                        cornerRadius: beautify?.cornerRadius ?? 0, paperBackground: background)
+                        cornerRadius: 0, paperBackground: background)
+    }
+
+    /// Reuse only Beautify's background choice. The sheet keeps its own silhouette.
+    static func paperBackgroundConfig(_ input: BeautifyConfig) -> BeautifyConfig {
+        snapshot(BeautifyConfig(mode: .rounded, styleIndex: input.styleIndex,
+            padding: paperPadding, cornerRadius: 0, shadowRadius: BeautifyRenderer.stitchPaperShadow.radius, bgRadius: 0,
+            isWindowSnap: false, customBackgroundImage: input.customBackgroundImage,
+            backgroundBlur: input.backgroundBlur, cachedBackgroundCGImage: input.cachedBackgroundCGImage))
     }
 
     func render(_ image: NSImage) -> NSImage? {

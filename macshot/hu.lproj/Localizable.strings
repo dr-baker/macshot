@@ -1076,3 +1076,20 @@
 "Click the paper to unfold and edit." = "Click the paper to unfold and edit.";
 "See the folded paper and background. Click the paper to edit again." = "See the folded paper and background. Click the paper to edit again.";
 "Preview" = "Preview";
+
+/* Stitch paper controls and animation export. */
+"Animated GIF" = "Animált GIF";
+"Animation format" = "Animáció formátuma";
+"Animation saved." = "Animáció elmentve.";
+"Drag the folded paper to change its angle. Choose Remove Space or Move to edit." = "Húzd az összehajtott papírt a szög megváltoztatásához. A szerkesztéshez válaszd a Remove Space vagy Move eszközt.";
+"Drag the paper to change the view angle. Double-click to reset." = "Húzd a papírt a nézet szögének megváltoztatásához. Dupla kattintással állíthatod vissza.";
+"Drag the paper to tilt it. Hold ⌥ for precision or ⇧ to stay on one axis." = "Húzd a papírt a döntéshez. Tartsd lenyomva az ⌥ billentyűt a pontosabb mozgatáshoz, vagy a ⇧ billentyűt az egytengelyes mozgáshoz.";
+"Drag to tilt and turn. Hold Option for precision or Shift to lock an axis." = "Húzd a döntéshez és forgatáshoz. Tartsd lenyomva az Option billentyűt a pontosabb mozgatáshoz, vagy a Shift billentyűt egy tengely rögzítéséhez.";
+"MP4 video" = "MP4-videó";
+"Reset view angle" = "Nézet szögének visszaállítása";
+"Save Animation" = "Animáció mentése";
+"Saving animation…" = "Animáció mentése…";
+"Tilt" = "Döntés";
+"Turn" = "Forgatás";
+"Unable to save animation." = "Nem sikerült elmenteni az animációt.";
+"View angle" = "Nézet szöge";

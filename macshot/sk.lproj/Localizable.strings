@@ -1076,3 +1076,20 @@
 "Click the paper to unfold and edit." = "Click the paper to unfold and edit.";
 "See the folded paper and background. Click the paper to edit again." = "See the folded paper and background. Click the paper to edit again.";
 "Preview" = "Preview";
+
+/* Stitch paper controls and animation export. */
+"Animated GIF" = "Animovaný GIF";
+"Animation format" = "Formát animácie";
+"Animation saved." = "Animácia uložená.";
+"Drag the folded paper to change its angle. Choose Remove Space or Move to edit." = "Potiahnutím zloženého papiera zmeníte jeho uhol. Na úpravy vyberte Remove Space alebo Move.";
+"Drag the paper to change the view angle. Double-click to reset." = "Potiahnutím papiera zmeníte uhol pohľadu. Dvojitým kliknutím ho obnovíte.";
+"Drag the paper to tilt it. Hold ⌥ for precision or ⇧ to stay on one axis." = "Potiahnutím papier nakloníte. Pre presnejšie ovládanie podržte ⌥; pre pohyb po jednej osi podržte ⇧.";
+"Drag to tilt and turn. Hold Option for precision or Shift to lock an axis." = "Potiahnutím papier nakloníte a otočíte. Pre presnejšie ovládanie podržte Option; pre uzamknutie osi podržte Shift.";
+"MP4 video" = "Video MP4";
+"Reset view angle" = "Obnoviť uhol pohľadu";
+"Save Animation" = "Uložiť animáciu";
+"Saving animation…" = "Ukladanie animácie…";
+"Tilt" = "Náklon";
+"Turn" = "Otočenie";
+"Unable to save animation." = "Animáciu sa nepodarilo uložiť.";
+"View angle" = "Uhol pohľadu";

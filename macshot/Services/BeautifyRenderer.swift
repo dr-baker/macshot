@@ -507,6 +507,18 @@ class BeautifyRenderer {
         let contactOffset: CGFloat
     }
 
+    nonisolated struct PaperShadow: Sendable {
+        let radius: CGFloat
+        let alpha: CGFloat
+        let offset: CGFloat
+        let contactRadius: CGFloat
+        let contactAlpha: CGFloat
+        let contactOffset: CGFloat
+    }
+
+    nonisolated static let stitchPaperShadow = PaperShadow(radius: 10, alpha: 0.18, offset: 4,
+        contactRadius: 2, contactAlpha: 0.14, contactOffset: 1)
+
     /// Projected paper uses its own alpha outline and the selected Beautify background.
     /// Window chrome would paint over the perspective cutouts, so it is never added here.
     static func renderPaper(image: NSImage, config: BeautifyConfig) -> NSImage? {
@@ -556,6 +568,21 @@ class BeautifyRenderer {
             contactRadius: contactShadowBlur(for: config.shadowRadius),
             contactAlpha: contactShadowAlpha(for: config.shadowRadius),
             contactOffset: contactShadowOffset(for: config.shadowRadius))
+    }
+
+    /// The folded sheet has a fixed physical shadow and compact breathing room.
+    /// Background choice and background blur are the only inherited Beautify settings.
+    static func prepareStitchPaperBackground(imageSize: NSSize, pixelWidth: Int, pixelHeight: Int,
+                                            config: BeautifyConfig) -> PaperBackground? {
+        guard config.backgroundBlur.isFinite, (0...50).contains(config.backgroundBlur) else { return nil }
+        let backgroundConfig = ScreenshotPresentation.paperBackgroundConfig(config)
+        guard let background = preparePaperBackground(imageSize: imageSize,
+            pixelWidth: pixelWidth, pixelHeight: pixelHeight, config: backgroundConfig) else { return nil }
+        let shadow = stitchPaperShadow
+        return PaperBackground(pixels: background.pixels, imageSize: background.imageSize,
+            contentSize: background.contentSize, padding: background.padding,
+            shadowRadius: shadow.radius, shadowAlpha: shadow.alpha, shadowOffset: shadow.offset,
+            contactRadius: shadow.contactRadius, contactAlpha: shadow.contactAlpha, contactOffset: shadow.contactOffset)
     }
 
     private nonisolated static let paperShadowContext = CIContext(options: [.cacheIntermediates: false])

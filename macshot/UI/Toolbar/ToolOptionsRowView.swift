@@ -33,7 +33,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         case lineStyle, arrowStyle, shapeFill, censorMode
         case cornerRadiusTitle, cornerRadiusSlider, cornerRadiusValue
         case arrowFlip, pencilSmooth, pencilPressure, markerSmart
-        case stitchMode, stitchPlacement, stitchSeams, stitchPieces, stitchCanvas, stitchBackground
+        case stitchMode, stitchPlacement, stitchSeams, stitchPieces, stitchCanvas, stitchBackground, stitchAnimation
         case numberFormat, numberStartTitle, numberStartStepper, numberStartValue
         case fontFamily, textBold, textItalic, textUnderline, textStrikethrough
         case alignmentLeft, alignmentCenter, alignmentRight
@@ -527,6 +527,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
     /// Keep popover anchors alive while document changes refresh native chrome.
     func refreshStitchState() {
         guard currentTool == .stitch, let editor = overlayView as? ImageEditingView else { return }
+        if let animation = subviews.first(where: { $0.identifier?.rawValue == "stitch.animation" }) as? NSButton {
+            animation.isEnabled = editor.canPreviewStitchPaper
+        }
+        if let background = subviews.first(where: { $0.identifier?.rawValue == "stitch.background" }) as? NSButton {
+            background.isEnabled = editor.stitchDocument?.style.transition == .accordion
+        }
         if let modes = subviews.first(where: { $0.identifier?.rawValue == "stitch.mode" }) as? NSSegmentedControl {
             modes.setEnabled(editor.canPreviewStitchPaper, forSegment: 2)
             modes.selectedSegment = editor.stitchPreviewEnabled && editor.canPreviewStitchPaper
@@ -551,7 +557,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         modes.frame = NSRect(x: curX, y: (rowHeight - 22) / 2, width: modes.frame.width, height: 22)
         modes.setToolTip(L("Drag up or down to remove rows, or left or right to remove columns. Hold ⌥ to ignore guides."), forSegment: 0)
         modes.setToolTip(L("Drag pieces to move or reorder them. Hold ⌥ to ignore Free Move snapping."), forSegment: 1)
-        modes.setToolTip(L("See the folded paper and background. Click the paper to edit again."), forSegment: 2)
+        modes.setToolTip(L("Drag the folded paper to change its angle. Choose Remove Space or Move to edit."), forSegment: 2)
         addSubview(modes)
         curX += modes.frame.width + 4
         curX = addSeparator(at: curX, before: .stitchPlacement)
@@ -577,9 +583,12 @@ class ToolOptionsRowView: ScreenshotPanelView {
             (L("Canvas"), "stitch.canvas", 2, .stitchCanvas),
         ]
         options.append((L("Background"), "stitch.background", 3, .stitchBackground))
+        options.append((L("Save Animation"), "stitch.animation", 4, .stitchAnimation))
         for (label, identifier, tag, role) in options {
             let button = makeButton(role, title: label, action: #selector(stitchOptionsClicked(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(identifier)
+            if tag == 3 { button.isEnabled = editor.stitchDocument?.style.transition == .accordion }
+            if tag == 4 { button.isEnabled = editor.canPreviewStitchPaper }
             button.tag = tag
             button.bezelStyle = .rounded
             button.font = NSFont.systemFont(ofSize: 10, weight: .medium)
@@ -617,6 +626,7 @@ class ToolOptionsRowView: ScreenshotPanelView {
         case 0: option = .seams
         case 1: option = .pieces
         case 3: option = .background
+        case 4: option = .animation
         default: option = .canvas
         }
         editor.onStitchOptions?(option, sender)

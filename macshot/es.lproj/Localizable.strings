@@ -1078,3 +1078,20 @@
 "Click the paper to unfold and edit." = "Click the paper to unfold and edit.";
 "See the folded paper and background. Click the paper to edit again." = "See the folded paper and background. Click the paper to edit again.";
 "Preview" = "Preview";
+
+/* Stitch paper controls and animation export. */
+"Animated GIF" = "GIF animado";
+"Animation format" = "Formato de animación";
+"Animation saved." = "Animación guardada.";
+"Drag the folded paper to change its angle. Choose Remove Space or Move to edit." = "Arrastra el papel plegado para cambiar su ángulo. Elige Remove Space o Move para editar.";
+"Drag the paper to change the view angle. Double-click to reset." = "Arrastra el papel para cambiar el ángulo de visión. Haz doble clic para restablecerlo.";
+"Drag the paper to tilt it. Hold ⌥ for precision or ⇧ to stay on one axis." = "Arrastra el papel para inclinarlo. Mantén ⌥ para mayor precisión o ⇧ para moverte en un solo eje.";
+"Drag to tilt and turn. Hold Option for precision or Shift to lock an axis." = "Arrastra para inclinar y girar. Mantén Option para mayor precisión o Shift para bloquear un eje.";
+"MP4 video" = "Vídeo MP4";
+"Reset view angle" = "Restablecer ángulo de visión";
+"Save Animation" = "Guardar animación";
+"Saving animation…" = "Guardando animación…";
+"Tilt" = "Inclinación";
+"Turn" = "Giro";
+"Unable to save animation." = "No se ha podido guardar la animación.";
+"View angle" = "Ángulo de visión";

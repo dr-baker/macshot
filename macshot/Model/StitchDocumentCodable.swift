@@ -27,6 +27,7 @@ struct SavedStitchDocument: Codable, Equatable {
     var accordionWidth: CGFloat
     var accordionPleats: CGFloat
     var accordionPerspective: CGFloat
+    var accordionYaw: CGFloat
     var breakSize: CGFloat
     var visible: Bool
     var background: String
@@ -38,7 +39,7 @@ struct SavedStitchDocument: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case images, pieces, transition, lineColor, lineWidth, wave, blur, feather, visible
         case tearWidth, tearRoughness, foldDepth, foldStrength, breakSize
-        case accordionWidth, accordionPleats, accordionPerspective
+        case accordionWidth, accordionPleats, accordionPerspective, accordionYaw
         case background, backgroundColor, packed, packingHorizontal, packingLength
     }
 
@@ -62,6 +63,8 @@ struct SavedStitchDocument: Codable, Equatable {
         accordionWidth = values.decode(.accordionWidth, or: style.accordionWidth)
         accordionPleats = values.decode(.accordionPleats, or: style.accordionPleats)
         accordionPerspective = values.decode(.accordionPerspective, or: style.accordionPerspective)
+        // Earlier documents used one angle and derived yaw from vertical tilt.
+        accordionYaw = values.decode(.accordionYaw, or: accordionPerspective * 0.8)
         breakSize = values.decode(.breakSize, or: wave)
         visible = values.decode(.visible, or: style.visible)
         background = values.decode(.background, or: "automatic")
@@ -119,6 +122,7 @@ struct SavedStitchDocument: Codable, Equatable {
         accordionWidth = document.style.accordionWidth
         accordionPleats = document.style.accordionPleats
         accordionPerspective = document.style.accordionPerspective
+        accordionYaw = document.style.accordionYaw
         breakSize = document.style.breakSize
         visible = document.style.visible
         switch document.background {
@@ -143,7 +147,8 @@ struct SavedStitchDocument: Codable, Equatable {
               accordionWidth.isFinite, (0...80).contains(accordionWidth),
               accordionPleats.isFinite, (2...6).contains(accordionPleats),
               accordionPleats.rounded() == accordionPleats,
-              accordionPerspective.isFinite, (0...30).contains(accordionPerspective),
+              accordionPerspective.isFinite, (-30...30).contains(accordionPerspective),
+              accordionYaw.isFinite, (-35...35).contains(accordionYaw),
               packingLength <= StitchDocument.maximumDimension,
               !packed || packingLength > 0, let color = Self.color(lineColor),
               let transition = StitchTransition(rawValue: transition) else { return nil }
@@ -191,6 +196,7 @@ struct SavedStitchDocument: Codable, Equatable {
         style.foldDepth = foldDepth; style.foldStrength = foldStrength
         style.accordionWidth = accordionWidth; style.accordionPleats = accordionPleats
         style.accordionPerspective = accordionPerspective
+        style.accordionYaw = accordionYaw
         style.breakSize = breakSize
         var document = StitchDocument(pieces: restored, style: style, background: fill)
         document.restorePackingState(packed: packed, horizontal: packingHorizontal, length: packingLength)

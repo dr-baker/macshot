@@ -194,11 +194,24 @@ final class NativeStitchToolTests: XCTestCase {
         var options: [StitchOptionsAction] = []
         var anchors: [NSView] = []
         view.onStitchOptions = { options.append($0); anchors.append($1) }
-        for name in ["stitch.seams", "stitch.pieces", "stitch.canvas", "stitch.background"] {
+        for name in ["stitch.seams", "stitch.pieces", "stitch.canvas"] {
             let button = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == name } as? NSButton)
             button.performClick(nil)
             XCTAssertTrue(anchors.last === button)
         }
+        let background = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.background" } as? NSButton)
+        let animation = try XCTUnwrap(row.subviews.first { $0.identifier?.rawValue == "stitch.animation" } as? NSButton)
+        XCTAssertFalse(background.isEnabled)
+        XCTAssertFalse(animation.isEnabled)
+        XCTAssertTrue(view.beginStitchEditing())
+        var document = try XCTUnwrap(view.stitchDocument)
+        document.style.transition = .accordion
+        view.installStitchDocument(document)
+        row.refreshStitchState()
+        XCTAssertTrue(background.isEnabled, "The background can be chosen before making the first fold")
+        XCTAssertFalse(animation.isEnabled, "Saving an animation requires a fold")
+        background.performClick(nil)
+        XCTAssertTrue(anchors.last === background)
         XCTAssertEqual(options.count, 4)
         if case .seams = options[0] {} else { XCTFail("Wrong seam action") }
         if case .pieces = options[1] {} else { XCTFail("Wrong piece action") }
@@ -530,9 +543,9 @@ final class NativeStitchToolTests: XCTestCase {
         let toggle = try XCTUnwrap(options.subviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "stitch.seam.visibility"
         })
-        let pickerFrame = picker.frame
-        let toggleFrame = toggle.frame
-        XCTAssertLessThan(toggleFrame.maxY, pickerFrame.minY)
+        let pickerTopInset = options.bounds.maxY - picker.frame.maxY
+        let toggleTopInset = options.bounds.maxY - toggle.frame.maxY
+        XCTAssertGreaterThan(toggle.frame.minY, picker.frame.maxY)
         let profiles: [(StitchTransition, [String], String?)] = [
             (.wave, ["Blur", "Fade width", "Line width", "Wave height"], "Line color"),
             (.blend, ["Blur", "Fade width"], nil),
@@ -546,8 +559,9 @@ final class NativeStitchToolTests: XCTestCase {
                 $0.identifier?.rawValue == "stitch.transition.\(transition.rawValue)"
             })
             button.performClick(nil)
-            XCTAssertEqual(picker.frame, pickerFrame, "Treatment choices must stay beside the popover anchor")
-            XCTAssertEqual(toggle.frame, toggleFrame)
+            XCTAssertEqual(options.bounds.maxY - picker.frame.maxY, pickerTopInset,
+                "Treatment choices must keep a stable top inset as the attached inspector resizes")
+            XCTAssertEqual(options.bounds.maxY - toggle.frame.maxY, toggleTopInset)
             let sliders = options.subviews.compactMap { $0 as? NSSlider }.filter { !$0.isHidden }
                 .sorted { $0.frame.minY > $1.frame.minY }
             XCTAssertEqual(sliders.compactMap { $0.accessibilityLabel() }, sliderTitles.map { L($0) })
@@ -565,7 +579,8 @@ final class NativeStitchToolTests: XCTestCase {
             for child in options.subviews where !child.isHidden {
                 XCTAssertTrue(options.bounds.contains(child.frame), "\(transition) clips \(String(describing: child.identifier))")
                 if child is NSSlider || child is NSColorWell || child is NSTextField {
-                    XCTAssertGreaterThan(child.frame.minY, picker.frame.maxY, "Applicable controls must stay above the treatment picker")
+                    XCTAssertLessThan(child.frame.maxY, picker.frame.minY,
+                        "Applicable controls must follow the treatment picker")
                 }
             }
             for (upper, lower) in zip(sliders, sliders.dropFirst()) {
