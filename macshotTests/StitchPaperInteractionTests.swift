@@ -174,8 +174,17 @@ final class StitchPaperInteractionTests: XCTestCase {
                     (vertex.projected.y - next.outputBounds.minY) * sy, accuracy: 0.00001)
             }
             if face.paperSample != nil {
-                XCTAssertNil(layer.contents, "Removed content must never become a paper-face texture")
-                XCTAssertNotNil(layer.backgroundColor)
+                XCTAssertNil(layer.contents, "The material plane owns its mask and printed child")
+                if face.paperTexture != nil {
+                    let printed = try XCTUnwrap(layer.sublayers?.first)
+                    XCTAssertEqual(printed.name, "accordion.print")
+                    XCTAssertNotNil(printed.contents, "The retained composited strip textures the fold")
+                    XCTAssertNil(layer.backgroundColor)
+                    XCTAssertGreaterThan(printed.contentsRect.width, 0)
+                    XCTAssertGreaterThan(printed.contentsRect.height, 0)
+                } else {
+                    XCTAssertNotNil(layer.backgroundColor)
+                }
                 XCTAssertEqual(layer.opacity, 1, "Inserted paper is double-sided")
             }
         }

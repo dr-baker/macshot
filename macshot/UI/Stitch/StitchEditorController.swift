@@ -129,6 +129,7 @@ final class StitchEditorController: NSObject {
     private var committingCamera = false
     private weak var cameraScopeOwner: NSView?
     private var interactiveTexture: CGImage?
+    private var interactivePaperSource: StitchAccordionProjection.Source?
     private var interactiveBackground: CGImage?
     private var interactivePaperFrame: CGRect?
     private let angleControl = StitchPaperAngleControl(frame: .zero)
@@ -215,8 +216,15 @@ final class StitchEditorController: NSObject {
         canvas.onSelect = { [weak self] _ in self?.refreshPieces() }
         canvas.onCut = { [weak self] axis, from, to in
             guard let self else { return }
+            // Freeze the visible pixels before slicing annotations. The folded
+            // strip must keep censors and other edits that disappear in the cut.
+            guard let composite = self.editorView?.captureSelectedRegion(),
+                  let texture = composite.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                self.showFeedback(L("Unable to render this canvas. Reduce its size and try again."))
+                return
+            }
             var next = self.document
-            if next.collapse(axis: axis, from: from, to: to) {
+            if next.collapse(axis: axis, from: from, to: to, texture: texture) {
                 guard self.commitDocument(next) else { return }
                 self.canvas.selectedID = nil
                 self.refresh(); self.showFeedback(L("Space collapsed. Undo restores the original pieces."))
@@ -303,6 +311,7 @@ final class StitchEditorController: NSObject {
         paperPreview.onReset = nil
         editorView?.stitchPaperPresentationFrame = nil
         interactiveTexture = nil
+        interactivePaperSource = nil
         interactiveBackground = nil
         interactivePaperFrame = nil
         paperTexture = nil
@@ -786,6 +795,7 @@ final class StitchEditorController: NSObject {
         if !keepsCurrentPaper && !committingCamera {
             paperPreview.image = nil
             interactiveTexture = nil
+            interactivePaperSource = nil
             interactiveBackground = nil
             interactivePaperFrame = nil
         }
@@ -840,9 +850,10 @@ final class StitchEditorController: NSObject {
             self.updatePreviewInsets(projection: projection)
             self.renderQueue.async { [weak self] in
                 guard !cancellation.isCancelled else { return }
-                let (rendered, animationTexture) = autoreleasepool {
+                let (rendered, animationTexture, layerProjection) = autoreleasepool {
                     let rendered = prepared.renderCGImage()
-                    return (rendered, !cancellation.isCancelled ? prepared.animationTexture(maxDimension: 1600) : nil)
+                    return (rendered, !cancellation.isCancelled ? prepared.animationTexture(maxDimension: 1600) : nil,
+                        !cancellation.isCancelled ? prepared.projection?.resizingPaperTextures(maxDimension: 1600) : nil)
                 }
                 guard !cancellation.isCancelled else { return }
                 DispatchQueue.main.async { [weak self, weak editor] in
@@ -858,20 +869,22 @@ final class StitchEditorController: NSObject {
                         isFlipped: editor.isFlipped)
                     let paperFrame = self.paperPreview.convert(outputFrame, from: editor)
                     self.interactiveTexture = animationTexture
+                    self.interactivePaperSource = layerProjection?.source
                     self.interactiveBackground = prepared.paperBackground?.pixels
                     self.interactivePaperFrame = paperFrame
                     self.paperPreview.paperFrame = paperFrame
-                    self.paperPreview.projection = projection
+                    self.paperPreview.projection = layerProjection ?? prepared.projection
                     self.paperPreview.camera = StitchPaperCamera(perspective: snapshot.style.accordionPerspective,
                         yaw: snapshot.style.accordionYaw)
                     if !nativeSize {
                         self.scheduleNativePaperWarm(presentation, image: composite,
                             document: snapshot, generation: generation, cancellation: cancellation)
                     }
-                    if self.animatesNextPaperPreview, let animationTexture {
+                    if self.animatesNextPaperPreview, let animationTexture, let layerProjection {
                         self.animatesNextPaperPreview = false
                         self.paperPreview.animate(texture: animationTexture, document: snapshot,
-                            frame: paperFrame, background: prepared.paperBackground?.pixels)
+                            frame: paperFrame, background: prepared.paperBackground?.pixels,
+                            preparedSource: layerProjection.source)
                     }
                 }
             }
@@ -1065,7 +1078,8 @@ final class StitchEditorController: NSObject {
         angleControl.camera = camera
         paperPreview.camera = camera
         guard let texture = interactiveTexture, let editor = editorView,
-              let projection = StitchAccordionProjection(document: document) else { return }
+              let projection = interactivePaperSource?.withCamera(camera).projection()
+            else { return }
         updatePreviewInsets(projection: projection)
         let outputFrame = Self.paperOutputFrame(projection: projection, selection: editor.selectionRect,
             isFlipped: editor.isFlipped)
@@ -1201,6 +1215,7 @@ final class StitchEditorController: NSObject {
         guard let id = canvas.selectedID, document.pieces.count > 1 else { return }
         var next = document
         next.pieces.removeAll { $0.id == id }
+        next.pruneFoldTextures()
         guard next.placement != .packed || next.reflowPacked() else { showFeedback(L("Canvas limit reached. Move pieces closer together.")); return }
         guard commitDocument(next) else { return }
         canvas.selectedID = nil; refresh()

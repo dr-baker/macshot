@@ -96,6 +96,34 @@ final class StitchPaperControllerTests: XCTestCase {
         XCTAssertEqual(editor.stitchDocument?.style.accordionYaw, 11.2)
     }
 
+    func testCutRetainsCompositedCensorInsideRemovedBandThroughHistory() throws {
+        let (editor, controller, _, window) = try fixture(removeBand: false)
+        defer { controller.suspend(); window.orderOut(nil) }
+        let censor = Annotation(tool: .filledRectangle, startPoint: CGPoint(x: 0, y: 64),
+            endPoint: CGPoint(x: 160, y: 76), color: .black, strokeWidth: 1)
+        editor.annotations = [censor]
+        let canvas = try XCTUnwrap(editor.subviews.compactMap { $0 as? StitchCanvasView }.first)
+        canvas.onCut?(.horizontal, 40, 60)
+        let cut = try XCTUnwrap(editor.stitchDocument)
+        XCTAssertTrue(editor.annotations.isEmpty, "The editable censor was entirely inside the cut")
+        let strip = try XCTUnwrap(cut.joins.first?.texture?.image)
+        let color = try XCTUnwrap(NSBitmapImageRep(cgImage: strip).colorAt(x: 80, y: 10))
+        XCTAssertLessThan(color.redComponent, 0.01)
+        XCTAssertLessThan(color.greenComponent, 0.01)
+        XCTAssertLessThan(color.blueComponent, 0.01)
+        XCTAssertGreaterThan(color.alphaComponent, 0.99)
+        let restored = try XCTUnwrap(try XCTUnwrap(SavedStitchDocument(cut)).restore())
+        let savedStrip = try XCTUnwrap(restored.joins.first?.texture?.image)
+        let savedColor = try XCTUnwrap(NSBitmapImageRep(cgImage: savedStrip).colorAt(x: 80, y: 10))
+        XCTAssertLessThan(savedColor.redComponent, 0.01)
+        XCTAssertLessThan(savedColor.greenComponent, 0.01)
+        XCTAssertLessThan(savedColor.blueComponent, 0.01)
+        editor.undo()
+        XCTAssertEqual(editor.stitchDocument?.bounds.height, 120)
+        XCTAssertTrue(editor.stitchDocument?.foldTextureImages.isEmpty == true)
+        XCTAssertEqual(editor.annotations.count, 1)
+    }
+
     func testAnglePadAndAnimationAreAvailableWithoutEnablingBeautifyDecoration() throws {
         let (editor, controller, _, window) = try fixture()
         defer { controller.suspend(); window.orderOut(nil) }
