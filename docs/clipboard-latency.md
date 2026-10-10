@@ -59,9 +59,9 @@ The combined geometry and clipboard tree receives the final full Debug suite and
 
 ## Native presentation reuse
 
-Copy now reuses the finished native presentation after the Accordion preview settles. Camera and pleat changes preserve the flat annotated sheet, effected pixels, and prepared wallpaper. They replace the projected output. Source, selection, annotation, effect, background, and projection changes invalidate the corresponding cached result. Copies during annotation manipulation render current geometry without retaining drag frames.
+Copy now reuses the finished native presentation after the Accordion preview settles. Camera and pleat changes preserve the flat annotated sheet and effected pixels. They replace the projected output and reuse the prepared wallpaper when its output dimensions stay the same. Source, selection, annotation, effect, background, and projection changes invalidate the corresponding cached result. Copies during annotation manipulation render current geometry without retaining drag frames.
 
-Raw history reads and annotated composites share a 32 MiB raster budget. Raw reads cannot evict the annotated input when both do not fit. Each presentation cache retains one result with a 128 MiB budget, including wallpaper, prepared background, and reserved final output. Larger images retain their uncached path. Preview textures remain bounded to 2000 pixels and are never used for native clipboard output. Larger previews warm the native result on a utility queue after 350 ms without interaction. An early copy can still require the full render.
+Raw history reads and annotated composites share a 32 MiB raster budget. Raw reads cannot evict the annotated input when both do not fit. Each presentation cache retains one result with a 128 MiB budget, including wallpaper, prepared background, and reserved final output. Larger images retain their uncached path. Preview textures and projected preview outputs remain bounded to 2000 pixels and are never used for native clipboard output. Larger previews warm the native result on a utility queue after 350 ms without interaction. An early copy can still require the full render.
 
 The same-binary Debug benchmark includes editable-state preparation, raw and annotated history capture, clipboard encoding, and checking readable PNG and TIFF bytes. It uses a 1920 × 1080 synthetic Accordion, wallpaper, and redaction fixture, discarding one warm-up and reporting three measured runs.
 
@@ -76,3 +76,9 @@ These are Debug synthetic pipeline measurements. They exclude physical key deliv
 A separate 3840 × 2160 wallpaper benchmark measured 259.85 ms per old history state read and 242.99 ms for a first native PNG encoding. Repeated cached or original-PNG-seeded reads were below 0.001 ms. Native Copy reads this state twice. The original selected wallpaper PNG avoids both encodings.
 
 Enable these checks with `TEST_RUNNER_MACSHOT_SETTLED_COPY_BENCHMARK=1` for `ClipboardLatencyTests/testSettledAccordionCopyBenchmark`, `TEST_RUNNER_MACSHOT_BACKGROUND_STATE_BENCHMARK=1` for `CaptureEditStateBackgroundLatencyTests`, and `TEST_RUNNER_MACSHOT_PRESENTATION_CACHE_BENCHMARK=1` for `ScreenshotPresentationCacheTests/testNativePresentationReuseBenchmark`. Ordinary test runs skip the benchmarks.
+
+## Full-size paper mesh
+
+The full-size mesh inserts the actual removed paper length and derives output dimensions from its projected bounds. A paired Debug rerun on 2026-10-09 used the same 1920 × 1080 fixture and benchmark method above. Median readiness was 4142.28 ms for the emulated previous path, 4170.89 ms for a cold presentation, and 27.98 ms after the native presentation settled. The projected image is larger than the earlier fitted canvas, so these timings measure a different output size.
+
+The cache reserves the actual projected raster and regenerates the background when its dimensions change. Native Copy retains its source pixel density; bounded preview pixels remain separate. These measurements include readable PNG and TIFF bytes and history preparation, and exclude physical key delivery and controller teardown.

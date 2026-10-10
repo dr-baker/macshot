@@ -30,7 +30,12 @@ nonisolated enum StitchAnimationExporter {
         let width: Int
         let height: Int
         let source: StitchAccordionProjection.Source
+        /// Every frame uses this envelope in paper coordinates. The camera can
+        /// change the silhouette without resizing or recentering the animation.
+        let outputBounds: CGRect
         fileprivate let pixels: CGImage
+        fileprivate let textureWidth: Int
+        fileprivate let textureHeight: Int
         fileprivate let background: BeautifyRenderer.PaperBackground
         nonisolated(unsafe) fileprivate let videoSettings: [String: Any]
 
@@ -61,24 +66,79 @@ nonisolated enum StitchAnimationExporter {
                   - presentation.sourceSize.height / source.documentBounds.height)
                 <= max(presentation.sourceSize.width / source.documentBounds.width,
                        presentation.sourceSize.height / source.documentBounds.height) * 0.005,
-              let background = presentation.paperBackground,
-              background.contentSize == presentation.sourceSize,
-              background.imageSize.width.isFinite, background.imageSize.height.isFinite,
-              background.imageSize.width > 0, background.imageSize.height > 0,
-              background.padding.isFinite, background.padding >= 0,
-              [background.shadowRadius, background.shadowAlpha, background.shadowOffset,
-               background.contactRadius, background.contactAlpha, background.contactOffset]
-                .allSatisfy({ $0.isFinite && $0 >= 0 }) else { throw ExportError.invalidSnapshot }
+              let finalBackground = presentation.paperBackground,
+              finalBackground.contentSize == presentation.projectedSize,
+              isValid(finalBackground),
+              let envelope = animationBounds(source: source),
+              let envelopedProjection = projection.withOutputBounds(envelope),
+              let nativeSize = envelopedProjection.outputPixelDimensions(
+                pixelWidth: presentation.pixels.width, pixelHeight: presentation.pixels.height)
+        else { throw ExportError.invalidSnapshot }
+        let contentSize = NSSize(
+            width: envelope.width * presentation.sourceSize.width / source.documentBounds.width,
+            height: envelope.height * presentation.sourceSize.height / source.documentBounds.height)
+        let scaleX = CGFloat(presentation.pixels.width) / presentation.sourceSize.width
+        let scaleY = CGFloat(presentation.pixels.height) / presentation.sourceSize.height
+        let nativeWidth = ((contentSize.width + finalBackground.padding * 2) * scaleX).rounded()
+        let nativeHeight = ((contentSize.height + finalBackground.padding * 2) * scaleY).rounded()
+        guard nativeWidth.isFinite, nativeHeight.isFinite, nativeWidth > 0, nativeHeight > 0 else {
+            throw ExportError.invalidSnapshot
+        }
         let limit = min(1600, maxDimension)
-        let factor = min(1, CGFloat(limit) / CGFloat(max(background.pixels.width, background.pixels.height)))
+        let boundedFactor = min(1, CGFloat(limit) / max(nativeWidth, nativeHeight))
         // One even canvas applies to every frame and both encoders. The rounding
         // is the usual subpixel aspect adjustment required by H.264 dimensions.
-        let width = max(2, Int((CGFloat(background.pixels.width) * factor).rounded(.down)) / 2 * 2)
-        let height = max(2, Int((CGFloat(background.pixels.height) * factor).rounded(.down)) / 2 * 2)
-        return Plan(width: width, height: height, source: source, pixels: presentation.pixels,
+        let width = max(2, Int((nativeWidth * boundedFactor).rounded(.down)) / 2 * 2)
+        let height = max(2, Int((nativeHeight * boundedFactor).rounded(.down)) / 2 * 2)
+        let factor = min(CGFloat(width) / nativeWidth, CGFloat(height) / nativeHeight)
+        let textureWidth = max(1, Int((CGFloat(presentation.pixels.width) * factor).rounded(.down)))
+        let textureHeight = max(1, Int((CGFloat(presentation.pixels.height) * factor).rounded(.down)))
+        guard let sheetSize = envelopedProjection.outputPixelDimensions(
+                pixelWidth: textureWidth, pixelHeight: textureHeight),
+              sheetSize.width <= 1600, sheetSize.height <= 1600,
+              nativeSize.width > 0, nativeSize.height > 0,
+              let background = presentation.animationBackground(contentSize: contentSize,
+                pixelWidth: sheetSize.width, pixelHeight: sheetSize.height), isValid(background)
+        else { throw ExportError.invalidSnapshot }
+        return Plan(width: width, height: height, source: source, outputBounds: envelope,
+                    pixels: presentation.pixels, textureWidth: textureWidth, textureHeight: textureHeight,
                     background: background,
                     videoSettings: VideoEncodingSettings.outputSettings(width: width, height: height,
                         fps: Format.mp4.framesPerSecond, codec: .h264, quality: .high))
+    }
+
+    private static func isValid(_ background: BeautifyRenderer.PaperBackground) -> Bool {
+        background.imageSize.width.isFinite && background.imageSize.height.isFinite
+            && background.imageSize.width > 0 && background.imageSize.height > 0
+            && background.padding.isFinite && background.padding >= 0
+            && [background.shadowRadius, background.shadowAlpha, background.shadowOffset,
+                background.contactRadius, background.contactAlpha, background.contactOffset]
+                .allSatisfy { $0.isFinite && $0 >= 0 }
+    }
+
+    /// Union the exact encoder samples, including both held endpoints. An
+    /// animation's opening sheet includes the omitted paper at its full length;
+    /// the final folded frame alone cannot determine a safe movie canvas.
+    private static func animationBounds(source: StitchAccordionProjection.Source) -> CGRect? {
+        var samples: Set<CGFloat> = [0, 1]
+        for format in Format.allCases {
+            let fps = format.framesPerSecond
+            let count = Int((duration * Double(fps)).rounded())
+            for frame in 0..<count {
+                samples.insert(foldProgress(at: Double(frame) / Double(fps)))
+            }
+        }
+        var envelope = CGRect.null
+        for progress in samples.sorted() {
+            guard let projection = source.projection(progress: progress), projection.hasProjectedOutput else {
+                return nil
+            }
+            envelope = envelope.union(projection.outputBounds)
+        }
+        guard !envelope.isNull, envelope.width.isFinite, envelope.height.isFinite else { return nil }
+        // One geometry pixel protects antialiased exterior coverage at the
+        // largest silhouette; the background still supplies its regular pad.
+        return envelope.insetBy(dx: -1, dy: -1).integral
     }
 
     /// Call inside a MediaExportCoordinator job. Publication and cancellation
@@ -143,6 +203,7 @@ nonisolated enum StitchAnimationExporter {
     /// next fold frame replaces it, so memory never grows with frame count.
     private nonisolated final class FrameRenderer: @unchecked Sendable {
         let source: StitchAccordionProjection.Source
+        let outputBounds: CGRect
         let texture: CGImage
         let background: BeautifyRenderer.PaperBackground
         nonisolated(unsafe) private var lastProgress: CGFloat?
@@ -150,11 +211,8 @@ nonisolated enum StitchAnimationExporter {
 
         init(plan: Plan) throws {
             source = plan.source
-            let factor = min(CGFloat(plan.width) / CGFloat(plan.background.pixels.width),
-                             CGFloat(plan.height) / CGFloat(plan.background.pixels.height))
-            let width = max(1, Int((CGFloat(plan.pixels.width) * factor).rounded()))
-            let height = max(1, Int((CGFloat(plan.pixels.height) * factor).rounded()))
-            texture = try resized(plan.pixels, width: width, height: height)
+            outputBounds = plan.outputBounds
+            texture = try resized(plan.pixels, width: plan.textureWidth, height: plan.textureHeight)
             let pixels = try resized(plan.background.pixels, width: plan.width, height: plan.height)
             let original = plan.background
             background = BeautifyRenderer.PaperBackground(pixels: pixels,
@@ -167,14 +225,10 @@ nonisolated enum StitchAnimationExporter {
 
         func frame(progress: CGFloat) throws -> CGImage {
             if progress == lastProgress, let lastFrame { return lastFrame }
-            guard let projection = source.projection(progress: progress) else { throw ExportError.renderFailed }
-            let sheet: CGImage
-            if projection.hasProjectedOutput {
-                guard let warped = StitchAccordionWarp.render(texture, projection: projection) else {
-                    throw ExportError.renderFailed
-                }
-                sheet = warped
-            } else { sheet = texture }
+            guard let projection = source.projection(progress: progress)?.withOutputBounds(outputBounds),
+                  projection.hasProjectedOutput,
+                  let sheet = StitchAccordionWarp.render(texture, projection: projection)
+            else { throw ExportError.renderFailed }
             guard let image = BeautifyRenderer.renderPaper(image: sheet, background: background) else {
                 throw ExportError.renderFailed
             }

@@ -93,7 +93,13 @@ final class StitchAnimationExporterTests: XCTestCase {
         let fixture = try makeFixture(sourceScale: 2)
         XCTAssertEqual(fixture.prepared.sourceSize, NSSize(width: 64, height: 48))
         XCTAssertEqual(fixture.plan.source.documentBounds.size, NSSize(width: 128, height: 96))
-        XCTAssertEqual(fixture.plan.size, NSSize(width: 176, height: 144))
+        XCTAssertEqual(fixture.plan.source.unfoldedBounds.size, NSSize(width: 128, height: 112))
+        let expected = NSSize(
+            width: Int(fixture.plan.outputBounds.width + 48) / 2 * 2,
+            height: Int(fixture.plan.outputBounds.height + 48) / 2 * 2)
+        XCTAssertEqual(fixture.plan.size, expected)
+        XCTAssertGreaterThan(fixture.plan.height, 144,
+                             "The first frame includes the omitted strip at its full size")
         for format in StitchAnimationExporter.Format.allCases {
             let output = directory.appendingPathComponent("retina." + format.pathExtension)
             try await StitchAnimationExporter.export(fixture.plan, to: output, format: format)
@@ -110,10 +116,63 @@ final class StitchAnimationExporterTests: XCTestCase {
                 first = try generator.copyCGImage(at: .zero, actualTime: nil)
                 last = try generator.copyCGImage(at: CMTime(value: 53, timescale: 30), actualTime: nil)
             }
-            XCTAssertEqual(first.width, 176)
-            XCTAssertEqual(first.height, 144)
+            XCTAssertEqual(first.width, fixture.plan.width)
+            XCTAssertEqual(first.height, fixture.plan.height)
             try assertEndpoints(first: first, last: last, fixture: fixture, tolerance: 0.09)
         }
+    }
+
+    func testFixedEnvelopeContainsEveryExportedSilhouetteWithLargeRemovedBands() throws {
+        let fixture = try makeFixture(removedLength: 220, perspective: 30, yaw: -35)
+        let plan = fixture.plan
+        XCTAssertEqual(plan.source.unfoldedBounds.height, 316)
+        let first = try XCTUnwrap(plan.source.projection(progress: 0))
+        XCTAssertTrue(first.hasProjectedOutput)
+        XCTAssertGreaterThanOrEqual(plan.outputBounds.height, 318)
+        for format in StitchAnimationExporter.Format.allCases {
+            let fps = format.framesPerSecond
+            let count = Int((plan.duration * Double(fps)).rounded())
+            for index in 0..<count {
+                let progress = StitchAnimationExporter.foldProgress(at: Double(index) / Double(fps))
+                let projection = try XCTUnwrap(plan.source.projection(progress: progress))
+                XCTAssertTrue(plan.outputBounds.contains(projection.outputBounds),
+                              "Frame \(index) of \(format.rawValue) must retain its silhouette")
+                XCTAssertNotNil(projection.withOutputBounds(plan.outputBounds))
+            }
+        }
+        let final = try XCTUnwrap(plan.source.projection())
+        XCTAssertLessThan(final.outputBounds.height, first.outputBounds.height,
+                          "The fixed envelope must cover opening paper, not only the final fold")
+    }
+
+    func testOpeningSheetKeepsVisibleContentSizeAndUsesSafePaperForRemovedSpace() async throws {
+        let fixture = try makeFixture()
+        let output = directory.appendingPathComponent("unfolded.gif")
+        try await StitchAnimationExporter.export(fixture.plan, to: output, format: .gif)
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(output as CFURL, nil))
+        let frame = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let projection = try XCTUnwrap(fixture.plan.source.projection(progress: 0))
+        let start = try XCTUnwrap(projection.project(CGPoint(x: 20, y: 15)))
+        let end = try XCTUnwrap(projection.project(CGPoint(x: 40, y: 35)))
+        let rasterStart = framePoint(start, image: frame, fixture: fixture)
+        let rasterEnd = framePoint(end, image: frame, fixture: fixture)
+        XCTAssertEqual(rasterEnd.x - rasterStart.x, 20, accuracy: 0.3)
+        XCTAssertEqual(rasterEnd.y - rasterStart.y, 20, accuracy: 0.3)
+
+        let before = try XCTUnwrap(projection.project(CGPoint(x: 110, y: 39.999)))
+        let after = try XCTUnwrap(projection.project(CGPoint(x: 110, y: 40.001)))
+        XCTAssertEqual(after.y - before.y, 16.002, accuracy: 0.001,
+                       "The inserted flat paper includes all 16 removed pixels")
+        let omittedCenter = CGPoint(x: (before.x + after.x) / 2, y: (before.y + after.y) / 2)
+        let paperPoint = framePoint(omittedCenter, image: frame, fixture: fixture)
+        let paper = try color(frame, x: Int(paperPoint.x), y: Int(paperPoint.y))
+        XCTAssertGreaterThan(paper.redComponent, 0.95)
+        XCTAssertGreaterThan(paper.greenComponent, 0.95)
+        XCTAssertGreaterThan(paper.blueComponent, 0.95,
+                             "Omitted geometry samples the safe white composite, never the raw green source")
+        try assertEndpoints(first: frame,
+            last: XCTUnwrap(CGImageSourceCreateImageAtIndex(source, CGImageSourceGetCount(source) - 1, nil)),
+            fixture: fixture, tolerance: 0.07)
     }
 
     func testCancellationDuringBothEncodersPreservesExistingDestination() async throws {
@@ -210,17 +269,22 @@ final class StitchAnimationExporterTests: XCTestCase {
         let plan: StitchAnimationExporter.Plan
     }
 
-    private func makeFixture(maxDimension: Int = 1600, sourceScale: CGFloat = 1) throws -> Fixture {
+    private func makeFixture(maxDimension: Int = 1600, sourceScale: CGFloat = 1,
+                             removedLength: Int = 16,
+                             perspective: CGFloat = StitchPaperCamera.defaultPerspective,
+                             yaw: CGFloat = StitchPaperCamera.defaultYaw) throws -> Fixture {
         // The editable document contains green pixels; the provided composite
         // contains white paper and black redaction. Export must use the latter.
-        let raw = ImageProbe.solidImage(width: 128, height: 112,
+        let raw = ImageProbe.solidImage(width: 128, height: 96 + removedLength,
             color: CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
         var style = StitchStyle()
         style.transition = .accordion
         style.accordionWidth = 12
+        style.accordionPerspective = perspective
+        style.accordionYaw = yaw
         let rawPixels = try XCTUnwrap(raw.cgImage(forProposedRect: nil, context: nil, hints: nil))
         var document = StitchDocument(pieces: [StitchPiece(image: rawPixels)], style: style)
-        XCTAssertTrue(document.collapse(axis: StitchAxis.horizontal, from: 40, to: 56))
+        XCTAssertTrue(document.collapse(axis: StitchAxis.horizontal, from: 40, to: CGFloat(40 + removedLength)))
         let composite = ImageProbe.makeImage(width: 128, height: 96) { context in
             context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: 128, height: 96))
@@ -250,31 +314,43 @@ final class StitchAnimationExporterTests: XCTestCase {
             XCTAssertEqual(backdrop.redComponent, 0.04, accuracy: tolerance)
             XCTAssertEqual(backdrop.alphaComponent, 1, accuracy: 0.001)
         }
-        let projection = try XCTUnwrap(fixture.plan.source.projection())
-        let folded = try XCTUnwrap(projection.project(CGPoint(x: 64, y: 48)))
-        let background = try XCTUnwrap(fixture.prepared.paperBackground)
-        let scaleX = CGFloat(first.width) / background.imageSize.width
-        let scaleY = CGFloat(first.height) / background.imageSize.height
-        let paperScaleX = fixture.prepared.sourceSize.width / projection.documentBounds.width
-        let paperScaleY = fixture.prepared.sourceSize.height / projection.documentBounds.height
-        let firstMark = try color(first, x: Int((64 * paperScaleX + background.padding) * scaleX),
-                                  y: Int((48 * paperScaleY + background.padding) * scaleY))
-        let lastMark = try color(last, x: Int((folded.x * paperScaleX + background.padding) * scaleX),
-                                 y: Int((folded.y * paperScaleY + background.padding) * scaleY))
+        let unfoldedProjection = try XCTUnwrap(fixture.plan.source.projection(progress: 0))
+        let foldedProjection = try XCTUnwrap(fixture.plan.source.projection())
+        let unfolded = try XCTUnwrap(unfoldedProjection.project(CGPoint(x: 64, y: 48)))
+        let folded = try XCTUnwrap(foldedProjection.project(CGPoint(x: 64, y: 48)))
+        let firstPoint = framePoint(unfolded, image: first, fixture: fixture)
+        let lastPoint = framePoint(folded, image: last, fixture: fixture)
+        let firstMark = try color(first, x: Int(firstPoint.x), y: Int(firstPoint.y))
+        let lastMark = try color(last, x: Int(lastPoint.x), y: Int(lastPoint.y))
         for mark in [firstMark, lastMark] {
             XCTAssertLessThan(mark.redComponent, tolerance + 0.03)
             XCTAssertLessThan(mark.greenComponent, tolerance + 0.03,
                               "Raw green source pixels must never replace the composited redaction")
             XCTAssertLessThan(mark.blueComponent, tolerance + 0.03)
         }
-        let blankPaper = try color(first, x: Int((110 * paperScaleX + background.padding) * scaleX),
-                                   y: Int((24 * paperScaleY + background.padding) * scaleY))
+        let blank = try XCTUnwrap(unfoldedProjection.project(CGPoint(x: 110, y: 24)))
+        let blankPoint = framePoint(blank, image: first, fixture: fixture)
+        let blankPaper = try color(first, x: Int(blankPoint.x), y: Int(blankPoint.y))
         XCTAssertGreaterThan(blankPaper.redComponent, 1 - tolerance)
         // The unwarped lower-right content corner becomes background under a
         // tilted silhouette; independent decoding must show that actual warp.
-        let clearCorner = try color(last, x: Int((127 * paperScaleX + background.padding) * scaleX),
-                                   y: Int((95 * paperScaleY + background.padding) * scaleY))
+        let corner = try XCTUnwrap(unfoldedProjection.project(CGPoint(x: 127, y: 95)))
+        let cornerPoint = framePoint(corner, image: last, fixture: fixture)
+        let clearCorner = try color(last, x: Int(cornerPoint.x), y: Int(cornerPoint.y))
         XCTAssertGreaterThan(clearCorner.blueComponent, clearCorner.redComponent + 0.4)
+    }
+
+    private func framePoint(_ point: CGPoint, image: CGImage, fixture: Fixture) -> CGPoint {
+        let bounds = fixture.plan.outputBounds
+        let compact = fixture.plan.source.documentBounds
+        let pointScaleX = fixture.prepared.sourceSize.width / compact.width
+        let pointScaleY = fixture.prepared.sourceSize.height / compact.height
+        let padding = ScreenshotPresentation.paperPadding
+        let canvasWidth = bounds.width * pointScaleX + padding * 2
+        let canvasHeight = bounds.height * pointScaleY + padding * 2
+        return CGPoint(
+            x: ((point.x - bounds.minX) * pointScaleX + padding) * CGFloat(image.width) / canvasWidth,
+            y: ((point.y - bounds.minY) * pointScaleY + padding) * CGFloat(image.height) / canvasHeight)
     }
 
     private func color(_ image: CGImage, x: Int, y: Int) throws -> NSColor {
