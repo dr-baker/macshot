@@ -74,7 +74,7 @@ final class ScreenshotPresentationTests: XCTestCase {
             context.fill(CGRect(x: 90, y: 20, width: 20, height: 20))
         }
         let output = try XCTUnwrap(ScreenshotPresentation(projection: projection).render(flatComposite))
-        XCTAssertEqual(output.size, flatComposite.size)
+        XCTAssertEqual(output.size, projection.outputBounds.size)
         let pixels = try XCTUnwrap(output.cgImage(forProposedRect: nil, context: nil, hints: nil))
         let bitmap = NSBitmapImageRep(cgImage: pixels)
         var transparent = 0
@@ -83,8 +83,8 @@ final class ScreenshotPresentationTests: XCTestCase {
         }
         XCTAssertGreaterThan(transparent, 20, "Perspective cutouts remain transparent when framing is disabled")
         let projectedMark = try XCTUnwrap(projection.project(CGPoint(x: 100, y: 130)))
-        let mark = try XCTUnwrap(bitmap.colorAt(x: Int(projectedMark.x.rounded()),
-                                              y: Int(projectedMark.y.rounded())))
+        let mark = try XCTUnwrap(bitmap.colorAt(x: Int((projectedMark.x - projection.outputBounds.minX).rounded()),
+                                              y: Int((projectedMark.y - projection.outputBounds.minY).rounded())))
         XCTAssertLessThan(mark.redComponent, 0.05, "Project the redacted composite, never the document source")
         XCTAssertGreaterThan(mark.alphaComponent, 0.9)
     }
@@ -104,7 +104,8 @@ final class ScreenshotPresentationTests: XCTestCase {
             }
         }
         let result = NSImage(cgImage: try XCTUnwrap(pixels), size: prepared.imageSize)
-        XCTAssertEqual(result.size, NSSize(width: 224, height: 184))
+        XCTAssertEqual(result.size, NSSize(width: projection.outputBounds.width + 24,
+                                          height: projection.outputBounds.height + 24))
         let margin = try XCTUnwrap(ImageProbe.pixelColor(result, x: 2, y: 90))
         XCTAssertEqual(margin.blueComponent, 0.8, accuracy: 0.02)
         XCTAssertEqual(margin.redComponent, 0.1, accuracy: 0.02)
@@ -126,7 +127,9 @@ final class ScreenshotPresentationTests: XCTestCase {
         let flat = try XCTUnwrap(view.captureSelectedRegion())
         view.reset()
         let result = try XCTUnwrap(presentation.render(flat))
-        XCTAssertEqual(result.size, NSSize(width: 224, height: 184))
+        let projection = try XCTUnwrap(presentation.projection)
+        XCTAssertEqual(result.size, NSSize(width: projection.outputBounds.width + 24,
+                                          height: projection.outputBounds.height + 24))
     }
 
     func testOrdinaryWindowRoundedAndSnappedScreenshotsKeepExistingPresentation() throws {
@@ -173,6 +176,43 @@ final class ScreenshotPresentationTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 800, y: 100)).redComponent, 0.99,
                              "Animation textures retain the flat composite without a background or folded shading")
         for limit in [CGFloat.nan, .infinity, 0, -1] { XCTAssertNil(prepared.animationTexture(maxDimension: limit)) }
+    }
+
+    func testUnfoldedPresentationRestoresRemovedPaperAtNativeDensity() throws {
+        let document = try accordionDocument()
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+        let source = ImageProbe.solidImage(width: 400, height: 320, color: NSColor.white.cgColor)
+        source.size = NSSize(width: 200, height: 160)
+        let prepared = try XCTUnwrap(ScreenshotPresentation(projection: projection).prepare(source))
+        let output = try XCTUnwrap(prepared.renderCGImage())
+        XCTAssertTrue(projection.hasProjectedOutput, "Unfolded omitted bands still need their paper material")
+        XCTAssertEqual(prepared.sourceSize, NSSize(width: 200, height: 160))
+        XCTAssertEqual(prepared.projectedSize, NSSize(width: 200, height: 180))
+        XCTAssertEqual(prepared.imageSize, prepared.projectedSize)
+        XCTAssertEqual(output.width, 400)
+        XCTAssertEqual(output.height, 360)
+        XCTAssertEqual(CGFloat(output.width) / prepared.imageSize.width, 2)
+        XCTAssertEqual(CGFloat(output.height) / prepared.imageSize.height, 2)
+    }
+
+    func testAnimationBackgroundUsesFrozenChoiceAtTheRequestedEnvelope() throws {
+        let source = ImageProbe.solidImage(width: 200, height: 160)
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: accordionDocument()))
+        var config = wallpaperConfig(padding: 12)
+        let original = try XCTUnwrap(config.customBackgroundImage)
+        let prepared = try XCTUnwrap(ScreenshotPresentation(beautify: config, projection: projection).prepare(source))
+        original.size = NSSize(width: 1, height: 1000)
+        config.customBackgroundImage = ImageProbe.solidImage(width: 40, height: 40, color: NSColor.red.cgColor)
+        let envelope = NSSize(width: 300, height: 220)
+        let background = try XCTUnwrap(prepared.animationBackground(contentSize: envelope,
+            pixelWidth: 600, pixelHeight: 440))
+        XCTAssertEqual(background.contentSize, envelope)
+        XCTAssertEqual(background.imageSize, NSSize(width: 324, height: 244))
+        XCTAssertEqual(background.pixels.width, 648)
+        XCTAssertEqual(background.pixels.height, 488)
+        let color = try XCTUnwrap(NSBitmapImageRep(cgImage: background.pixels).colorAt(x: 2, y: 90))
+        XCTAssertEqual(color.blueComponent, 0.8, accuracy: 0.02)
+        XCTAssertEqual(color.redComponent, 0.1, accuracy: 0.02)
     }
 
     private func wallpaperConfig(padding: CGFloat) -> BeautifyConfig {

@@ -53,17 +53,31 @@ struct ScreenshotPresentation {
         guard let pixels = effected.cgImage(forProposedRect: nil, context: nil, hints: nil),
               effected.size.width.isFinite, effected.size.height.isFinite,
               effected.size.width > 0, effected.size.height > 0 else { return nil }
+        return prepareProjected(pixels: pixels, sourceSize: effected.size)
+    }
+
+    /// The source texture stays compact. Inserted paper and camera rotation determine
+    /// a separate output extent at the same native pixel density.
+    private func prepareProjected(pixels: CGImage, sourceSize: NSSize,
+                                  previous: Prepared? = nil) -> Prepared? {
+        guard let projection, let extent = Prepared.projectedExtent(
+            pixels: pixels, sourceSize: sourceSize, projection: projection) else { return nil }
         let background: BeautifyRenderer.PaperBackground?
         if let beautify {
-            guard let prepared = BeautifyRenderer.prepareStitchPaperBackground(
-                imageSize: effected.size, pixelWidth: pixels.width, pixelHeight: pixels.height,
-                config: beautify) else { return nil }
-            background = prepared
+            if let previous, previous.projectedExtent == extent,
+               let existing = previous.paperBackground {
+                background = existing
+            } else {
+                guard let prepared = BeautifyRenderer.prepareStitchPaperBackground(
+                    imageSize: extent.size, pixelWidth: extent.width, pixelHeight: extent.height,
+                    config: beautify) else { return nil }
+                background = prepared
+            }
         } else {
             background = nil
         }
-        return Prepared(pixels: pixels, sourceSize: effected.size, projection: projection,
-                        cornerRadius: 0, paperBackground: background)
+        return Prepared(pixels: pixels, sourceSize: sourceSize, projection: projection,
+            cornerRadius: 0, paperBackground: background, paperBackgroundConfig: beautify)
     }
 
     /// Reuse only Beautify's background choice. The sheet keeps its own silhouette.
@@ -131,12 +145,11 @@ struct ScreenshotPresentation {
             let prepared: Prepared
             if let previous, presentation.hasProjectedOutput,
                previous.key.matchesInput(key) {
-                // Camera and pleat edits change the mesh. Effects and the
-                // target-sized background still use the same frozen pixels.
-                prepared = Prepared(pixels: previous.prepared.pixels,
-                    sourceSize: previous.prepared.sourceSize, projection: presentation.projection,
-                    cornerRadius: previous.prepared.cornerRadius,
-                    paperBackground: previous.prepared.paperBackground)
+                // Camera and pleat edits reuse effected pixels. A new projected
+                // extent needs a freshly prepared background at its own size.
+                guard let result = presentation.prepareProjected(pixels: previous.prepared.pixels,
+                    sourceSize: previous.prepared.sourceSize, previous: previous.prepared) else { return nil }
+                prepared = result
             } else {
                 let frozen = NSImage(cgImage: pixels, size: image.size)
                 guard let result = presentation.prepare(frozen) else { return nil }
@@ -191,13 +204,14 @@ struct ScreenshotPresentation {
                 switch (projection, other.projection) {
                 case (nil, nil): return true
                 case (.some(let a), .some(let b)):
-                    guard a.documentBounds == b.documentBounds, a.source.camera == b.source.camera,
+                    guard a.documentBounds == b.documentBounds, a.outputBounds == b.outputBounds,
+                          a.source.camera == b.source.camera,
                           a.hasProjectedOutput == b.hasProjectedOutput, a.faces.count == b.faces.count,
                           a.drawingOrder == b.drawingOrder else { return false }
                     return zip(a.faces, b.faces).allSatisfy { a, b in
                         Self.matches(a.a, b.a) && Self.matches(a.b, b.b) && Self.matches(a.c, b.c)
                             && a.shade == b.shade && a.isFrontFacing == b.isFrontFacing
-                            && a.boundaryEdges == b.boundaryEdges
+                            && a.boundaryEdges == b.boundaryEdges && a.paperSample == b.paperSample
                     }
                 default: return false
                 }
@@ -205,7 +219,7 @@ struct ScreenshotPresentation {
 
             private static func matches(_ a: StitchAccordionProjection.Vertex,
                                         _ b: StitchAccordionProjection.Vertex) -> Bool {
-                a.source == b.source && a.projected == b.projected && a.depth == b.depth
+                a.source == b.source && a.rest == b.rest && a.projected == b.projected && a.depth == b.depth
             }
         }
 
@@ -258,9 +272,11 @@ struct ScreenshotPresentation {
             }
             var rendered = 0
             if prepared.projection?.hasProjectedOutput == true {
-                let output = prepared.paperBackground?.pixels ?? prepared.pixels
-                let row = output.width.multipliedReportingOverflow(by: 4)
-                let bytes = row.partialValue.multipliedReportingOverflow(by: output.height)
+                guard let extent = prepared.projectedExtent else { return nil }
+                let width = prepared.paperBackground?.pixels.width ?? extent.width
+                let height = prepared.paperBackground?.pixels.height ?? extent.height
+                let row = width.multipliedReportingOverflow(by: 4)
+                let bytes = row.partialValue.multipliedReportingOverflow(by: height)
                 guard !row.overflow, !bytes.overflow else { return nil }
                 rendered = bytes.partialValue
                 let sum = total.addingReportingOverflow(rendered)
@@ -340,26 +356,33 @@ struct ScreenshotPresentation {
         let projection: StitchAccordionProjection?
         let cornerRadius: CGFloat
         let paperBackground: BeautifyRenderer.PaperBackground?
+        private let paperBackgroundConfig: BeautifyConfig?
         private let renderedPixels: RenderedPixels?
 
         init(pixels: CGImage, sourceSize: NSSize, projection: StitchAccordionProjection?,
-             cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?) {
+             cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?,
+             paperBackgroundConfig: BeautifyConfig? = nil) {
             self.init(pixels: pixels, sourceSize: sourceSize, projection: projection,
-                cornerRadius: cornerRadius, paperBackground: paperBackground, renderedPixels: nil)
+                cornerRadius: cornerRadius, paperBackground: paperBackground,
+                paperBackgroundConfig: paperBackgroundConfig, renderedPixels: nil)
         }
 
         private init(pixels: CGImage, sourceSize: NSSize, projection: StitchAccordionProjection?,
                      cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?,
+                     paperBackgroundConfig: BeautifyConfig?,
                      renderedPixels: RenderedPixels?) {
             self.pixels = pixels
             self.sourceSize = sourceSize
             self.projection = projection
             self.cornerRadius = cornerRadius
             self.paperBackground = paperBackground
+            self.paperBackgroundConfig = paperBackgroundConfig
             self.renderedPixels = renderedPixels
         }
 
-        var imageSize: NSSize { paperBackground?.imageSize ?? sourceSize }
+        /// Point dimensions of the full projected sheet, before background padding.
+        var projectedSize: NSSize { projectedExtent?.size ?? sourceSize }
+        var imageSize: NSSize { paperBackground?.imageSize ?? projectedSize }
         var isRenderCacheEnabled: Bool { renderedPixels != nil }
         var renderedCGImage: CGImage? {
             projection?.hasProjectedOutput == true ? renderedPixels?.image : pixels
@@ -368,7 +391,41 @@ struct ScreenshotPresentation {
         fileprivate func cachingRenderedPixels(maximumRetainedBytes: Int) -> Self {
             Self(pixels: pixels, sourceSize: sourceSize, projection: projection,
                 cornerRadius: cornerRadius, paperBackground: paperBackground,
+                paperBackgroundConfig: paperBackgroundConfig,
                 renderedPixels: RenderedPixels(maximumRetainedBytes: maximumRetainedBytes))
+        }
+
+        /// Animation uses one envelope for all frames. Prepare the original background
+        /// choice at that size rather than stretching the final folded backdrop.
+        @MainActor
+        func animationBackground(contentSize: NSSize, pixelWidth: Int,
+                                 pixelHeight: Int) -> BeautifyRenderer.PaperBackground? {
+            guard let paperBackgroundConfig else { return nil }
+            return BeautifyRenderer.prepareStitchPaperBackground(imageSize: contentSize,
+                pixelWidth: pixelWidth, pixelHeight: pixelHeight, config: paperBackgroundConfig)
+        }
+
+        fileprivate nonisolated struct ProjectedExtent: Sendable, Equatable {
+            let size: NSSize
+            let width: Int
+            let height: Int
+        }
+
+        fileprivate var projectedExtent: ProjectedExtent? {
+            guard let projection, projection.hasProjectedOutput else { return nil }
+            return Self.projectedExtent(pixels: pixels, sourceSize: sourceSize, projection: projection)
+        }
+
+        fileprivate static func projectedExtent(pixels: CGImage, sourceSize: NSSize,
+                                               projection: StitchAccordionProjection) -> ProjectedExtent? {
+            guard sourceSize.width.isFinite, sourceSize.height.isFinite,
+                  sourceSize.width > 0, sourceSize.height > 0,
+                  let dimensions = projection.outputPixelDimensions(pixelWidth: pixels.width,
+                      pixelHeight: pixels.height) else { return nil }
+            let size = NSSize(width: projection.outputBounds.width * sourceSize.width / projection.documentBounds.width,
+                              height: projection.outputBounds.height * sourceSize.height / projection.documentBounds.height)
+            guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
+            return ProjectedExtent(size: size, width: dimensions.width, height: dimensions.height)
         }
 
         nonisolated func renderCGImage() -> CGImage? {
@@ -378,10 +435,12 @@ struct ScreenshotPresentation {
 
         private nonisolated func renderUncached() -> CGImage? {
             guard let projection, projection.hasProjectedOutput else { return pixels }
-            guard let clipped = Self.clipCorners(pixels, size: sourceSize, radius: cornerRadius),
+            guard let extent = projectedExtent,
+                  let clipped = Self.clipCorners(pixels, size: sourceSize, radius: cornerRadius),
                   let projected = StitchAccordionWarp.render(clipped, projection: projection),
-                  projected.width == pixels.width, projected.height == pixels.height else { return nil }
+                  projected.width == extent.width, projected.height == extent.height else { return nil }
             if let paperBackground {
+                guard paperBackground.contentSize == extent.size else { return nil }
                 return BeautifyRenderer.renderPaper(image: projected, background: paperBackground)
             }
             return projected

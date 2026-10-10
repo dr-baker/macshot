@@ -3,29 +3,31 @@ import XCTest
 
 @MainActor
 final class StitchAccordionSizingTests: XCTestCase {
-    func testFoldBandUsesRemovedLengthInBothDirections() throws {
+    func testUnfoldedMeshRestoresActualRemovedLengthInBothDirections() throws {
         let image = try pixels(width: 1000, height: 1000)
         for axis in [StitchAxis.horizontal, .vertical] {
-            for length in [CGFloat(12), 48, 120] {
+            for length in [CGFloat(12), 41, 120] {
                 var document = StitchDocument(pieces: [StitchPiece(image: image)])
                 document.style.transition = .accordion
                 XCTAssertTrue(document.collapse(axis: axis, from: 320, to: 320 + length))
                 for manualWidth in [CGFloat(0), 8, 80] {
                     document.style.accordionWidth = manualWidth
                     let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
-                    let coordinates = normalCoordinates(projection, axis: axis).filter {
-                        $0 > (axis == .horizontal ? document.bounds.minY : document.bounds.minX)
-                            && $0 < (axis == .horizontal ? document.bounds.maxY : document.bounds.maxX)
+                    let coordinates = paperNormalCoordinates(projection, axis: axis)
+                    XCTAssertEqual(try XCTUnwrap(coordinates.first), 320, accuracy: 0.000001)
+                    XCTAssertEqual(try XCTUnwrap(coordinates.last), 320 + length, accuracy: 0.000001)
+                    XCTAssertEqual(projection.source.unfoldedBounds.size, CGSize(width: 1000, height: 1000))
+                    XCTAssertTrue(projection.hasProjectedOutput, "Unfolded omitted paper must also render")
+                    for face in projection.faces where face.paperSample != nil {
+                        XCTAssertTrue(face.vertices.allSatisfy { (axis == .horizontal ? $0.source.y : $0.source.x) == 320 })
                     }
-                    XCTAssertEqual(try XCTUnwrap(coordinates.first), 320 - length / 2, accuracy: 0.000001)
-                    XCTAssertEqual(try XCTUnwrap(coordinates.last), 320 + length / 2, accuracy: 0.000001)
-                    XCTAssertTrue(document.hasAccordionFolds)
+                    try assertIsometry(projection)
                 }
             }
         }
     }
 
-    func testPleatsDivideTheRemovedLengthAndSetRidgeHeight() throws {
+    func testPleatsDivideRemovedLengthAndPreserveEveryTriangleEdge() throws {
         let image = try pixels(width: 1000, height: 1000)
         for axis in [StitchAxis.horizontal, .vertical] {
             var document = StitchDocument(pieces: [StitchPiece(image: image)])
@@ -36,14 +38,17 @@ final class StitchAccordionSizingTests: XCTestCase {
             for pleats in 2...6 {
                 document.style.accordionPleats = CGFloat(pleats)
                 let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
-                let band = normalCoordinates(projection, axis: axis).filter { (280...360).contains($0) }
+                let band = paperNormalCoordinates(projection, axis: axis)
                 XCTAssertEqual(band.count, pleats * 2 + 1)
                 for (first, next) in zip(band, band.dropFirst()) {
                     XCTAssertEqual(next - first, 80 / CGFloat(pleats * 2), accuracy: 0.000001)
                 }
-                let depths = projection.faces.flatMap(\.vertices).map(\.depth)
-                let height = try XCTUnwrap(depths.max()) - XCTUnwrap(depths.min())
-                XCTAssertEqual(height, 80 / CGFloat(pleats * 2) * sqrt(1 - 0.45 * 0.45), accuracy: 0.000001)
+                let heights = projection.faces.flatMap(\.vertices).map { $0.world.z }
+                XCTAssertEqual(try XCTUnwrap(heights.max()), 80 / CGFloat(pleats * 2) * sqrt(1 - 0.45 * 0.45), accuracy: 0.000001)
+                try assertIsometry(projection)
+                for face in projection.faces where face.paperSample == nil {
+                    XCTAssertTrue(face.vertices.allSatisfy { $0.world.z == 0 }, "Surviving screenshot pixels remain flat")
+                }
             }
         }
     }
@@ -80,7 +85,7 @@ final class StitchAccordionSizingTests: XCTestCase {
         for width in [CGFloat(8), 20] {
             document.style.accordionWidth = width
             let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
-            let band = normalCoordinates(projection, axis: .horizontal).filter { $0 > 0 && $0 < 800 }
+            let band = paperNormalCoordinates(projection, axis: .horizontal)
             XCTAssertEqual(try XCTUnwrap(band.last) - XCTUnwrap(band.first), width * 4, accuracy: 0.000001)
         }
         XCTAssertTrue(document.collapse(axis: .horizontal, from: 390, to: 410))
@@ -120,20 +125,68 @@ final class StitchAccordionSizingTests: XCTestCase {
         }
     }
 
-    func testLargeAndNearbyRemovalsKeepThePaperBounded() throws {
+    func testLargeAndNearbyRemovalsRestoreFullSizeWithoutCappingPleats() throws {
         let image = try pixels(width: 1000, height: 1000)
         for axis in [StitchAxis.horizontal, .vertical] {
             var document = StitchDocument(pieces: [StitchPiece(image: image)])
             document.style.transition = .accordion
-            XCTAssertTrue(document.collapse(axis: axis, from: 250, to: 450))
-            XCTAssertTrue(document.collapse(axis: axis, from: 300, to: 500))
+            XCTAssertTrue(document.collapse(axis: axis, from: 50, to: 850))
             for progress in [CGFloat(0), 0.5, 1] {
                 let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: progress))
-                XCTAssertTrue(document.bounds.contains(projection.paperPath.boundingBoxOfPath))
+                XCTAssertEqual(projection.source.unfoldedBounds.size, CGSize(width: 1000, height: 1000))
+                let coordinates = paperNormalCoordinates(projection, axis: axis)
+                XCTAssertEqual(try XCTUnwrap(coordinates.last) - XCTUnwrap(coordinates.first), 800, accuracy: 0.000001)
+                XCTAssertTrue(projection.outputBounds.contains(projection.paperPath.boundingBoxOfPath))
                 XCTAssertTrue(projection.faces.flatMap(\.vertices).allSatisfy {
                     $0.projected.x.isFinite && $0.projected.y.isFinite && $0.depth.isFinite && $0.depth > 0
                 })
+                try assertIsometry(projection)
             }
+            var nearby = StitchDocument(pieces: [StitchPiece(image: image)])
+            nearby.style.transition = .accordion
+            XCTAssertTrue(nearby.collapse(axis: axis, from: 250, to: 450))
+            XCTAssertTrue(nearby.collapse(axis: axis, from: 300, to: 500))
+            let projection = try XCTUnwrap(StitchAccordionProjection(document: nearby))
+            XCTAssertEqual(projection.source.unfoldedBounds.size, CGSize(width: 1000, height: 1000))
+            try assertIsometry(projection)
+        }
+    }
+
+    func testCrossedAndPartialSeamsUseIndependentIsometricPatches() throws {
+        let image = try pixels(width: 300, height: 300)
+        var crossed = StitchDocument(pieces: [StitchPiece(image: image)])
+        crossed.style.transition = .accordion
+        XCTAssertTrue(crossed.collapse(axis: .horizontal, from: 120, to: 180))
+        XCTAssertTrue(crossed.collapse(axis: .vertical, from: 100, to: 140))
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: crossed))
+        XCTAssertEqual(projection.source.unfoldedBounds.size, CGSize(width: 300, height: 300))
+        try assertIsometry(projection)
+        for face in projection.faces where face.paperSample != nil {
+            let xs = Set(face.vertices.map { $0.source.x }), ys = Set(face.vertices.map { $0.source.y })
+            XCTAssertTrue(xs.count == 1 || ys.count == 1, "A crossing contains independent crease arms")
+        }
+        let shortImage = try pixels(width: 80, height: 30)
+        var partial = StitchDocument(pieces: [StitchPiece(image: image),
+            StitchPiece(image: shortImage, origin: CGPoint(x: 90, y: 300))])
+        partial.style.transition = .accordion
+        try assertIsometry(XCTUnwrap(StitchAccordionProjection(document: partial)))
+    }
+
+    func testRestoredProvenanceAndNativePixelBudgetsFailClosed() throws {
+        let image = try pixels(width: 320, height: 320)
+        var document = StitchDocument(pieces: [StitchPiece(image: image)])
+        document.style.transition = .accordion
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 140, to: 180))
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
+        XCTAssertNil(projection.outputPixelDimensions(pixelWidth: Int.max, pixelHeight: 1))
+        XCTAssertNil(projection.withOutputBounds(CGRect(x: 0, y: 0, width: 1, height: 1)))
+        for length in [CGFloat(30_001), 1e30] {
+            for index in document.pieces.indices {
+                for stamp in document.pieces[index].trimStamps.indices {
+                    document.pieces[index].trimStamps[stamp].removedLength = length
+                }
+            }
+            XCTAssertNil(StitchAccordionProjection.Source(document: document))
         }
     }
 
@@ -169,9 +222,20 @@ final class StitchAccordionSizingTests: XCTestCase {
             .cgImage(forProposedRect: nil, context: nil, hints: nil))
     }
 
-    private func normalCoordinates(_ projection: StitchAccordionProjection, axis: StitchAxis) -> [CGFloat] {
-        Array(Set(projection.faces.flatMap(\.vertices).map {
-            axis == .horizontal ? $0.source.y : $0.source.x
+    private func paperNormalCoordinates(_ projection: StitchAccordionProjection, axis: StitchAxis) -> [CGFloat] {
+        Array(Set(projection.faces.filter { $0.paperSample != nil }.flatMap(\.vertices).map {
+            axis == .horizontal ? $0.rest.y : $0.rest.x
         })).sorted()
+    }
+
+    private func assertIsometry(_ projection: StitchAccordionProjection, file: StaticString = #filePath, line: UInt = #line) throws {
+        for face in projection.faces {
+            for (first, second) in [(face.a, face.b), (face.b, face.c), (face.c, face.a)] {
+                let rest = hypot(second.rest.x - first.rest.x, second.rest.y - first.rest.y)
+                let dx = second.world.x - first.world.x, dy = second.world.y - first.world.y
+                let dz = second.world.z - first.world.z
+                XCTAssertEqual(sqrt(dx * dx + dy * dy + dz * dz), rest, accuracy: 0.000001, file: file, line: line)
+            }
+        }
     }
 }
