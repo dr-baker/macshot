@@ -1,0 +1,112 @@
+{
+  "date": "2026-10-09",
+  "hardware": "Apple M3 Max, 14 CPU cores, 36 GiB RAM",
+  "os": "macOS 26.6.2",
+  "configuration": "Release",
+  "geometry_base": "fb076742bf62d28a9d5e319a3541da1b6c050b23",
+  "method": "Warm synthetic key routing to reading PNG and TIFF bytes from a named pasteboard; one warm-up plus five measured runs; history image and annotation writes enabled. Excludes actual controller teardown, edit-state preparation, thumbnail UI, first-idle latency, and real consumer application paste.",
+  "before": {
+    "ordinary": {
+      "median_ms": 19.28,
+      "samples_ms": [
+        19.928041729144752,
+        18.650125013664365,
+        19.245750037953258,
+        19.658291595987976,
+        19.280291628092527
+      ]
+    },
+    "retina": {
+      "median_ms": 180.71,
+      "samples_ms": [
+        193.35845834575593,
+        180.70670834276825,
+        178.64133336115628,
+        176.88645829912275,
+        252.92995828203857
+      ]
+    },
+    "redacted": {
+      "median_ms": 86.69,
+      "samples_ms": [
+        91.02362499106675,
+        86.69441659003496,
+        81.66220830753446,
+        90.47749999444932,
+        81.68595831375569
+      ]
+    },
+    "beautify": {
+      "median_ms": 338.92,
+      "samples_ms": [
+        320.0144582660869,
+        367.5885833799839,
+        321.89008337445557,
+        338.91741663683206,
+        377.61812505777925
+      ]
+    },
+    "accordion": {
+      "median_ms": 592.88,
+      "samples_ms": [
+        936.1665833275765,
+        625.0336667289957,
+        575.6594999693334,
+        538.052583229728,
+        592.8812082856894
+      ]
+    }
+  },
+  "after": {
+    "ordinary": {
+      "median_ms": 13.35,
+      "samples_ms": [
+        14.427166664972901,
+        13.350125052966177,
+        13.030958245508373,
+        13.43283336609602,
+        13.073833310045302
+      ]
+    },
+    "retina": {
+      "median_ms": 113.93,
+      "samples_ms": [
+        121.09637493267655,
+        112.63391666579992,
+        113.92533336766064,
+        113.61091665457934,
+        119.84150006901473
+      ]
+    },
+    "redacted": {
+      "median_ms": 56.23,
+      "samples_ms": [
+        59.89858333487064,
+        56.22695840429515,
+        57.496458292007446,
+        55.55879173334688,
+        55.6544583523646
+      ]
+    },
+    "beautify": {
+      "median_ms": 262.89,
+      "samples_ms": [
+        253.68887500371784,
+        251.56800006516278,
+        262.8881250275299,
+        264.42520832642913,
+        270.22508333902806
+      ]
+    },
+    "accordion": {
+      "median_ms": 531.44,
+      "samples_ms": [
+        524.9138333601877,
+        531.4370833802968,
+        538.6020832229406,
+        525.0458333175629,
+        546.1498749209568
+      ]
+    }
+  }
+}
