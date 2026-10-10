@@ -109,14 +109,17 @@ nonisolated struct StitchAccordionProjection: Sendable {
             guard bounds.minX.isFinite, bounds.minY.isFinite,
                   bounds.maxX.isFinite, bounds.maxY.isFinite else { return nil }
             let style = document.style
-            let active = style.visible && style.transition == .accordion && !document.joins.isEmpty && style.accordionWidth != 0
+            let documentJoins = document.joins
+            let active = style.visible && style.transition == .accordion && documentJoins.contains {
+                $0.trimmedLength.map { $0 > 0 } ?? (style.accordionWidth != 0)
+            }
             let folds: [Fold]
             if active {
-                guard style.accordionWidth.isFinite, style.accordionWidth > 0, style.accordionWidth <= 80,
+                guard style.accordionWidth.isFinite, style.accordionWidth >= 0, style.accordionWidth <= 80,
                       style.accordionPleats.isFinite, (2...6).contains(style.accordionPleats),
                       style.accordionPerspective.isFinite, StitchPaperCamera.perspectiveRange.contains(style.accordionPerspective),
                       style.accordionYaw.isFinite, StitchPaperCamera.yawRange.contains(style.accordionYaw) else { return nil }
-                let joins = StitchAccordionProjection.mergedJoins(document.joins, bounds: bounds)
+                let joins = StitchAccordionProjection.mergedJoins(documentJoins, bounds: bounds)
                 folds = joins.compactMap { join in
                     var room = min(join.position - (join.horizontal ? bounds.minY : bounds.minX),
                                    (join.horizontal ? bounds.maxY : bounds.maxX) - join.position)
@@ -136,7 +139,12 @@ nonisolated struct StitchAccordionProjection: Sendable {
                         if abs(hi - join.position) < 0.5 { room = min(room, join.position - lo) }
                         if abs(lo - join.position) < 0.5 { room = min(room, hi - join.position) }
                     }
-                    let halfWidth = min(style.accordionWidth * 2, room * 0.45, (join.end - join.start) * 0.4)
+                    // The omitted strip sets the unfolded paper length. Each
+                    // pleat gets an equal share; neighbouring edges only limit
+                    // the space that can safely deform. Separate captures with
+                    // no measured cut retain the manual seam treatment.
+                    let paperLength = join.trimmedLength ?? (style.accordionWidth * 4)
+                    let halfWidth = min(paperLength / 2, room * 0.45, (join.end - join.start) * 0.4)
                     guard halfWidth.isFinite, halfWidth > 0.001, join.end - join.start > 0.001 else { return nil }
                     return Fold(join: join, halfWidth: halfWidth,
                                 pleats: Int(style.accordionPleats.rounded()), bounds: bounds)
@@ -372,6 +380,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let position: CGFloat
         let start: CGFloat
         var end: CGFloat
+        let trimmedLength: CGFloat?
     }
 
     @MainActor
@@ -381,18 +390,47 @@ nonisolated struct StitchAccordionProjection: Sendable {
             let start = max(join.start, horizontal ? bounds.minX : bounds.minY)
             let end = min(join.end, horizontal ? bounds.maxX : bounds.maxY)
             guard start.isFinite, end.isFinite, join.position.isFinite, end > start else { return nil }
-            return Join(horizontal: horizontal, position: join.position, start: start, end: end)
+            return Join(horizontal: horizontal, position: join.position, start: start, end: end,
+                        trimmedLength: join.trimmedLength)
         }.sorted {
             if $0.horizontal != $1.horizontal { return $0.horizontal }
             if $0.position != $1.position { return $0.position < $1.position }
             return $0.start != $1.start ? $0.start < $1.start : $0.end < $1.end
         }
-        return joins.reduce(into: []) { result, join in
-            if let last = result.last, last.horizontal == join.horizontal,
-               abs(last.position - join.position) < 0.001, join.start <= last.end + 0.001 {
-                result[result.count - 1].end = max(last.end, join.end)
-            } else { result.append(join) }
+        var result: [Join] = []
+        var group: [Join] = []
+        func appendGroup() {
+            guard let first = group.first else { return }
+            let edges = uniqueEdges(group.flatMap { [$0.start, $0.end] })
+            for index in 0..<edges.count - 1 {
+                let start = edges[index], end = edges[index + 1]
+                let midpoint = (start + end) / 2
+                let overlapping = group.filter { $0.start < midpoint && $0.end > midpoint }
+                guard !overlapping.isEmpty else { continue }
+                // Coincident contacts describe one crease, even in a layered
+                // collage. A measured interval takes precedence over a cosmetic
+                // join. Different adjacent lengths retain their own geometry.
+                let trimmedLength = overlapping.compactMap(\.trimmedLength).max()
+                let segment = Join(horizontal: first.horizontal, position: first.position,
+                                   start: start, end: end, trimmedLength: trimmedLength)
+                if let last = result.last, last.horizontal == segment.horizontal,
+                   abs(last.position - segment.position) < 0.001,
+                   abs(last.end - segment.start) < 0.001,
+                   last.trimmedLength == segment.trimmedLength {
+                    result[result.count - 1].end = end
+                } else { result.append(segment) }
+            }
         }
+        for join in joins {
+            if let first = group.first,
+               first.horizontal != join.horizontal || abs(first.position - join.position) >= 0.001 {
+                appendGroup()
+                group.removeAll(keepingCapacity: true)
+            }
+            group.append(join)
+        }
+        appendGroup()
+        return result
     }
 
     fileprivate nonisolated struct Fold: Sendable {

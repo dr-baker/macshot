@@ -206,13 +206,15 @@ final class StitchPaperCameraTests: XCTestCase {
     }
 
     private func fixture() throws -> StitchDocument {
-        let image = try XCTUnwrap(ImageProbe.makeImage(width: 240, height: 280) { context in
+        // A 99px cut produces the same 240×220 sheet and crease geometry as
+        // the original camera goldens, now with an actual matching trim length.
+        let image = try XCTUnwrap(ImageProbe.makeImage(width: 240, height: 319) { context in
             context.setFillColor(NSColor.white.cgColor)
-            context.fill(CGRect(x: 0, y: 0, width: 240, height: 280))
+            context.fill(CGRect(x: 0, y: 0, width: 240, height: 319))
         }.cgImage(forProposedRect: nil, context: nil, hints: nil))
         var document = StitchDocument(pieces: [StitchPiece(image: image)])
         document.style.transition = .accordion
-        XCTAssertTrue(document.collapse(axis: .horizontal, from: 110, to: 170))
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 110, to: 209))
         return document
     }
 
