@@ -23,10 +23,11 @@ final class StitchAccordionCollapseView: NSView {
     override var acceptsFirstResponder: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    init?(texture: CGImage, document: StitchDocument, frame: CGRect) {
+    init?(texture: CGImage, document: StitchDocument, frame: CGRect,
+          preparedSource: StitchAccordionProjection.Source? = nil) {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               texture.width <= Int(Self.maximumTextureDimension), texture.height <= Int(Self.maximumTextureDimension) else { return nil }
-        guard let source = StitchAccordionProjection.Source(document: document) else { return nil }
+        guard let source = preparedSource ?? StitchAccordionProjection.Source(document: document) else { return nil }
         let plans = Self.fractions.compactMap { StitchAccordionProjection(source: source, progress: $0) }
         guard plans.count == Self.fractions.count, let final = plans.last, final.hasProjectedOutput,
               final.faces.count <= 512, plans.allSatisfy({ $0.faces.count == final.faces.count }) else { return nil }
@@ -127,7 +128,33 @@ final class StitchAccordionCollapseView: NSView {
                 faceLayers[index] = sheet
             }
             sheet.bounds = CGRect(origin: .zero, size: sourceRect.size)
-            if let sample = face.paperSample {
+            if let paper = face.paperTexture {
+                // The material plane stays in physical rest coordinates while
+                // its printed pixels come from the captured, composited cut.
+                sheet.contents = nil
+                sheet.backgroundColor = nil
+                let printed: CALayer
+                if let existing = sheet.sublayers?.first { printed = existing }
+                else {
+                    printed = CALayer()
+                    printed.name = "accordion.print"
+                    printed.contentsGravity = .resize
+                    sheet.addSublayer(printed)
+                }
+                printed.frame = sheet.bounds
+                printed.contents = paper.image
+                let uv = Self.envelope(face.vertices.compactMap(\.paperUV))
+                let u = paper.horizontalFlipped ? 1 - uv.maxX : uv.minX
+                let v = paper.verticalFlipped ? 1 - uv.maxY : uv.minY
+                printed.contentsRect = CGRect(
+                    x: (paper.source.minX + u * paper.source.width) / CGFloat(paper.image.width),
+                    y: (paper.source.minY + v * paper.source.height) / CGFloat(paper.image.height),
+                    width: uv.width * paper.source.width / CGFloat(paper.image.width),
+                    height: uv.height * paper.source.height / CGFloat(paper.image.height))
+                printed.transform = CATransform3DMakeScale(paper.horizontalFlipped ? -1 : 1,
+                    paper.verticalFlipped ? -1 : 1, 1)
+            } else if let sample = face.paperSample {
+                sheet.sublayers?.forEach { $0.removeFromSuperlayer() }
                 let key = PaperSampleKey(sample)
                 let color: CGColor?
                 if let cached = paperColors[key] { color = cached }
@@ -139,6 +166,7 @@ final class StitchAccordionCollapseView: NSView {
                 sheet.contents = nil
                 sheet.backgroundColor = color
             } else {
+                sheet.sublayers?.forEach { $0.removeFromSuperlayer() }
                 let uvRect = Self.envelope(face.vertices.map(\.source))
                 sheet.backgroundColor = nil
                 sheet.contents = texture

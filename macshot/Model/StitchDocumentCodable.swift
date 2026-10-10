@@ -4,6 +4,14 @@ import ImageIO
 /// Original captures are stored once, even when a cut creates several slices.
 /// Keeping the source index also preserves image identity when restoring slices.
 struct SavedStitchDocument: Codable, Equatable {
+    struct FoldTexture: Codable, Equatable {
+        let cutID: UUID
+        let horizontal: Bool
+        let start: CGFloat
+        let end: CGFloat
+        let removedLength: CGFloat
+        let image: Data
+    }
     struct Piece: Codable, Equatable {
         var id: UUID
         var lineageID: UUID
@@ -41,6 +49,7 @@ struct SavedStitchDocument: Codable, Equatable {
     }
     var images: [Data]
     var pieces: [Piece]
+    var foldTextures: [FoldTexture]
     var transition: String
     var lineColor: [CGFloat]
     var lineWidth: CGFloat
@@ -64,7 +73,7 @@ struct SavedStitchDocument: Codable, Equatable {
     var packingLength: CGFloat
 
     private enum CodingKeys: String, CodingKey {
-        case images, pieces, transition, lineColor, lineWidth, wave, blur, feather, visible
+        case images, pieces, foldTextures, transition, lineColor, lineWidth, wave, blur, feather, visible
         case tearWidth, tearRoughness, foldDepth, foldStrength, breakSize
         case accordionWidth, accordionPleats, accordionPerspective, accordionYaw
         case background, backgroundColor, packed, packingHorizontal, packingLength
@@ -77,6 +86,7 @@ struct SavedStitchDocument: Codable, Equatable {
         // settings can use their defaults when a previous revision omitted them.
         images = try values.decode([Data].self, forKey: .images)
         pieces = try values.decode([Piece].self, forKey: .pieces)
+        foldTextures = try values.decodeIfPresent([FoldTexture].self, forKey: .foldTextures) ?? []
         transition = values.decode(.transition, or: StitchTransition.wave.rawValue)
         lineColor = values.decode(.lineColor, or: Self.components(style.color))
         lineWidth = values.decode(.lineWidth, or: style.lineWidth)
@@ -118,11 +128,8 @@ struct SavedStitchDocument: Codable, Equatable {
                 let png: Data
                 if let cached = imageData.first(where: { $0.image === piece.image }) { png = cached.data }
                 else {
-                    let data = NSMutableData()
-                    guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
-                    CGImageDestinationAddImage(destination, piece.image, nil)
-                    guard CGImageDestinationFinalize(destination) else { return nil }
-                    png = data as Data
+                    guard let data = Self.png(piece.image) else { return nil }
+                    png = data
                     imageData.append((piece.image, png))
                 }
                 index = sources.count
@@ -133,9 +140,25 @@ struct SavedStitchDocument: Codable, Equatable {
                 source: [piece.source.minX, piece.source.minY, piece.source.width, piece.source.height],
                 origin: [piece.origin.x, piece.origin.y], label: piece.label, trimStamps: piece.trimStamps))
         }
+        var textures: [FoldTexture] = []
+        for (cutID, strips) in document.activeFoldTextures.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            for strip in strips {
+                let data: Data
+                if let cached = imageData.first(where: { $0.image === strip.image }) { data = cached.data }
+                else {
+                    guard let encoded = Self.png(strip.image) else { return nil }
+                    data = encoded
+                    imageData.append((strip.image, encoded))
+                }
+                if !sources.contains(where: { $0 === strip.image }) { sources.append(strip.image) }
+                textures.append(FoldTexture(cutID: cutID, horizontal: strip.axis == .horizontal,
+                    start: strip.start, end: strip.end, removedLength: strip.removedLength, image: data))
+            }
+        }
         imageData.removeAll { cached in !sources.contains(where: { $0 === cached.image }) }
         self.images = images
         self.pieces = pieces
+        foldTextures = textures
         transition = document.style.transition.rawValue
         lineColor = Self.components(document.style.color)
         lineWidth = document.style.lineWidth
@@ -168,7 +191,10 @@ struct SavedStitchDocument: Codable, Equatable {
               Set(pieces.map(\.id)).count == pieces.count,
               pieces.reduce(0, { $0 + $1.trimStamps.count }) <= StitchDocument.maximumTrimStamps,
               pieces.allSatisfy({ $0.trimStamps.count <= StitchPiece.maximumTrimStamps }),
-              images.reduce(0, { $0 + min($1.count, SavedCaptureValidation.maximumImageBytes + 1) }) <= SavedCaptureValidation.maximumImageBytes,
+              foldTextures.count <= StitchDocument.maximumFoldTextures,
+              (images + foldTextures.map(\.image)).reduce(0, {
+                  $0 + min($1.count, SavedCaptureValidation.maximumImageBytes + 1)
+              }) <= SavedCaptureValidation.maximumImageBytes,
               [lineWidth, wave, blur, feather, tearWidth, tearRoughness, foldDepth, foldStrength, breakSize, packingLength].allSatisfy({ $0.isFinite && $0 >= 0 }),
               lineWidth <= 100, wave <= 100, blur <= 100, feather <= 4096,
               tearWidth <= 100, tearRoughness <= 100, foldDepth <= 100,
@@ -183,7 +209,7 @@ struct SavedStitchDocument: Codable, Equatable {
               let transition = StitchTransition(rawValue: transition) else { return nil }
         var pixels: [CGImage] = []
         var totalPixels = 0
-        for data in images {
+        func decode(_ data: Data) -> CGImage? {
             guard let source = CGImageSourceCreateWithData(data as CFData,
                 [kCGImageSourceShouldCache: false] as CFDictionary),
                 let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -194,6 +220,10 @@ struct SavedStitchDocument: Codable, Equatable {
                 w * h <= Double(SavedCaptureValidation.maximumImagePixels - totalPixels),
                 let image = SavedCaptureValidation.image(data)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
             totalPixels += image.width * image.height
+            return image
+        }
+        for data in images {
+            guard let image = decode(data) else { return nil }
             pixels.append(image)
         }
         var restored: [StitchPiece] = []
@@ -231,7 +261,27 @@ struct SavedStitchDocument: Codable, Equatable {
         style.breakSize = breakSize
         var document = StitchDocument(pieces: restored, style: style, background: fill)
         document.restorePackingState(packed: packed, horizontal: packingHorizontal, length: packingLength)
+        var textures: [UUID: [StitchFoldTexture]] = [:]
+        var texturePixels = 0
+        let activeCuts = Set(restored.flatMap(\.trimStamps).map(\.cutID))
+        for saved in foldTextures {
+            guard activeCuts.contains(saved.cutID), let image = decode(saved.image) else { return nil }
+            let texture = StitchFoldTexture(image: image, axis: saved.horizontal ? .horizontal : .vertical,
+                start: saved.start, end: saved.end, removedLength: saved.removedLength)
+            guard texture.isValid else { return nil }
+            texturePixels += image.width * image.height
+            guard texturePixels <= StitchDocument.maximumFoldTexturePixels else { return nil }
+            textures[saved.cutID, default: []].append(texture)
+        }
+        document.restoreFoldTextures(textures)
         return document.canRender ? document : nil
+    }
+
+    private static func png(_ image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     private static func components(_ color: NSColor) -> [CGFloat] {

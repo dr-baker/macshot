@@ -56,7 +56,12 @@ nonisolated enum StitchAnimationExporter {
     static func prepare(document: StitchDocument, presentation: ScreenshotPresentation.Prepared,
                         maxDimension: Int = 1600) throws -> Plan {
         guard maxDimension >= 2,
-              let source = StitchAccordionProjection.Source(document: document),
+              let documentSource = StitchAccordionProjection.Source(document: document),
+              document.hasAccordionFolds,
+              let source = presentation.projection?.source,
+              documentSource.documentBounds == source.documentBounds,
+              documentSource.unfoldedBounds == source.unfoldedBounds,
+              documentSource.camera == source.camera,
               let projection = source.projection(), projection.hasProjectedOutput,
               presentation.projection?.hasProjectedOutput == true,
               presentation.projection?.documentBounds == source.documentBounds,

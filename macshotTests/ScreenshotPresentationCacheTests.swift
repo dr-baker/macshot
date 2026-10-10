@@ -284,6 +284,7 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
             color: NSColor.green.cgColor).cgImage(forProposedRect: nil, context: nil, hints: nil))
         var document = StitchDocument(pieces: [StitchPiece(image: original)])
         XCTAssertTrue(document.collapse(axis: .horizontal, from: 40, to: 80))
+        document.restoreFoldTextures([:]) // Legacy seams have geometry without a retained cut texture.
         document.style.transition = .accordion
         let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
         let composite = ImageProbe.solidImage(width: 320, height: 200,
@@ -307,6 +308,60 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         XCTAssertTrue(output === hit.renderedCGImage)
     }
 
+    func testPrintedTextureChangeInvalidatesOutputWhileKeepingCompactPixels() throws {
+        let fixture = try fixture()
+        let cache = ScreenshotPresentation.Cache()
+        let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(projection: fixture.projection),
+            image: fixture.composite))
+        let output = try XCTUnwrap(first.renderCGImage())
+        let replacement = try XCTUnwrap(fixture.projection.mappingPaperTextures { original in
+            ImageProbe.solidImage(width: original.width, height: original.height,
+                color: NSColor.magenta.cgColor).cgImage(forProposedRect: nil, context: nil, hints: nil)
+        })
+        let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(projection: replacement),
+            image: fixture.composite))
+        XCTAssertTrue(first.pixels === changed.pixels)
+        XCTAssertNil(changed.renderedCGImage)
+        let replacedOutput = try XCTUnwrap(changed.renderCGImage())
+        XCTAssertFalse(output === replacedOutput)
+        let hit = try XCTUnwrap(cache.prepare(ScreenshotPresentation(projection: replacement),
+            image: fixture.composite))
+        XCTAssertTrue(replacedOutput === hit.renderedCGImage)
+    }
+
+    func testImageEffectsApplyToPrintedCutTexturesAndTheirAnimationSource() throws {
+        let fixture = try fixture()
+        let colored = try XCTUnwrap(fixture.projection.mappingPaperTextures { original in
+            ImageProbe.solidImage(width: original.width, height: original.height,
+                color: NSColor.red.cgColor).cgImage(forProposedRect: nil, context: nil, hints: nil)
+        })
+        let prepared = try XCTUnwrap(ScreenshotPresentation(effects: ImageEffectsConfig(saturation: 0),
+            beautify: fixture.background, projection: colored).prepare(fixture.composite))
+        let material = try XCTUnwrap(prepared.projection?.faces.first { $0.paperTexture != nil }?.paperTexture)
+        let color = try XCTUnwrap(NSBitmapImageRep(cgImage: material.image).colorAt(x: 1, y: 1))
+        XCTAssertEqual(color.redComponent, color.greenComponent, accuracy: 0.01)
+        XCTAssertEqual(color.greenComponent, color.blueComponent, accuracy: 0.01)
+        let plan = try StitchAnimationExporter.prepare(document: fixture.document, presentation: prepared)
+        let opening = try XCTUnwrap(plan.source.projection(progress: 0))
+        XCTAssertTrue(opening.faces.first { $0.paperTexture != nil }?.paperTexture?.image === material.image)
+    }
+
+    func testCameraEditsReuseEffectedStripPixels() throws {
+        let fixture = try fixture()
+        let cache = ScreenshotPresentation.Cache()
+        let effects = ImageEffectsConfig(saturation: 0)
+        let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
+            projection: fixture.projection), image: fixture.composite))
+        let originalMaterial = try XCTUnwrap(first.projection?.faces.first { $0.paperTexture != nil }?.paperTexture?.image)
+        var rotated = fixture.document
+        rotated.style.accordionYaw += 5
+        let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
+            projection: try XCTUnwrap(StitchAccordionProjection(document: rotated))), image: fixture.composite))
+        let nextMaterial = try XCTUnwrap(changed.projection?.faces.first { $0.paperTexture != nil }?.paperTexture?.image)
+        XCTAssertTrue(originalMaterial === nextMaterial, "A camera edit must not run the strip effect again")
+        XCTAssertTrue(first.pixels === changed.pixels)
+    }
+
     func testRetentionIncludesCompositeWallpaperPreparedBackgroundAndFinalReservation() throws {
         let fixture = try fixture()
         let presentation = ScreenshotPresentation(beautify: fixture.background, projection: fixture.projection)
@@ -317,6 +372,7 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         let wallpaper = try XCTUnwrap(fixture.background.cachedBackgroundCGImage)
         let expected = source.bytesPerRow * source.height + wallpaper.bytesPerRow * wallpaper.height
             + background.bytesPerRow * background.height + background.width * background.height * 4
+            + fixture.document.foldTextureImages.reduce(0) { $0 + $1.bytesPerRow * $1.height }
         XCTAssertEqual(cache.retainedByteCount, expected)
         let exact = ScreenshotPresentation.Cache(maximumRetainedBytes: expected)
         XCTAssertTrue(try XCTUnwrap(exact.prepare(presentation, image: fixture.composite)).isRenderCacheEnabled)
@@ -341,6 +397,7 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         XCTAssertEqual(dimensions.width, 200)
         XCTAssertEqual(dimensions.height, 200)
         let required = pixels.bytesPerRow * pixels.height + dimensions.width * dimensions.height * 4
+            + fixture.document.foldTextureImages.reduce(0) { $0 + $1.bytesPerRow * $1.height }
         let exact = ScreenshotPresentation.Cache(maximumRetainedBytes: required)
         let prepared = try XCTUnwrap(exact.prepare(presentation, image: fixture.composite))
         XCTAssertEqual(exact.retainedByteCount, required)

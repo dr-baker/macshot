@@ -250,6 +250,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         var document = StitchDocument(pieces: [StitchPiece(image: try texture(width: 360, height: 280))],
                                       style: accordionStyle(), background: .transparent)
         XCTAssertTrue(document.collapse(axis: .horizontal, from: 70, to: 90))
+        document.restoreFoldTextures([:])
         let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
         let width = Int(document.bounds.width), height = Int(document.bounds.height)
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
@@ -310,7 +311,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         XCTAssertEqual((next.x - first.x) * 2, 40, accuracy: 0.000001)
     }
 
-    func testRemovedContentCannotReappearOnFoldedFaces() throws {
+    func testSanitizedCutTextureCannotRecoverOriginalRemovedPixels() throws {
         var pixels = [UInt8](repeating: 255, count: 240 * 240 * 4)
         for y in 100..<140 {
             for x in 0..<240 {
@@ -320,7 +321,8 @@ final class StitchAccordionProjectionTests: XCTestCase {
         }
         var document = StitchDocument(pieces: [StitchPiece(image: try image(pixels, width: 240, height: 240))],
                                       style: accordionStyle(), background: .transparent)
-        XCTAssertTrue(document.collapse(axis: .horizontal, from: 100, to: 140))
+        let safe = try image([UInt8](repeating: 255, count: 240 * 240 * 4), width: 240, height: 240)
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 100, to: 140, texture: safe))
         let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
         let pixelsAfter = try bytes(XCTUnwrap(StitchAccordionWarp.render(try flatImage(document), projection: projection)))
         var redPixels = 0
@@ -328,6 +330,177 @@ final class StitchAccordionProjectionTests: XCTestCase {
             if pixelsAfter[offset + 3] > 0, Int(pixelsAfter[offset]) > Int(pixelsAfter[offset + 1]) + 10 { redPixels += 1 }
         }
         XCTAssertEqual(redPixels, 0)
+    }
+
+    func testUnfoldedCutTexturesRestoreTheExactPrintedPatternOnBothAxesAndMirrors() throws {
+        let source = try printedTexture()
+        let original = try bytes(source)
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var cut = StitchDocument(pieces: [StitchPiece(image: source)], style: accordionStyle(), background: .transparent)
+            XCTAssertTrue(cut.collapse(axis: axis, from: 80, to: 144, texture: source))
+            for horizontalMirror in [false, true] {
+                for verticalMirror in [false, true] {
+                    var document = cut
+                    if horizontalMirror { document = try XCTUnwrap(document.flipped(horizontal: true)) }
+                    if verticalMirror { document = try XCTUnwrap(document.flipped(horizontal: false)) }
+                    let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+                    XCTAssertTrue(projection.faces.contains { $0.paperTexture != nil })
+                    let output = try XCTUnwrap(StitchAccordionWarp.render(try flatImage(document), projection: projection))
+                    XCTAssertEqual(output.width, 240); XCTAssertEqual(output.height, 240)
+                    let rendered = try bytes(output)
+                    var mismatches = 0
+                    for y in 1..<239 {
+                        for x in 1..<239 {
+                            let sx = horizontalMirror ? 239 - x : x
+                            let sy = verticalMirror ? 239 - y : y
+                            let expected = (sy * 240 + sx) * 4, actual = (y * 240 + x) * 4
+                            if (0..<4).contains(where: { abs(Int(rendered[actual + $0]) - Int(original[expected + $0])) > 1 }) {
+                                mismatches += 1
+                            }
+                        }
+                    }
+                    XCTAssertEqual(mismatches, 0, "An unfolded full-size mesh must restore the original printing, including cut strips and flip orientation")
+                }
+            }
+        }
+    }
+
+    func testFoldedPrintedStripUsesPerspectiveCorrectUVAndLightingInBothAxes() throws {
+        let source = try printedTexture()
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var document = StitchDocument(pieces: [StitchPiece(image: source)], style: accordionStyle(), background: .transparent)
+            document.style.accordionPerspective = 30
+            document.style.accordionYaw = 35
+            XCTAssertTrue(document.collapse(axis: axis, from: 80, to: 144, texture: source))
+            let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
+            let output = try XCTUnwrap(StitchAccordionWarp.render(try flatImage(document), projection: projection))
+            let rendered = try bytes(output)
+            var checked = 0
+            for face in projection.faces where face.paperTexture != nil {
+                let material = try XCTUnwrap(face.paperTexture)
+                let sample = try bytes(material.image)
+                let rest = CGPoint(x: (face.a.rest.x + face.b.rest.x + face.c.rest.x) / 3,
+                                   y: (face.a.rest.y + face.b.rest.y + face.c.rest.y) / 3)
+                let center = try XCTUnwrap(face.projectRest(rest))
+                let x = Int(floor(center.x - projection.outputBounds.minX))
+                let y = Int(floor(center.y - projection.outputBounds.minY))
+                guard (0..<output.width).contains(x), (0..<output.height).contains(y) else { continue }
+                let point = CGPoint(x: projection.outputBounds.minX + CGFloat(x) + 0.5,
+                                    y: projection.outputBounds.minY + CGFloat(y) + 0.5)
+                guard let local = face.unproject(point),
+                      let weights = StitchAccordionProjection.Face.weights(point, face.a.projected, face.b.projected, face.c.projected),
+                      min(weights.x, weights.y, weights.z) > 0.04 else { continue }
+                let nearest = projection.faces.filter { $0.isFrontFacing || $0.paperSample != nil }
+                    .compactMap { $0.unproject(point)?.depth }.min()
+                guard let nearest, abs(nearest - local.depth) < 0.000001 else { continue }
+                let auv = try XCTUnwrap(face.a.paperUV), buv = try XCTUnwrap(face.b.paperUV), cuv = try XCTUnwrap(face.c.paperUV)
+                let wa = weights.x / face.a.depth, wb = weights.y / face.b.depth, wc = weights.z / face.c.depth
+                let total = wa + wb + wc
+                let u = (wa * auv.x + wb * buv.x + wc * cuv.x) / total
+                let v = (wa * auv.y + wb * buv.y + wc * cuv.y) / total
+                let sx = material.source.minX + (material.horizontalFlipped ? 1 - u : u) * material.source.width - 0.5
+                let sy = material.source.minY + (material.verticalFlipped ? 1 - v : v) * material.source.height - 0.5
+                let offset = (y * output.width + x) * 4
+                for channel in 0..<3 {
+                    let expected = min(255, bilinear(sample, width: material.image.width, height: material.image.height,
+                                                    x: sx, y: sy, channel: channel) * face.shade)
+                    XCTAssertEqual(CGFloat(rendered[offset + channel]), expected, accuracy: 1)
+                }
+                XCTAssertEqual(rendered[offset + 3], 255)
+                checked += 1
+            }
+            XCTAssertGreaterThan(checked, 1, "Projected pleats must retain actual pattern pixels rather than one sampled color")
+        }
+    }
+
+    func testMaterialEffectsMapOnceAndRemainInAnimationSourceWithoutChangingGeometry() throws {
+        var document = StitchDocument(pieces: [StitchPiece(image: try printedTexture())], style: accordionStyle(), background: .transparent)
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 80, to: 144))
+        let original = try XCTUnwrap(StitchAccordionProjection(document: document))
+        var calls = 0
+        let mapped = try XCTUnwrap(original.mappingPaperTextures { image in
+            calls += 1
+            return image
+        })
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(mapped.outputBounds, original.outputBounds)
+        XCTAssertEqual(mapped.drawingOrder, original.drawingOrder)
+        for (a, b) in zip(original.faces, mapped.faces) {
+            XCTAssertEqual(a.a.projected, b.a.projected)
+            XCTAssertEqual(a.b.rest, b.b.rest)
+            XCTAssertEqual(a.c.paperUV, b.c.paperUV)
+            XCTAssertTrue(a.paperTexture?.image === b.paperTexture?.image)
+        }
+        let frame = try XCTUnwrap(mapped.source.projection(progress: 0))
+        XCTAssertTrue(frame.faces.contains { $0.paperTexture?.image === mapped.faces.last?.paperTexture?.image })
+        XCTAssertNil(original.mappingPaperTextures { _ in nil })
+        XCTAssertNil(original.mappingPaperTextures { _ in try? self.printedTexture(width: 12, height: 12) })
+    }
+
+    func testTextureRasterStagingUsesOutputDensityAndKeepsNativeCopyPixels() throws {
+        let preview = try XCTUnwrap(StitchAccordionWarp.textureRasterDimensions(width: 30_000, height: 3_000,
+                                                                              outputDensity: 1_600 / 30_000.0))
+        XCTAssertEqual(preview.width, 1_600)
+        XCTAssertEqual(preview.height, 160)
+        XCTAssertEqual(preview.width * preview.height, 256_000,
+                       "A 1600px export must not allocate a 90M-pixel decoded cut strip")
+        for density: CGFloat in [1, 2] {
+            let native = try XCTUnwrap(StitchAccordionWarp.textureRasterDimensions(width: 30_000, height: 3_000,
+                                                                                  outputDensity: density))
+            XCTAssertEqual(native.width, 30_000)
+            XCTAssertEqual(native.height, 3_000)
+        }
+        XCTAssertNil(StitchAccordionWarp.textureRasterDimensions(width: 30_000, height: 4_000, outputDensity: 0.05))
+        XCTAssertNil(StitchAccordionWarp.textureRasterDimensions(width: 10, height: 10, outputDensity: .nan))
+        XCTAssertNil(StitchAccordionWarp.textureRasterDimensions(width: 10, height: 10, outputDensity: 0))
+        let numericalNoise = try XCTUnwrap(StitchAccordionWarp.textureRasterDimensions(width: 240, height: 64,
+                                                                                     outputDensity: 0.5000000000000007))
+        XCTAssertEqual(numericalNoise.width, 120); XCTAssertEqual(numericalNoise.height, 32)
+        let genuineFraction = try XCTUnwrap(StitchAccordionWarp.textureRasterDimensions(width: 240, height: 64,
+                                                                                      outputDensity: 0.5001))
+        XCTAssertEqual(genuineFraction.width, 121); XCTAssertEqual(genuineFraction.height, 33)
+    }
+
+    func testResizedPrintedMaterialsAvoidDoubleDownsamplingAndCameraDragsRetainThem() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let image = try printedTexture()
+            var document = StitchDocument(pieces: [StitchPiece(image: image)], style: accordionStyle(), background: .transparent)
+            XCTAssertTrue(document.collapse(axis: axis, from: 80, to: 144, texture: image))
+            let original = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+            let previewPixels = try flatImage(document, dimension: 120)
+            let bounded = try XCTUnwrap(original.resizingPaperTextures(maxDimension: 120))
+            let expected = try bytes(XCTUnwrap(StitchAccordionWarp.render(previewPixels, projection: original)))
+            let actual = try bytes(XCTUnwrap(StitchAccordionWarp.render(previewPixels, projection: bounded)))
+            XCTAssertEqual(actual.count, expected.count)
+            XCTAssertTrue(zip(actual, expected).allSatisfy { pair in abs(Int(pair.0) - Int(pair.1)) <= 1 },
+                          "Bounded cut images already match the preview's pixel density and must retain their sharp printing")
+            let material = try XCTUnwrap(bounded.faces.first(where: { $0.paperTexture != nil })?.paperTexture)
+            XCTAssertLessThanOrEqual(max(material.image.width, material.image.height), 120)
+            XCTAssertTrue(material.isValid)
+            let camera = StitchPaperCamera(perspective: -17, yaw: 23)
+            let dragged = try XCTUnwrap(bounded.source.withCamera(camera).projection())
+            XCTAssertEqual(dragged.source.camera, camera)
+            XCTAssertEqual(dragged.source.unfoldedBounds, original.source.unfoldedBounds)
+            XCTAssertTrue(dragged.faces.contains { $0.paperTexture?.image === material.image })
+            XCTAssertNotEqual(dragged.faces[0].a.projected, original.faces[0].a.projected)
+            let sourceOnly = try XCTUnwrap(original.source.resizingPaperTextures(maxDimension: 120).flatMap { $0.projection(progress: 0) })
+            XCTAssertEqual(sourceOnly.faces.first(where: { $0.paperTexture != nil })?.paperTexture?.image.width, material.image.width)
+            XCTAssertEqual(sourceOnly.faces.first(where: { $0.paperTexture != nil })?.paperTexture?.image.height, material.image.height)
+            XCTAssertNil(original.resizingPaperTextures(maxDimension: 0))
+        }
+    }
+
+    func testMaterialResizeHonorsItsExactPixelLimitDespiteFloatingPointScale() throws {
+        let image = try printedTexture(width: 157, height: 120)
+        var document = StitchDocument(pieces: [StitchPiece(image: image)], style: accordionStyle(), background: .transparent)
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 40, to: 80, texture: image))
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
+        let bounded = try XCTUnwrap(projection.resizingPaperTextures(maxDimension: 120))
+        let material = try XCTUnwrap(bounded.faces.first(where: { $0.paperTexture != nil })?.paperTexture)
+        // 157 * (120 / 157) is 120.00000000000001 in CGFloat arithmetic.
+        XCTAssertEqual(material.image.width, 120)
+        XCTAssertEqual(material.image.height, 31)
+        XCTAssertTrue(material.isValid)
     }
 
     func testInactivePlansAreIdentityAndInvalidActivePlansFailClosed() throws {
@@ -421,6 +594,19 @@ final class StitchAccordionProjectionTests: XCTestCase {
                 let colors = solid ? [220, 224, 230] : [40 + 180 * x / width, 30 + 180 * y / height, 100]
                 for channel in 0..<3 { pixels[offset + channel] = UInt8((colors[channel] * opacity + 127) / 255) }
                 pixels[offset + 3] = UInt8(opacity)
+            }
+        }
+        return try image(pixels, width: width, height: height)
+    }
+
+    private func printedTexture(width: Int = 240, height: Int = 240) throws -> CGImage {
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                pixels[offset] = UInt8(60 + x % 160)
+                pixels[offset + 1] = UInt8(40 + y % 180)
+                pixels[offset + 2] = (x / 11 + y / 7).isMultiple(of: 2) ? 190 : 40
             }
         }
         return try image(pixels, width: width, height: height)

@@ -1,6 +1,7 @@
 import AppKit
 
-/// Omitted geometry on one surviving source edge. No removed pixels are stored.
+/// Omitted geometry on one surviving source edge. Texture is retained separately,
+/// from the composited document at the moment this cut was made.
 struct StitchTrimStamp: Codable, Equatable {
     enum Edge: String, Codable, CaseIterable {
         case top, bottom, left, right
@@ -16,6 +17,35 @@ struct StitchTrimStamp: Codable, Equatable {
     /// Matching this mapping prevents shifted or reordered faces from pairing.
     var tangentOffset: CGFloat = 0
     var tangentReversed = false
+    var normalReversed = false
+
+    private enum CodingKeys: String, CodingKey {
+        case cutID, edge, start, end, removedLength, tangentOffset, tangentReversed, normalReversed
+    }
+
+    init(cutID: UUID, edge: Edge, start: CGFloat, end: CGFloat, removedLength: CGFloat,
+         tangentOffset: CGFloat = 0, tangentReversed: Bool = false, normalReversed: Bool = false) {
+        self.cutID = cutID
+        self.edge = edge
+        self.start = start
+        self.end = end
+        self.removedLength = removedLength
+        self.tangentOffset = tangentOffset
+        self.tangentReversed = tangentReversed
+        self.normalReversed = normalReversed
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        cutID = try values.decode(UUID.self, forKey: .cutID)
+        edge = try values.decode(Edge.self, forKey: .edge)
+        start = try values.decode(CGFloat.self, forKey: .start)
+        end = try values.decode(CGFloat.self, forKey: .end)
+        removedLength = try values.decode(CGFloat.self, forKey: .removedLength)
+        tangentOffset = try values.decodeIfPresent(CGFloat.self, forKey: .tangentOffset) ?? 0
+        tangentReversed = try values.decodeIfPresent(Bool.self, forKey: .tangentReversed) ?? false
+        normalReversed = try values.decodeIfPresent(Bool.self, forKey: .normalReversed) ?? false
+    }
 
     func cutCoordinate(at sourceCoordinate: CGFloat) -> CGFloat {
         (tangentReversed ? -sourceCoordinate : sourceCoordinate) + tangentOffset
@@ -44,7 +74,7 @@ struct StitchTrimStamp: Codable, Equatable {
             result.end = length - start
             result.tangentOffset += tangentReversed ? -length : length
             result.tangentReversed.toggle()
-        }
+        } else { result.normalReversed.toggle() }
         return result
     }
 }
@@ -97,7 +127,7 @@ struct StitchPiece {
     }
 }
 
-enum StitchAxis { case horizontal, vertical }
+nonisolated enum StitchAxis: Sendable { case horizontal, vertical }
 
 /// Automatic blends sampled background colors into gaps without changing captured pixels.
 enum StitchBackground {
@@ -149,20 +179,23 @@ struct StitchStyle {
     var visible = true
 }
 
-struct StitchJoin {
+nonisolated struct StitchJoin: Sendable {
     let axis: StitchAxis
     let position: CGFloat
     let start: CGFloat
     let end: CGFloat
     /// Nil means the touching faces do not prove an omitted source distance.
     let trimmedLength: CGFloat?
+    let texture: StitchJoinTexture?
 
-    init(axis: StitchAxis, position: CGFloat, start: CGFloat, end: CGFloat, trimmedLength: CGFloat? = nil) {
+    init(axis: StitchAxis, position: CGFloat, start: CGFloat, end: CGFloat,
+         trimmedLength: CGFloat? = nil, texture: StitchJoinTexture? = nil) {
         self.axis = axis
         self.position = position
         self.start = start
         self.end = end
         self.trimmedLength = trimmedLength
+        self.texture = texture
     }
 }
 
@@ -171,6 +204,7 @@ struct StitchDocument {
     var pieces: [StitchPiece] = []
     var style = StitchStyle()
     var background: StitchBackground = .automatic
+    private(set) var foldTextures: [UUID: [StitchFoldTexture]] = [:]
     private(set) var placement: StitchPlacement = .free
     private var packingAxis: StitchAxis = .horizontal
     private var packingLength: CGFloat = 0
@@ -193,8 +227,10 @@ struct StitchDocument {
 
     static let maximumPieces = 128
     static let maximumPixels: CGFloat = 100_000_000
-    static let maximumDimension: CGFloat = 30_000
+    nonisolated static let maximumDimension: CGFloat = 30_000
     static let maximumTrimStamps = 16_384
+    static let maximumFoldTextures = 1_024
+    nonisolated static let maximumFoldTexturePixels = 100_000_000
     /// Caps both model subdivision and the input passed to projection preparation.
     static let maximumContactSegments = 1_024
     static let maximumContactPreparationWork = 1_000_000
@@ -204,11 +240,63 @@ struct StitchDocument {
         hasValidGeometryAndStamps && preparedContacts() != nil
     }
 
+    var activeFoldTextures: [UUID: [StitchFoldTexture]] {
+        var edges: [UUID: Int] = [:]
+        for stamp in pieces.flatMap(\.trimStamps) {
+            let bit: Int
+            switch stamp.edge {
+            case .top: bit = 1
+            case .bottom: bit = 2
+            case .left: bit = 4
+            case .right: bit = 8
+            }
+            edges[stamp.cutID, default: 0] |= bit
+        }
+        return foldTextures.reduce(into: [:]) { active, entry in
+            let mask = edges[entry.key] ?? 0
+            let strips = entry.value.filter { $0.axis == .horizontal ? mask & 3 == 3 : mask & 12 == 12 }
+            if !strips.isEmpty { active[entry.key] = strips }
+        }
+    }
+
+    var foldTextureImages: [CGImage] {
+        activeFoldTextures.values.flatMap { $0.map(\.image) }.reduce(into: []) { images, image in
+            if !images.contains(where: { $0 === image }) { images.append(image) }
+        }
+    }
+
+    /// The editable history decodes capture buffers and cut strips together.
+    /// Reserve its source buffers before admitting another retained strip.
+    var foldTexturePixelBudget: Int {
+        var sources: [CGImage] = []
+        var pixels = 0
+        for piece in pieces where !sources.contains(where: { $0 === piece.image }) {
+            let image = piece.image
+            guard CGFloat(image.width) <= Self.maximumDimension,
+                  CGFloat(image.height) <= Self.maximumDimension else { return 0 }
+            let count = image.width * image.height
+            guard count <= SavedCaptureValidation.maximumImagePixels - pixels else { return 0 }
+            pixels += count
+            sources.append(image)
+        }
+        return min(Self.maximumFoldTexturePixels, SavedCaptureValidation.maximumImagePixels - pixels)
+    }
+
+    mutating func pruneFoldTextures() { foldTextures = activeFoldTextures }
+
+    mutating func restoreFoldTextures(_ textures: [UUID: [StitchFoldTexture]]) {
+        foldTextures = textures
+        pruneFoldTextures()
+    }
+
     private var hasValidGeometryAndStamps: Bool {
         guard !pieces.isEmpty, pieces.count <= Self.maximumPieces,
               pieces.allSatisfy({ $0.trimStamps.count <= StitchPiece.maximumTrimStamps }),
               pieces.reduce(0, { $0 + $1.trimStamps.count }) <= Self.maximumTrimStamps,
               pieces.allSatisfy(\.hasValidTrimStamps) else { return false }
+        let textures = activeFoldTextures.values.flatMap { $0 }
+        guard textures.count <= Self.maximumFoldTextures, textures.allSatisfy(\.isValid),
+              foldTextureImages.reduce(0, { $0 + $1.width * $1.height }) <= foldTexturePixelBudget else { return false }
         let b = bounds
         return !b.isNull && b.width > 0 && b.height > 0 && b.width.isFinite && b.height.isFinite
             && b.width <= Self.maximumDimension && b.height <= Self.maximumDimension
@@ -245,7 +333,7 @@ struct StitchDocument {
 
     /// Remove a full-width row band or full-height column band, retaining original pixels.
     @discardableResult
-    mutating func collapse(axis: StitchAxis, from: CGFloat, to: CGFloat) -> Bool {
+    mutating func collapse(axis: StitchAxis, from: CGFloat, to: CGFloat, texture: CGImage? = nil) -> Bool {
         guard let band = removalBand(axis: axis, from: from, to: to) else { return false }
         let b = bounds
         let horizontal = axis == .horizontal
@@ -268,9 +356,20 @@ struct StitchDocument {
             }
         }
         guard !result.isEmpty, result.count <= Self.maximumPieces else { return false }
-        Self.stampNewContact(in: &result, axis: axis, position: lo, segments: trimSegments)
+        let cutID = UUID()
+        Self.stampNewContact(in: &result, axis: axis, position: lo, segments: trimSegments, cutID: cutID)
         var next = self
         next.pieces = result
+        next.pruneFoldTextures()
+        if result.contains(where: { $0.trimStamps.contains(where: { $0.cutID == cutID }) }) {
+            var flat = self
+            flat.style.visible = false
+            guard let snapshot = texture ?? StitchRenderer.render(flat),
+                  let strips = retainedTextures(axis: axis, band: band, segments: trimSegments,
+                      snapshot: snapshot, remainingPixels: next.foldTexturePixelBudget
+                        - next.foldTextureImages.reduce(0, { $0 + $1.width * $1.height })) else { return false }
+            if !strips.isEmpty { next.foldTextures[cutID] = strips }
+        }
         guard next.canRender else { return false }
         // A global cut already closes its band. Reflowing the sliced fragments here
         // could move part of a lower row into an earlier row. Keep that geometry intact.
@@ -283,7 +382,7 @@ struct StitchDocument {
         return true
     }
 
-    private struct TrimSegment {
+    struct TrimSegment {
         let start: CGFloat
         var end: CGFloat
         let removedLength: CGFloat
@@ -319,17 +418,15 @@ struct StitchDocument {
                 return total + length
             }
             let length = band.length + omitted
-            if let last = segments.last, last.end == start, last.removedLength == length {
-                segments[segments.count - 1].end = end
-            } else {
-                segments.append(TrimSegment(start: start, end: end, removedLength: length))
-            }
+            // Equal depths may contain different old cut strips. Keep their
+            // tangent partitions so each retained texture remains unambiguous.
+            segments.append(TrimSegment(start: start, end: end, removedLength: length))
         }
         return segments
     }
 
     private static func stampNewContact(in pieces: inout [StitchPiece], axis: StitchAxis,
-                                        position: CGFloat, segments: [TrimSegment]) {
+                                        position: CGFloat, segments: [TrimSegment], cutID: UUID) {
         let horizontal = axis == .horizontal
         let beforeEdge: StitchTrimStamp.Edge = horizontal ? .bottom : .right
         let afterEdge: StitchTrimStamp.Edge = horizontal ? .top : .left
@@ -341,7 +438,6 @@ struct StitchDocument {
         }
         for index in before { pieces[index].trimStamps.removeAll { $0.edge == beforeEdge } }
         for index in after { pieces[index].trimStamps.removeAll { $0.edge == afterEdge } }
-        let cutID = UUID()
         for a in before {
             for b in after where a != b {
                 let start = max(horizontal ? pieces[a].frame.minX : pieces[a].frame.minY,
@@ -370,7 +466,8 @@ struct StitchDocument {
             pieces[index].trimStamps = sorted.reduce(into: []) { result, stamp in
                 if let last = result.last, last.edge == stamp.edge, last.cutID == stamp.cutID,
                    last.removedLength == stamp.removedLength, last.tangentOffset == stamp.tangentOffset,
-                   last.tangentReversed == stamp.tangentReversed, stamp.start <= last.end {
+                   last.tangentReversed == stamp.tangentReversed,
+                   last.normalReversed == stamp.normalReversed, stamp.start < last.end {
                     result[result.count - 1].end = max(last.end, stamp.end)
                 } else { result.append(stamp) }
             }
@@ -595,6 +692,7 @@ struct StitchDocument {
         func matches(_ other: Self, at worldCoordinate: CGFloat) -> Bool {
             stamp.cutID == other.stamp.cutID && stamp.removedLength == other.stamp.removedLength
                 && stamp.tangentReversed == other.stamp.tangentReversed
+                && stamp.normalReversed == other.stamp.normalReversed
                 && abs(stamp.cutCoordinate(at: worldCoordinate - sourceOffset)
                        - other.stamp.cutCoordinate(at: worldCoordinate - other.sourceOffset)) < 0.000001
         }
@@ -629,19 +727,27 @@ struct StitchDocument {
             let activeA = a.filter { $0.start < middle && $0.end > middle }
             let activeB = b.filter { $0.start < middle && $0.end > middle }
             let length: CGFloat?
+            let texture: StitchJoinTexture?
             if let firstA = activeA.first, let firstB = activeB.first,
                firstA.matches(firstB, at: middle),
                activeA.allSatisfy({ $0.matches(firstA, at: middle) }),
                activeB.allSatisfy({ $0.matches(firstB, at: middle) }) {
                 length = firstA.stamp.removedLength
+                texture = foldTextures[firstA.stamp.cutID]?.first(where: { record in
+                    record.axis == axis && record.mapping(stamp: firstA.stamp,
+                        sourceOffset: firstA.sourceOffset, from: lo, to: hi) != nil
+                })?.mapping(stamp: firstA.stamp, sourceOffset: firstA.sourceOffset, from: lo, to: hi)
             } else if activeA.isEmpty && activeB.isEmpty {
                 length = inferred
-            } else { length = nil }
-            if let last = result.last, last.end == lo, last.trimmedLength == length {
+                texture = nil
+            } else { length = nil; texture = nil }
+            if let last = result.last, last.end == lo, last.trimmedLength == length,
+               last.texture == nil, texture == nil {
                 result[result.count - 1] = StitchJoin(axis: axis, position: position,
                     start: last.start, end: hi, trimmedLength: length)
             } else {
-                result.append(StitchJoin(axis: axis, position: position, start: lo, end: hi, trimmedLength: length))
+                result.append(StitchJoin(axis: axis, position: position, start: lo, end: hi,
+                                         trimmedLength: length, texture: texture))
             }
         }
         return result

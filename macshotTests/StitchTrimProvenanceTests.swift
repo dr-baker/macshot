@@ -199,6 +199,7 @@ final class StitchTrimProvenanceTests: XCTestCase {
             var pieces = try XCTUnwrap(json["pieces"] as? [[String: Any]])
             for index in pieces.indices { pieces[index].removeValue(forKey: "trimStamps") }
             json["pieces"] = pieces
+            json.removeValue(forKey: "foldTextures")
             let old = try JSONDecoder().decode(SavedStitchDocument.self,
                 from: JSONSerialization.data(withJSONObject: json))
             let restored = try XCTUnwrap(old.restore())

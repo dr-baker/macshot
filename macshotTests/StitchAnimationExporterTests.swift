@@ -284,7 +284,10 @@ final class StitchAnimationExporterTests: XCTestCase {
         style.accordionYaw = yaw
         let rawPixels = try XCTUnwrap(raw.cgImage(forProposedRect: nil, context: nil, hints: nil))
         var document = StitchDocument(pieces: [StitchPiece(image: rawPixels)], style: style)
-        XCTAssertTrue(document.collapse(axis: StitchAxis.horizontal, from: 40, to: CGFloat(40 + removedLength)))
+        let safeCut = ImageProbe.solidImage(width: 128, height: 96 + removedLength,
+            color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        XCTAssertTrue(document.collapse(axis: StitchAxis.horizontal, from: 40, to: CGFloat(40 + removedLength),
+            texture: try XCTUnwrap(safeCut.cgImage(forProposedRect: nil, context: nil, hints: nil))))
         let composite = ImageProbe.makeImage(width: 128, height: 96) { context in
             context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: 128, height: 96))

@@ -76,10 +76,12 @@ final class StitchPaperPreviewView: NSView {
         let visibleImage = interactivePaper != nil ? interactiveBackground : (animation == nil ? image : animationBackground)
         visibleImage?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
     }
-    func animate(texture: CGImage, document: StitchDocument, frame: CGRect, background: CGImage?, viewport: CGRect? = nil) {
+    func animate(texture: CGImage, document: StitchDocument, frame: CGRect, background: CGImage?, viewport: CGRect? = nil,
+                 preparedSource: StitchAccordionProjection.Source? = nil) {
         cancelAnimation()
         clearInteractivePaper()
-        guard let effect = StitchAccordionCollapseView(texture: texture, document: document, frame: frame) else { return }
+        guard let effect = StitchAccordionCollapseView(texture: texture, document: document, frame: frame,
+            preparedSource: preparedSource) else { return }
         let available = viewport ?? animationViewport
         let backgroundFrame = effect.frame.insetBy(dx: -ScreenshotPresentation.paperPadding,
             dy: -ScreenshotPresentation.paperPadding)
