@@ -23,7 +23,7 @@ These measurements exclude actual controller teardown, editable-state preparatio
 1. `OverlayView.handleEditorKeyEvent` uses `KeyboardShortcutMatcher`. Text-field commands and selected-annotation copying retain their existing routing. Screenshot copying calls `overlayViewDidConfirm` when no annotation selection owns Command-C.
 2. Capture uses `OverlayWindowController.capturePresentedImage`. The editor uses `DetachedEditorWindowController.captureHistorySave`. Both composite through `captureSelectedRegion` and finish through `ScreenshotPresentation`. The compositor draws pixelate annotations first, then spotlight dimming, then other annotations. Projected output samples this finished flat composite.
 3. `ScreenshotPresentation` applies effects, Beautify, and optional Accordion projection. Ordinary rendering retains its existing frame behavior. The projection renderer is unchanged by this work.
-4. The controller snapshots raw pixels, annotation clones, and `CaptureEditState` for editable history. Stitch source PNGs and saved documents are cached by `ImageEditingView`. A custom Beautify background can still require TIFF and PNG work in `captureEditState`. Those costs were inspected but are outside this harness's editable-state preparation.
+4. The controller snapshots raw pixels, annotation clones, and `CaptureEditState` for editable history. Stitch source PNGs and saved documents are cached by `ImageEditingView`. Original custom background PNG bytes are now retained across history reads. Programmatically assigned backgrounds encode once from their native CGImage. The Release results above predate this change and exclude editable-state preparation.
 5. `ImageEncoder.PreparedImage` owns separately rasterized pixels and frozen output settings on the main actor. A worker performs Retina downscaling and encodes the representations. The main actor then checks the copy generation and pasteboard change count before declaring and writing every format.
 6. History snapshots still run on the main actor. `HistoryStorage` writes final PNG, raw PNG, thumbnails, annotations, editable-state sidecars, and the index on its utility queue. History persistence does not wait for successful clipboard publication. OCR runs only through explicit OCR or redaction actions, not an ordinary copy.
 
@@ -56,3 +56,23 @@ scripts/run-tests.sh ClipboardLatencyTests
 The initial Release XCTest compile crashed in Swift 6.3.3's `EarlyPerfInliner` on the existing generic `Locked<Value>` test helper destructor. Both paired Release runs used the same temporary empty destructor marked `@_optimize(none)` on that helper. The helper is not used by this pipeline. That workaround and the machine's local compiler-wrapper paths are excluded from commits. Normal Debug tests require neither the destructor workaround nor benchmark activation.
 
 The combined geometry and clipboard tree receives the final full Debug suite and signed deployment in the coordinating MACSHOT chat. Native copy verification remains a separate check from these synthetic timings.
+
+## Native presentation reuse
+
+Copy now reuses the finished native presentation after the Accordion preview settles. Camera and pleat changes preserve the flat annotated sheet, effected pixels, and prepared wallpaper. They replace the projected output. Source, selection, annotation, effect, background, and projection changes invalidate the corresponding cached result. Copies during annotation manipulation render current geometry without retaining drag frames.
+
+Raw history reads and annotated composites share a 32 MiB raster budget. Raw reads cannot evict the annotated input when both do not fit. Each presentation cache retains one result with a 128 MiB budget, including wallpaper, prepared background, and reserved final output. Larger images retain their uncached path. Preview textures remain bounded to 2000 pixels and are never used for native clipboard output. Larger previews warm the native result on a utility queue after 350 ms without interaction. An early copy can still require the full render.
+
+The same-binary Debug benchmark includes editable-state preparation, raw and annotated history capture, clipboard encoding, and checking readable PNG and TIFF bytes. It uses a 1920 × 1080 synthetic Accordion, wallpaper, and redaction fixture, discarding one warm-up and reporting three measured runs.
+
+| Copy state | Median, ms |
+| --- | ---: |
+| Previous rendering and wallpaper serialization, emulated | 3674.43 |
+| New path, cold presentation | 3891.53 |
+| New path, settled native presentation | 23.80 |
+
+These are Debug synthetic pipeline measurements. They exclude physical key delivery and controller teardown. They do not replace the earlier Release measurements. The emulated baseline uses the previous render and TIFF-to-PNG history operations within the new binary.
+
+A separate 3840 × 2160 wallpaper benchmark measured 259.85 ms per old history state read and 242.99 ms for a first native PNG encoding. Repeated cached or original-PNG-seeded reads were below 0.001 ms. Native Copy reads this state twice. The original selected wallpaper PNG avoids both encodings.
+
+Enable these checks with `TEST_RUNNER_MACSHOT_SETTLED_COPY_BENCHMARK=1` for `ClipboardLatencyTests/testSettledAccordionCopyBenchmark`, `TEST_RUNNER_MACSHOT_BACKGROUND_STATE_BENCHMARK=1` for `CaptureEditStateBackgroundLatencyTests`, and `TEST_RUNNER_MACSHOT_PRESENTATION_CACHE_BENCHMARK=1` for `ScreenshotPresentationCacheTests/testNativePresentationReuseBenchmark`. Ordinary test runs skip the benchmarks.

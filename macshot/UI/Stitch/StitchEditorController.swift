@@ -117,6 +117,10 @@ final class StitchEditorController: NSObject {
     private var paperGeneration = UUID()
     private var pendingPaperPreview: DispatchWorkItem?
     private var paperRenderCancellation: StitchPreviewCancellation?
+    private let paperPresentationCache = ScreenshotPresentation.Cache()
+    private var paperTexture: (source: CGImage, size: NSSize, pixels: CGImage)?
+    private var pendingNativePaperWarm: DispatchWorkItem?
+    private let nativePaperWarmQueue = DispatchQueue(label: "macshot.stitch-output-warm", qos: .utility)
     private weak var previewScrollView: NSScrollView?
     private var savedPreviewInsets: NSEdgeInsets?
     private var savedPreviewClipping: Bool?
@@ -300,6 +304,10 @@ final class StitchEditorController: NSObject {
         interactiveTexture = nil
         interactiveBackground = nil
         interactivePaperFrame = nil
+        paperTexture = nil
+        paperPresentationCache.clear()
+        pendingNativePaperWarm?.cancel()
+        pendingNativePaperWarm = nil
         cameraSnapshot = nil
         pendingPaperPreview?.cancel()
         paperRenderCancellation?.cancel()
@@ -645,6 +653,8 @@ final class StitchEditorController: NSObject {
         }
     }
     private func cancelPreview() {
+        pendingNativePaperWarm?.cancel()
+        pendingNativePaperWarm = nil
         renderGeneration = UUID()
         renderCancellation?.cancel()
         pendingRender?.cancel()
@@ -669,6 +679,8 @@ final class StitchEditorController: NSObject {
         if showsPaper { updatePreviewInsets() }
         else { restorePreviewInsets() }
         if !showsPaper {
+            pendingNativePaperWarm?.cancel()
+            pendingNativePaperWarm = nil
             paperPreview.cancelAnimation()
             animatesNextPaperPreview = false
             pendingPaperPreview?.cancel()
@@ -713,6 +725,8 @@ final class StitchEditorController: NSObject {
 
     private func schedulePaperPreview(keepsCurrentPaper: Bool = false) {
         guard cameraSnapshot == nil else { return }
+        pendingNativePaperWarm?.cancel()
+        pendingNativePaperWarm = nil
         pendingPaperPreview?.cancel()
         paperRenderCancellation?.cancel()
         let generation = UUID(); paperGeneration = generation
@@ -741,18 +755,33 @@ final class StitchEditorController: NSObject {
             let scale = min(1, 2000 / CGFloat(max(pixels.width, pixels.height)))
             let width = max(1, Int(ceil(CGFloat(pixels.width) * scale)))
             let height = max(1, Int(ceil(CGFloat(pixels.height) * scale)))
-            guard let bitmap = CGContext(data: nil, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-                self.failPaperPreview(); return
+            let texture: CGImage
+            if width == pixels.width && height == pixels.height {
+                texture = pixels
+            } else if let cached = self.paperTexture, cached.source === pixels, cached.size == composite.size {
+                texture = cached.pixels
+            } else {
+                guard let bitmap = CGContext(data: nil, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                    self.failPaperPreview(); return
+                }
+                bitmap.interpolationQuality = .high
+                bitmap.draw(pixels, in: CGRect(x: 0, y: 0, width: width, height: height))
+                guard let scaled = bitmap.makeImage() else { self.failPaperPreview(); return }
+                texture = scaled
+                self.paperTexture = pixels.bytesPerRow <= 32 * 1024 * 1024 / max(1, pixels.height)
+                    ? (pixels, composite.size, scaled) : nil
             }
-            bitmap.interpolationQuality = .high
-            bitmap.draw(pixels, in: CGRect(x: 0, y: 0, width: width, height: height))
-            guard let texture = bitmap.makeImage() else { self.failPaperPreview(); return }
             let presentation = ScreenshotPresentation(effects: editor.effectsConfig,
                 beautify: editor.beautifyConfig, projection: projection)
-            guard let prepared = presentation.prepare(NSImage(cgImage: texture, size: composite.size)) else {
+            // Native-sized previews share their finished pixels with Copy.
+            // Larger previews keep a separate bounded texture and output cache.
+            let nativeSize = texture === pixels
+            let cache = nativeSize ? editor.presentationCache : self.paperPresentationCache
+            guard let prepared = cache.prepare(presentation,
+                image: NSImage(cgImage: texture, size: composite.size), document: snapshot) else {
                 self.failPaperPreview(); return
             }
             let padding = ScreenshotPresentation.paperPadding
@@ -782,6 +811,10 @@ final class StitchEditorController: NSObject {
                     self.paperPreview.projection = projection
                     self.paperPreview.camera = StitchPaperCamera(perspective: snapshot.style.accordionPerspective,
                         yaw: snapshot.style.accordionYaw)
+                    if !nativeSize {
+                        self.scheduleNativePaperWarm(presentation, image: composite,
+                            document: snapshot, generation: generation, cancellation: cancellation)
+                    }
                     if self.animatesNextPaperPreview, let animationTexture {
                         self.animatesNextPaperPreview = false
                         self.paperPreview.animate(texture: animationTexture, document: snapshot,
@@ -792,6 +825,30 @@ final class StitchEditorController: NSObject {
         }
         pendingPaperPreview = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+    }
+
+    /// Warm one native frame after interaction settles. A bounded preview is
+    /// never promoted to clipboard or file output.
+    private func scheduleNativePaperWarm(_ presentation: ScreenshotPresentation, image: NSImage,
+                                        document: StitchDocument, generation: UUID,
+                                        cancellation: StitchPreviewCancellation) {
+        pendingNativePaperWarm?.cancel()
+        guard let nativePixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              nativePixels.bytesPerRow <= 32 * 1024 * 1024 / max(1, nativePixels.height) else { return }
+        let work = DispatchWorkItem { [weak self, weak editor = editorView] in
+            guard let self, let editor, !cancellation.isCancelled,
+                  self.paperGeneration == generation, self.cameraSnapshot == nil,
+                  editor.stitchPreviewEnabled, !self.paperPreview.isHidden,
+                  let prepared = editor.presentationCache.prepare(presentation, image: image, document: document),
+                  prepared.isRenderCacheEnabled, prepared.renderedCGImage == nil else { return }
+            self.pendingNativePaperWarm = nil
+            self.nativePaperWarmQueue.async {
+                guard !cancellation.isCancelled else { return }
+                autoreleasepool { _ = prepared.renderCGImage() }
+            }
+        }
+        pendingNativePaperWarm = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
     private func scheduleRender(publishDocument: Bool = true) {
         if publishDocument && !adjustingStyle { publish() }
@@ -931,6 +988,8 @@ final class StitchEditorController: NSObject {
         guard cameraSnapshot == nil, let editor = editorView,
               document.style.visible, document.style.transition == .accordion else { return }
         cameraSnapshot = document
+        pendingNativePaperWarm?.cancel()
+        pendingNativePaperWarm = nil
         if let owner {
             cameraScopeOwner = owner
             ScreenshotCommandResponder.forWindow(window)?.setTransientScope(owner: owner) { [weak self] in

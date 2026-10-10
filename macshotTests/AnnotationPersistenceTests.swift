@@ -75,6 +75,7 @@ final class AnnotationPersistenceTests: XCTestCase {
         "randomSeed": .persisted,
         "dimOpacity": .persisted,
         // Intentionally not copied
+        "renderRevision": .transient,     // local cache identity, rebuilt as fields are assigned
         "sourceImage": .clonedOnly,        // exact undo source; history uses its raw canvas
         "sourceImageBounds": .clonedOnly,
         "outlineGlowImage": .transient,   // selection-highlight cache

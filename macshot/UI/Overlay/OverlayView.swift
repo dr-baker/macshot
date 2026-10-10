@@ -1,5 +1,6 @@
 import AVFoundation
 import Cocoa
+import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor
@@ -500,6 +501,8 @@ class OverlayView: NSView {
         didSet {
             beautifyBackgroundSelection.invalidate()
             cachedBeautifyBgCGImage = nil
+            cachedBeautifyBackgroundPNG = nil
+            beautifyBackgroundPNGPrepared = false
         }
     }
     var beautifyBackgroundBlur: CGFloat = UserDefaults.standard.object(forKey: "beautifyBgBlur") as? CGFloat ?? 0 {
@@ -509,6 +512,48 @@ class OverlayView: NSView {
         }
     }
     private var cachedBeautifyBgCGImage: CGImage?
+    /// Original wallpaper bytes for editable history. Keep these independently
+    /// from the blurred drawing cache and invalidate only on image assignment.
+    private var cachedBeautifyBackgroundPNG: Data?
+    private var beautifyBackgroundPNGPrepared = false
+
+    func beautifyBackgroundPNGForHistory() -> Data? {
+        guard let image = customBeautifyBackground else { return nil }
+        if !beautifyBackgroundPNGPrepared {
+            // Installed backgrounds are immutable between assignments. Encode
+            // native source pixels once, including a failed preparation attempt.
+            beautifyBackgroundPNGPrepared = true
+            if let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                cachedBeautifyBackgroundPNG = ImageEncoder.encodeWithCGImageDestination(
+                    cgImage: pixels, type: "public.png", lossyQuality: nil)
+            }
+        }
+        return cachedBeautifyBackgroundPNG
+    }
+
+    /// Replace the image and seed its original PNG together, before callbacks
+    /// can request edit state. Callers supply the bytes used to load this image.
+    func replaceCustomBeautifyBackground(_ image: NSImage?, originalPNG: Data? = nil) {
+        customBeautifyBackground = image
+        guard let image, let data = originalPNG,
+              data.count <= SavedCaptureValidation.maximumImageBytes,
+              // ImageIO can report complete after IDAT even without IEND.
+              // Re-encode truncated input instead of retaining it in history.
+              data.suffix(12).elementsEqual([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]),
+              let source = CGImageSourceCreateWithData(data as CFData,
+                [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetType(source) as String? == "public.png",
+              CGImageSourceGetCount(source) == 1,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+              let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              Double(pixels.width) * Double(pixels.height) <= Double(SavedCaptureValidation.maximumImagePixels),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+              width.intValue == pixels.width, height.intValue == pixels.height else { return }
+        cachedBeautifyBackgroundPNG = data
+        beautifyBackgroundPNGPrepared = true
+    }
 
     func prepareBeautifyBackgroundCache() {
         guard let bg = customBeautifyBackground else { return }
@@ -527,7 +572,7 @@ class OverlayView: NSView {
         guard beautifyStyleIndex == -1, customBeautifyBackground == nil else { return }
         if let data = UserDefaults.standard.data(forKey: "beautifyCustomBgImageData"),
            let img = NSImage(data: data) {
-            customBeautifyBackground = img
+            replaceCustomBeautifyBackground(img, originalPNG: data)
             prepareBeautifyBackgroundCache()
         }
     }
@@ -679,8 +724,38 @@ class OverlayView: NSView {
     }
 
     var cachedCompositedImage: NSImage? = nil {  // invalidated when annotations change
-        didSet { if !isDraggingAnnotation && !isResizingAnnotation && !isRotatingAnnotation { cachedAnnotationLayer = nil } }
+        didSet {
+            if cachedCompositedImage == nil {
+                selectedRegionRevision &+= 1
+                selectedRegionCache.removeAll()
+                presentationCache.clear()
+            }
+            if !isDraggingAnnotation && !isResizingAnnotation && !isRotatingAnnotation { cachedAnnotationLayer = nil }
+        }
     }
+    private var selectedRegionRevision: UInt64 = 0
+    private struct SelectedRegionKey {
+        let source: CGImage?
+        let sourceSize: NSSize?
+        let drawRect: NSRect
+        let selection: NSRect
+        let dimBounds: NSRect
+        let annotations: Bool
+        let revision: UInt64
+        let annotationRevisions: [(identity: ObjectIdentifier, revision: UInt64)]
+
+        func matches(_ other: Self) -> Bool {
+            source === other.source && sourceSize == other.sourceSize && drawRect == other.drawRect
+                && selection == other.selection && dimBounds == other.dimBounds
+                && annotations == other.annotations && revision == other.revision
+                && annotationRevisions.count == other.annotationRevisions.count
+                && zip(annotationRevisions, other.annotationRevisions).allSatisfy {
+                    $0.identity == $1.identity && $0.revision == $1.revision
+                }
+        }
+    }
+    private var selectedRegionCache: [(key: SelectedRegionKey, image: NSImage, bytes: Int)] = []
+    let presentationCache = ScreenshotPresentation.Cache()
     /// Cached transparent image of committed annotations only (no screenshot).
     /// Drawn with applyCanvasTransform so zoom works correctly. Invalidated alongside cachedCompositedImage.
     private var cachedAnnotationLayer: NSImage? = nil
@@ -6219,6 +6294,7 @@ class OverlayView: NSView {
                 }
                 annotation.rotation = newRotation
                 annotation.updateStitchClipForGeometryEdit()
+                cachedCompositedImage = nil
                 needsDisplay = true
                 return
             }
@@ -10181,6 +10257,36 @@ class OverlayView: NSView {
 
     private func renderSelectedRegion(includeAnnotations: Bool) -> NSImage? {
         guard selectionRect.width > 0, selectionRect.height > 0 else { return nil }
+        let source = captureSourceImage ?? screenshotImage
+        let sourcePixels = source?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let key = SelectedRegionKey(source: sourcePixels, sourceSize: source?.size,
+            drawRect: captureDrawRect, selection: selectionRect, dimBounds: highlightDimBounds,
+            annotations: includeAnnotations && !annotations.isEmpty, revision: selectedRegionRevision,
+            annotationRevisions: includeAnnotations ? annotations.map {
+                (ObjectIdentifier($0), $0.renderRevision)
+            } : [])
+        if !isManipulatingAnnotation, let cached = selectedRegionCache.first(where: { $0.key.matches(key) }) { return cached.image }
+
+        func remember(_ pixels: CGImage, size: NSSize) -> NSImage {
+            let image = NSImage(cgImage: pixels, size: size)
+            // Raw history and annotated output share a 32 MiB aggregate raster budget.
+            let limit = 32 * 1024 * 1024
+            if !isManipulatingAnnotation, key.source != nil,
+                pixels.bytesPerRow <= limit / max(1, pixels.height) {
+                let bytes = pixels.bytesPerRow * pixels.height
+                selectedRegionCache.removeAll { $0.key.annotations == key.annotations }
+                // A raw history read must not evict the annotated input used by Copy.
+                if !key.annotations && selectedRegionCache.reduce(0, { $0 + $1.bytes }) + bytes > limit {
+                    return image
+                }
+                while selectedRegionCache.reduce(0, { $0 + $1.bytes }) + bytes > limit {
+                    selectedRegionCache.removeFirst()
+                }
+                selectedRegionCache.append((key, image, bytes))
+            }
+
+            return image
+        }
 
         // Determine the source image's actual pixel scale so we render at
         // native resolution instead of relying on lockFocus() which always
@@ -10188,8 +10294,7 @@ class OverlayView: NSView {
         // prevents interpolation-upscaling when a 1x external monitor is
         // captured while a Retina display is also connected.
         let scale: CGFloat
-        if let screenshot = captureSourceImage ?? screenshotImage,
-            let cg = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        if let screenshot = source, let cg = sourcePixels
         {
             scale = CGFloat(cg.width) / screenshot.size.width
         } else {
@@ -10224,7 +10329,7 @@ class OverlayView: NSView {
             let crop = CGRect(x: cropX, y: cropY, width: CGFloat(pixelW), height: CGFloat(pixelH))
             if cropX == cropX.rounded(), cropY == cropY.rounded(),
                let cropped = pixels.cropping(to: crop), cropped.width == pixelW, cropped.height == pixelH {
-                return NSImage(cgImage: cropped, size: snappedRect.size)
+                return remember(cropped, size: snappedRect.size)
             }
         }
 
@@ -10284,7 +10389,7 @@ class OverlayView: NSView {
         NSGraphicsContext.restoreGraphicsState()
 
         guard let cgImage = cgCtx.makeImage() else { return nil }
-        return NSImage(cgImage: cgImage, size: snappedRect.size)
+        return remember(cgImage, size: snappedRect.size)
     }
 
     // MARK: - Cleanup

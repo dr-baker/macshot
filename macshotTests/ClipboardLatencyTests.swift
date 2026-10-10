@@ -5,6 +5,97 @@ import ImageIO
 /// Opt-in stage and key-to-readable-pasteboard benchmark.
 /// Run with TEST_RUNNER_MACSHOT_CLIPBOARD_BENCHMARK=1 in the same configuration for both revisions.
 final class ClipboardLatencyTests: XCTestCase {
+    /// Paired render/history preparation paths in one binary. Includes the
+    /// wallpaper serialization omitted by the original clipboard benchmark;
+    /// excludes native controller teardown and physical keyboard delivery.
+    @MainActor func testSettledAccordionCopyBenchmark() throws {
+        guard ProcessInfo.processInfo.environment["MACSHOT_SETTLED_COPY_BENCHMARK"] == "1" else {
+            throw XCTSkip("Opt-in settled Accordion copy benchmark")
+        }
+        let wallpaper = try fixture(width: 1920, height: 1080)
+        let wallpaperPixels = try XCTUnwrap(wallpaper.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let png = try XCTUnwrap(ImageEncoder.encodeWithCGImageDestination(cgImage: wallpaperPixels,
+            type: "public.png", lossyQuality: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: wallpaperPixels)])
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 400, to: 560))
+        document.style.transition = .accordion
+        let view = EditorView(frame: CGRect(origin: .zero, size: document.bounds.size))
+        view.showToolbars = false
+        view.screenshotImage = NSImage(cgImage: try XCTUnwrap(StitchRenderer.render(document)), size: document.bounds.size)
+        view.applySelection(view.bounds)
+        view.installStitchDocument(document)
+        view.effectsPreset = .none
+        view.effectsBrightness = 0; view.effectsContrast = 1; view.effectsSaturation = 1; view.effectsSharpness = 0
+        view.beautifyEnabled = false
+        view.beautifyStyleIndex = -1
+        view.beautifyBackgroundBlur = 0
+        view.replaceCustomBeautifyBackground(NSImage(data: png), originalPNG: png)
+        view.prepareBeautifyBackgroundCache()
+        view.annotations = [Annotation(tool: .filledRectangle, startPoint: CGPoint(x: 40, y: 40),
+            endPoint: CGPoint(x: 400, y: 160), color: .black, strokeWidth: 2)]
+        _ = view.captureEditState() // Existing saved-Stitch cache is warm in all paths.
+        let board = NSPasteboard(name: .init("macshot.settled-copy.\(UUID().uuidString)"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let history = ScreenshotHistory(directory: directory)
+        defer { view.reset(); board.releaseGlobally(); try? FileManager.default.removeItem(at: directory) }
+        var results: [String: [Double]] = [:]
+        try withDefaults(["imageFormat": "png", "downscaleRetina": false,
+            "clipboardIncludesImageFormat": false, "historySize": 30]) {
+            for mode in ["legacy", "cold", "settled"] {
+                var samples: [Double] = []
+                for iteration in 0..<4 {
+                    view.cachedCompositedImage = nil
+                    let presentation = ScreenshotPresentation(view: view)
+                    if mode == "settled" {
+                        let composite = try XCTUnwrap(view.captureSelectedRegion())
+                        let prepared = try XCTUnwrap(view.presentationCache.prepare(presentation, image: composite, document: document))
+                        XCTAssertTrue(prepared.isRenderCacheEnabled)
+                        _ = try XCTUnwrap(prepared.renderCGImage())
+                    }
+                    let copied = expectation(description: "PNG and TIFF readable"), saved = expectation(description: "History saved")
+                    let delegate = ClipboardBenchmarkDelegate()
+                    view.overlayDelegate = delegate
+                    var elapsed: Double = 0
+                    let start = ProcessInfo.processInfo.systemUptime
+                    delegate.confirm = {
+                        do {
+                            let composite = try XCTUnwrap(view.captureSelectedRegion())
+                            let output = try XCTUnwrap(mode == "legacy" ? presentation.render(composite)
+                                : view.presentationCache.render(presentation, image: composite, document: document))
+                            var state = view.captureEditState()
+                            if mode == "legacy" {
+                                for _ in 0..<2 {
+                                    state.customBeautifyBackgroundPNG = wallpaper.tiffRepresentation.flatMap {
+                                        NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:])
+                                    }
+                                }
+                            } else { state = view.captureEditState() }
+                            let raw = view.captureSelectedRegionRaw(), annotations = view.annotations.map { $0.clone() }
+                            ImageEncoder.copyToClipboard(output, pasteboard: board) { success in
+                                XCTAssertTrue(success)
+                                XCTAssertNotNil(board.data(forType: .png)); XCTAssertNotNil(board.data(forType: .tiff))
+                                elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1000
+                                copied.fulfill()
+                            }
+                            history.add(image: output, rawImage: raw, annotations: annotations, editState: state) { success in
+                                XCTAssertTrue(success); saved.fulfill()
+                            }
+                        } catch { XCTFail("\(error)"); copied.fulfill(); saved.fulfill() }
+                    }
+                    XCTAssertTrue(view.performKeyEquivalent(with: TestKeyEvent.keyDown(
+                        characters: "c", keyCode: 8, modifiers: .command)))
+                    wait(for: [copied, saved], timeout: 30)
+                    if iteration > 0 { samples.append(elapsed) }
+                }
+                results[mode] = samples
+            }
+        }
+        let report: [String: Any] = ["fixture": "1920x1080_accordion_wallpaper_redaction_history",
+            "unit": "milliseconds_key_routing_to_readable_png_tiff", "samples": results,
+            "medians": results.mapValues { $0.sorted()[1] }]
+        print("SETTLED_COPY_BENCHMARK \(String(decoding: try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))")
+    }
+
     @MainActor func testStageBenchmark() throws {
         guard ProcessInfo.processInfo.environment["MACSHOT_CLIPBOARD_BENCHMARK"] == "1" else {
             throw XCTSkip("Opt-in clipboard benchmark")

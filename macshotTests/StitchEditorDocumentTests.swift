@@ -3,6 +3,47 @@ import XCTest
 
 @MainActor
 final class StitchEditorDocumentTests: XCTestCase {
+    func testAccordionStyleChangesRetainFlatPixelsAndAnnotations() throws {
+        var original = document()
+        original.style.transition = .accordion
+        let view = editor(original), annotation = mark(20, 30)
+        view.annotations = [annotation]
+        let source = try XCTUnwrap(view.screenshotImage)
+        let first = try XCTUnwrap(view.captureSelectedRegion())
+        var next = original
+        next.style.accordionPerspective = -20
+        next.style.accordionYaw = 30
+        next.style.accordionPleats = 6
+        XCTAssertTrue(view.applyStitchDocument(next))
+        XCTAssertTrue(view.screenshotImage === source)
+        XCTAssertTrue(view.annotations[0] === annotation)
+        XCTAssertTrue(view.captureSelectedRegion() === first)
+        XCTAssertEqual(annotation.boundingRect.midX, 20, accuracy: 0.001)
+        XCTAssertEqual(view.stitchDocument?.style.accordionPleats, 6)
+        XCTAssertEqual(view.undoStack.count, 1)
+        view.undo()
+        XCTAssertEqual(view.stitchDocument?.style.accordionPleats, original.style.accordionPleats)
+        XCTAssertTrue(view.screenshotImage === source)
+    }
+
+    func testAccordionGeometryAndCanvasChangesRebuildFlatPixels() throws {
+        var original = document()
+        original.style.transition = .accordion
+        let view = editor(original)
+        let source = try XCTUnwrap(view.screenshotImage)
+        var next = original
+        next.pieces[0].origin.y += 20
+        XCTAssertFalse(original.hasSameAccordionPixels(as: next))
+        XCTAssertTrue(view.applyStitchDocument(next))
+        XCTAssertFalse(view.screenshotImage === source)
+        next = original
+        next.background = .color(.red)
+        XCTAssertFalse(original.hasSameAccordionPixels(as: next))
+        next = original
+        next.style.transition = .fold
+        XCTAssertFalse(original.hasSameAccordionPixels(as: next))
+    }
+
     private func document() -> StitchDocument {
         let image = ImageProbe.quadrantImage(width: 80, height: 60)
             .cgImage(forProposedRect: nil, context: nil, hints: nil)!

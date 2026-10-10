@@ -535,7 +535,8 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
 
     private func applyPostProcessing(_ image: NSImage) -> NSImage? {
         guard let view = overlayView else { return nil }
-        return ScreenshotPresentation(view: view).render(image)
+        return view.presentationCache.render(ScreenshotPresentation(view: view), image: image,
+            document: view.stitchDocument)
     }
 }
 

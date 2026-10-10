@@ -236,6 +236,16 @@ class ImageEditingView: OverlayView, NSMenuItemValidation {
         stitchChangeFailureMessage = nil
         if let current = stitchDocument, current.isIdentical(to: next) { return true }
         guard next.canRender else { return false }
+        if let current = stitchDocument, current.hasSameAccordionPixels(as: next) {
+            // Camera and pleats only change presentation. Keep the immutable
+            // flat sheet and its redactions, rather than baking them again.
+            if registerUndo { checkpointStitchDocument() }
+            stitchDocument = next
+            needsDisplay = true
+            onContentChanged?()
+            onStitchDocumentChanged?()
+            return true
+        }
         let previous = stitchDocument
         let scale: CGFloat = screenshotImage.flatMap { image in
             image.cgImage(forProposedRect: nil, context: nil, hints: nil).map { CGFloat($0.width) / image.size.width }

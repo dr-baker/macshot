@@ -220,10 +220,12 @@ final class AnnotationGeometryTests: XCTestCase {
     func testMoveIsReversible() {
         let ann = make(.arrow)
         ann.points = [NSPoint(x: 1, y: 2)]
-        let before = Reflect.describedProperties(of: ann)
+        let before = Reflect.describedProperties(of: ann).filter { $0.key != "renderRevision" }
+        let revision = ann.renderRevision
         ann.move(dx: 33.5, dy: -12.25)
         ann.move(dx: -33.5, dy: 12.25)
-        XCTAssertEqual(Reflect.describedProperties(of: ann), before)
+        XCTAssertEqual(Reflect.describedProperties(of: ann).filter { $0.key != "renderRevision" }, before)
+        XCTAssertGreaterThan(ann.renderRevision, revision)
     }
 
     func testMoveLeavesTheRootedLoupeSourceInPlace() {
