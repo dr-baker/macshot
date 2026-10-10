@@ -41,6 +41,24 @@ Parallel Accordion rows were discarded. The paired same-binary test measured rou
 
 ## Verification and benchmark entry points
 
+Run the reusable profiler from the repository root:
+
+```sh
+scripts/profile-clipboard.sh
+```
+
+It enables the existing opt-in XCTest benchmarks and retains `clipboard-profile.txt`, `xcodebuild.log`, and `results.xcresult` in the printed artifact directory. The report includes measurements, source revision, build configuration, and system information. Copy that directory to a permanent location to keep a comparison. The default is Debug, so compare its timings with other Debug runs. It uses private named pasteboards and does not replace the system clipboard.
+
+For just the cold versus settled Accordion comparison:
+
+```sh
+scripts/profile-clipboard.sh ClipboardLatencyTests/testSettledAccordionCopyBenchmark
+```
+
+Pass other test filters to run the background-state or presentation-cache benchmarks described below. Set `CONFIGURATION=Release` for optimized profiling, subject to the compiler issue documented below. Failures retain their diagnostic artifacts.
+
+The app has capture timing instrumentation and a Debug-only timing dialog. That report ends before asynchronous clipboard publication. The reusable clipboard profiler runs through the development test target and measures readable PNG and TIFF data.
+
 The final paired Release run passed 65 selected tests. Checks cover 1x and 2x source crops, fractional selections and source origins, offset drawing rectangles, transparent padding, Display P3, translucent pixels, redaction output, all available configured formats, flavor order, source lifetime, downscaling, overlapping copy requests, and external pasteboard changes. Effects are compared with the former TIFF input across presets, including a 2x Display P3 fixture with at most one RGBA8 rounding step of difference.
 
 The benchmark invocation is:
