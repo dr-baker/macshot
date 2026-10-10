@@ -10209,6 +10209,25 @@ class OverlayView: NSView {
         let pixelW = Int(snappedRect.width * scale)
         let pixelH = Int(snappedRect.height * scale)
         guard pixelW > 0, pixelH > 0 else { return nil }
+        // A plain capture and the raw editable-history image need only a crop.
+        // Keep the compositor for annotations, scaled drawing, and transparent
+        // padding outside the source. CGImage crops use a top-left pixel origin.
+        if (!includeAnnotations || annotations.isEmpty),
+           let screenshot = captureSourceImage ?? screenshotImage,
+           captureDrawRect.size == screenshot.size,
+           captureDrawRect.contains(snappedRect),
+           let pixels = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil),
+           pixels.bitsPerComponent == 8,
+           CGFloat(pixels.height) / screenshot.size.height == scale {
+            let cropX = (snappedRect.minX - captureDrawRect.minX) * scale
+            let cropY = (captureDrawRect.maxY - snappedRect.maxY) * scale
+            let crop = CGRect(x: cropX, y: cropY, width: CGFloat(pixelW), height: CGFloat(pixelH))
+            if cropX == cropX.rounded(), cropY == cropY.rounded(),
+               let cropped = pixels.cropping(to: crop), cropped.width == pixelW, cropped.height == pixelH {
+                return NSImage(cgImage: cropped, size: snappedRect.size)
+            }
+        }
+
         // Use the source image's color space to avoid expensive color conversion on render.
         // Fall back to sRGB if unavailable.
         let cs: CGColorSpace

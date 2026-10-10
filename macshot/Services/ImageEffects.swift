@@ -60,9 +60,9 @@ enum ImageEffects {
     static func apply(to image: NSImage, config: ImageEffectsConfig) -> NSImage {
         guard !config.isIdentity else { return image }
 
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmap.cgImage else { return image }
+        // The rendered capture already has native-resolution pixels. Encoding
+        // and decoding TIFF here adds a full-image round trip before filtering.
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
 
         var ciImage = CIImage(cgImage: cgImage)
 

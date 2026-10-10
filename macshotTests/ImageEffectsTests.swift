@@ -115,6 +115,16 @@ final class ImageEffectsTests: XCTestCase {
         XCTAssertNotEqual(describe(ImageEffects.apply(to: sample(), config: sharp)), describe(sample()))
     }
 
+    func testDirectPixelsMatchTheFormerTIFFInputForEveryPreset() throws {
+        let source = sample()
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(source.tiffRepresentation)))
+        let formerInput = NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: source.size)
+        for preset in ImageEffectPreset.allCases where preset != .none {
+            XCTAssertEqual(describe(ImageEffects.apply(to: source, config: config(preset))),
+                           describe(ImageEffects.apply(to: formerInput, config: config(preset))))
+        }
+    }
+
     func testEveryPresetHasADisplayName() {
         for preset in ImageEffectPreset.allCases {
             XCTAssertFalse(preset.displayName.isEmpty)
