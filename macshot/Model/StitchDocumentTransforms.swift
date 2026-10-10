@@ -26,6 +26,14 @@ extension StitchDocument {
             style.accordionPleats == other.style.accordionPleats,
             style.accordionPerspective == other.style.accordionPerspective,
             style.accordionYaw == other.style.accordionYaw, style.visible == other.style.visible else { return false }
+        let textures = activeFoldTextures, otherTextures = other.activeFoldTextures
+        guard Set(textures.keys) == Set(otherTextures.keys), textures.allSatisfy({ cutID, strips in
+            guard let otherStrips = otherTextures[cutID], strips.count == otherStrips.count else { return false }
+            return zip(strips, otherStrips).allSatisfy { a, b in
+                a.image === b.image && a.axis == b.axis && a.start == b.start
+                    && a.end == b.end && a.removedLength == b.removedLength
+            }
+        }) else { return false }
         switch (background, other.background) {
         case (.automatic, .automatic), (.transparent, .transparent): break
         case (.color(let a), .color(let b)): guard a == b else { return false }
@@ -100,6 +108,7 @@ extension StitchDocument {
             sliced.id = piece.id
             return sliced
         }
+        next.pruneFoldTextures()
         guard next.canRender, next.bounds == CGRect(origin: .zero, size: rect.size) else { return nil }
         next.restorePackingState(packed: placement == .packed, horizontal: savedPackingState.horizontal,
             length: min(savedPackingState.length, savedPackingState.horizontal ? rect.width : rect.height))
