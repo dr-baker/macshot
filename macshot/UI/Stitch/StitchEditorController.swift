@@ -301,6 +301,7 @@ final class StitchEditorController: NSObject {
         paperPreview.onCameraChanged = nil
         paperPreview.onCameraEnd = nil
         paperPreview.onReset = nil
+        editorView?.stitchPaperPresentationFrame = nil
         interactiveTexture = nil
         interactiveBackground = nil
         interactivePaperFrame = nil
@@ -677,7 +678,10 @@ final class StitchEditorController: NSObject {
         canvas.isHidden = showsPaper
         paperPreview.isHidden = !showsPaper
         if showsPaper { updatePreviewInsets() }
-        else { restorePreviewInsets() }
+        else {
+            editor.stitchPaperPresentationFrame = nil
+            restorePreviewInsets()
+        }
         if !showsPaper {
             pendingNativePaperWarm?.cancel()
             pendingNativePaperWarm = nil
@@ -692,9 +696,51 @@ final class StitchEditorController: NSObject {
         editor.refreshStitchOptions()
     }
 
-    /// Make the wallpaper beyond the flat document reachable without shifting annotation coordinates.
-    private func updatePreviewInsets() {
-        guard let editor = editorView, let scroll = editor.enclosingScrollView else { return }
+    /// Convert projected, top-down paper pixels to the editor's point coordinate
+    /// system without stretching the sheet or moving annotation coordinates.
+    static func paperOutputFrame(projection: StitchAccordionProjection, selection: CGRect,
+                                 isFlipped: Bool) -> CGRect {
+        let source = projection.documentBounds, output = projection.outputBounds
+        let scaleX = selection.width / source.width, scaleY = selection.height / source.height
+        return CGRect(x: selection.minX + (output.minX - source.minX) * scaleX,
+            y: selection.minY + (isFlipped ? output.minY - source.minY : source.maxY - output.maxY) * scaleY,
+            width: output.width * scaleX, height: output.height * scaleY)
+    }
+
+    /// A small compact screenshot can unfold into a large sheet. Budget the
+    /// preview by both its input texture and its projected, padded output.
+    static func paperPreviewTextureSize(pixels: CGImage, sourceSize: CGSize,
+                                        projection: StitchAccordionProjection) -> CGSize? {
+        let maximum: CGFloat = 2000
+        guard sourceSize.width > 0, sourceSize.height > 0 else { return nil }
+        let source = projection.documentBounds, output = projection.outputBounds
+        let padding = ScreenshotPresentation.paperPadding * 2
+        let outputWidth = output.width / source.width * CGFloat(pixels.width)
+            + padding * CGFloat(pixels.width) / sourceSize.width
+        let outputHeight = output.height / source.height * CGFloat(pixels.height)
+            + padding * CGFloat(pixels.height) / sourceSize.height
+        let scale = min(1, maximum / max(CGFloat(pixels.width), CGFloat(pixels.height), outputWidth, outputHeight))
+        let width = max(1, floor(CGFloat(pixels.width) * scale))
+        let height = max(1, floor(CGFloat(pixels.height) * scale))
+        // A single source pixel is the lowest representable texture density.
+        guard (output.width / source.width + padding / sourceSize.width) * width <= maximum,
+              (output.height / source.height + padding / sourceSize.height) * height <= maximum else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    /// Make the entire projected paper and wallpaper reachable while the compact
+    /// document remains the editing and annotation coordinate system.
+    private func updatePreviewInsets(projection: StitchAccordionProjection? = nil) {
+        guard let editor = editorView,
+              let projection = projection ?? StitchAccordionProjection(document: document) else { return }
+        let outputFrame = Self.paperOutputFrame(projection: projection, selection: editor.selectionRect,
+            isFlipped: editor.isFlipped)
+        let presentationFrame = outputFrame.insetBy(dx: -ScreenshotPresentation.paperPadding,
+            dy: -ScreenshotPresentation.paperPadding)
+        editor.stitchPaperPresentationFrame = presentationFrame
+        paperPreview.frame = presentationFrame
+        editor.needsDisplay = true
+        guard let scroll = editor.enclosingScrollView else { return }
         if savedPreviewInsets == nil {
             previewScrollView = scroll
             savedPreviewInsets = scroll.contentInsets
@@ -704,9 +750,13 @@ final class StitchEditorController: NSObject {
             }
         }
         guard let original = savedPreviewInsets else { return }
-        let padding = ScreenshotPresentation.paperPadding
-        scroll.contentInsets = NSEdgeInsets(top: original.top + padding, left: original.left + padding,
-            bottom: original.bottom + padding, right: original.right + padding)
+        let compact = editor.selectionRect
+        let lowY = max(0, compact.minY - presentationFrame.minY)
+        let highY = max(0, presentationFrame.maxY - compact.maxY)
+        scroll.contentInsets = NSEdgeInsets(top: original.top + (editor.isFlipped ? lowY : highY),
+            left: original.left + max(0, compact.minX - presentationFrame.minX),
+            bottom: original.bottom + (editor.isFlipped ? highY : lowY),
+            right: original.right + max(0, presentationFrame.maxX - compact.maxX))
     }
 
     private func restorePreviewInsets() {
@@ -752,13 +802,16 @@ final class StitchEditorController: NSObject {
                 self.failPaperPreview(); return
             }
             // Keep native point geometry, and bound only the texture used for the live preview.
-            let scale = min(1, 2000 / CGFloat(max(pixels.width, pixels.height)))
-            let width = max(1, Int(ceil(CGFloat(pixels.width) * scale)))
-            let height = max(1, Int(ceil(CGFloat(pixels.height) * scale)))
+            guard let previewSize = Self.paperPreviewTextureSize(pixels: pixels,
+                sourceSize: composite.size, projection: projection) else {
+                self.failPaperPreview(); return
+            }
+            let width = Int(previewSize.width), height = Int(previewSize.height)
             let texture: CGImage
             if width == pixels.width && height == pixels.height {
                 texture = pixels
-            } else if let cached = self.paperTexture, cached.source === pixels, cached.size == composite.size {
+            } else if let cached = self.paperTexture, cached.source === pixels, cached.size == composite.size,
+                      cached.pixels.width == width, cached.pixels.height == height {
                 texture = cached.pixels
             } else {
                 guard let bitmap = CGContext(data: nil, width: width, height: height,
@@ -784,9 +837,7 @@ final class StitchEditorController: NSObject {
                 image: NSImage(cgImage: texture, size: composite.size), document: snapshot) else {
                 self.failPaperPreview(); return
             }
-            let padding = ScreenshotPresentation.paperPadding
-            self.paperPreview.frame = CGRect(x: editor.selectionRect.minX - padding,
-                y: editor.selectionRect.minY - padding, width: prepared.imageSize.width, height: prepared.imageSize.height)
+            self.updatePreviewInsets(projection: projection)
             self.renderQueue.async { [weak self] in
                 guard !cancellation.isCancelled else { return }
                 let (rendered, animationTexture) = autoreleasepool {
@@ -803,7 +854,9 @@ final class StitchEditorController: NSObject {
                         return
                     }
                     self.paperPreview.image = NSImage(cgImage: rendered, size: prepared.imageSize)
-                    let paperFrame = self.paperPreview.convert(editor.selectionRect, from: editor)
+                    let outputFrame = Self.paperOutputFrame(projection: projection, selection: editor.selectionRect,
+                        isFlipped: editor.isFlipped)
+                    let paperFrame = self.paperPreview.convert(outputFrame, from: editor)
                     self.interactiveTexture = animationTexture
                     self.interactiveBackground = prepared.paperBackground?.pixels
                     self.interactivePaperFrame = paperFrame
@@ -1011,8 +1064,14 @@ final class StitchEditorController: NSObject {
         document.style.accordionYaw = camera.yaw
         angleControl.camera = camera
         paperPreview.camera = camera
-        guard let texture = interactiveTexture, let frame = interactivePaperFrame else { return }
-        _ = paperPreview.showInteractivePaper(texture: texture, document: document,
+        guard let texture = interactiveTexture, let editor = editorView,
+              let projection = StitchAccordionProjection(document: document) else { return }
+        updatePreviewInsets(projection: projection)
+        let outputFrame = Self.paperOutputFrame(projection: projection, selection: editor.selectionRect,
+            isFlipped: editor.isFlipped)
+        let frame = paperPreview.convert(outputFrame, from: editor)
+        interactivePaperFrame = frame
+        _ = paperPreview.showInteractivePaper(texture: texture, projection: projection,
             frame: frame, background: interactiveBackground)
     }
     private func endCameraGesture(commit: Bool) {

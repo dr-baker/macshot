@@ -2626,11 +2626,13 @@ class OverlayView: NSView {
     /// so the dimensions read as centered on the selection — the trailing presets
     /// button just overhangs to the right (not counted in the centering).
     private func resolutionBoxFrame(size: NSSize, dimsCenterX: CGFloat) -> NSRect {
-        let x = selectionRect.midX - dimsCenterX
+        let anchor = (self as? ImageEditingView)?.isShowingStitchPaperPreview == true
+            ? screenshotPresentationRect : selectionRect
+        let x = anchor.midX - dimsCenterX
         let clampedX = max(bounds.minX + 2, min(x, bounds.maxX - size.width - 2))
         let edgeGap = handleSize / 2 + 3
-        let above = selectionRect.maxY + edgeGap
-        let below = selectionRect.minY - size.height - edgeGap
+        let above = anchor.maxY + edgeGap
+        let below = anchor.minY - size.height - edgeGap
         let minY = bounds.minY + 2
         let maxY = bounds.maxY - 2
 
@@ -2665,10 +2667,10 @@ class OverlayView: NSView {
             return clear
         }
 
-        let insideTop = loweredBelowTopObstructions(rect(at: selectionRect.maxY - size.height - edgeGap))
-        let insideBottom = loweredBelowTopObstructions(rect(at: selectionRect.minY + edgeGap))
+        let insideTop = loweredBelowTopObstructions(rect(at: anchor.maxY - size.height - edgeGap))
+        let insideBottom = loweredBelowTopObstructions(rect(at: anchor.minY + edgeGap))
         func fitsInsideSelection(_ rect: NSRect) -> Bool {
-            rect.minY >= selectionRect.minY + 2 && rect.maxY <= selectionRect.maxY - 2
+            rect.minY >= anchor.minY + 2 && rect.maxY <= anchor.maxY - 2
         }
         let insideCandidates: [NSRect]
         if !fits(aboveRect) && fits(belowRect) {
@@ -5523,6 +5525,10 @@ class OverlayView: NSView {
 
     /// Reposition toolbar strips based on current selection/bounds. Cheap — safe to call from draw().
     var screenshotPresentationRect: NSRect {
+        if let editor = self as? ImageEditingView, editor.isShowingStitchPaperPreview,
+           let frame = editor.stitchPaperPresentationFrame {
+            return frame
+        }
         if (self as? ImageEditingView)?.isShowingStitchPaperPreview == true {
             return selectionRect.insetBy(dx: -ScreenshotPresentation.paperPadding,
                 dy: -ScreenshotPresentation.paperPadding)
@@ -5561,7 +5567,7 @@ class OverlayView: NSView {
         let showingPaper = (self as? ImageEditingView)?.isShowingStitchPaperPreview == true
         let bPad = showingPaper ? ScreenshotPresentation.paperPadding : config.padding
         let titleBarH: CGFloat = config.mode == .window && !showingPaper ? 28 : 0
-        let expandedAnchor = NSRect(
+        let expandedAnchor = showingPaper ? screenshotPresentationRect : NSRect(
             x: selectionRect.minX - bPad, y: selectionRect.minY - bPad,
             width: selectionRect.width + bPad * 2,
             height: selectionRect.height + titleBarH + bPad * 2)

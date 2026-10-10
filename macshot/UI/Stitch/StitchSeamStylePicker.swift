@@ -120,6 +120,7 @@ final class StitchSeamStylePicker: NSView {
             style.wave = 5
             style.tearRoughness = 5
             style.breakSize = 5
+            style.accordionWidth = 8
             style.blur = 3
             style.feather = 20
             let document = StitchDocument(pieces: pieces, style: style)

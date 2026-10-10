@@ -58,32 +58,30 @@ final class StitchPaperCameraTests: XCTestCase {
             let topRight = try vertex(at: CGPoint(x: document.bounds.maxX, y: 0), in: plan)
             let bottomLeft = try vertex(at: CGPoint(x: 0, y: document.bounds.maxY), in: plan)
             XCTAssertEqual(topLeft.depth, topRight.depth, accuracy: 0.000001)
-            // This fixture's 99px band contracts to 44.55px before camera rotation.
-            let foldedHeight = document.bounds.height - 99 + 44.55
+            // The omitted 99px strip folds to 44.55px beside unchanged content.
+            let foldedHeight = document.bounds.height + 44.55
             XCTAssertEqual(bottomLeft.depth - topLeft.depth,
                            foldedHeight * sin(perspective * .pi / 180), accuracy: 0.000001)
         }
     }
 
-    func testDefaultCameraRetainsOriginalAboveLeftView() throws {
+    func testDefaultCameraKeepsAboveLeftViewAndActualPaperDepth() throws {
         let document = try fixture()
-        // Captured from the pre-camera-controls implementation at 37ef15a.
-        // Corners and a ridge lock down the camera, contraction, and fitted outline.
-        let samples: [(CGFloat, CGPoint, CGPoint, CGFloat)] = [
-            (0.45, CGPoint(x: 0, y: 0), CGPoint(x: 0.972, y: 7.455513659973), 746.107426821958),
-            (0.45, CGPoint(x: 0, y: 77), CGPoint(x: 1.738877003734, y: 83.408375202086), 746.551444670545),
-            (0.45, CGPoint(x: 240, y: 220), CGPoint(x: 235.035791571473, y: 207.633761345939), 789.892573178042),
-            (1, CGPoint(x: 0, y: 0), CGPoint(x: 2.16, y: 33.483878205975), 725.359143785570),
-            (1, CGPoint(x: 0, y: 77), CGPoint(x: 5.469670030620, y: 104.354819730939), 727.766698471440),
-            (1, CGPoint(x: 240, y: 220), CGPoint(x: 229.861913587930, y: 177.936675362442), 810.640856214430)
-        ]
-        for (progress, source, projected, depth) in samples {
+        for progress: CGFloat in [0.45, 1] {
             let plan = try XCTUnwrap(StitchAccordionProjection(document: document, progress: progress))
-            let point = try vertex(at: source, in: plan)
-            XCTAssertEqual(point.projected.x, projected.x, accuracy: 0.000001)
-            XCTAssertEqual(point.projected.y, projected.y, accuracy: 0.000001)
-            XCTAssertEqual(point.depth, depth, accuracy: 0.000001)
+            let topLeft = try vertex(at: .zero, in: plan)
+            let topRight = try vertex(at: CGPoint(x: document.bounds.maxX, y: 0), in: plan)
+            let bottomLeft = try vertex(at: CGPoint(x: 0, y: document.bounds.maxY), in: plan)
+            let pitch = 14 * progress * .pi / 180, yaw = 11.2 * progress * .pi / 180
+            let actualHeight = document.bounds.height + 99 * cos(acos(CGFloat(0.45)) * progress)
+            XCTAssertEqual(topRight.depth - topLeft.depth,
+                document.bounds.width * sin(yaw) * cos(pitch), accuracy: 0.000001)
+            XCTAssertEqual(bottomLeft.depth - topLeft.depth,
+                actualHeight * sin(pitch), accuracy: 0.000001)
+            XCTAssertLessThan(topLeft.depth, topRight.depth)
+            XCTAssertLessThan(topLeft.depth, bottomLeft.depth)
             XCTAssertEqual(plan.source.camera, StitchPaperCamera())
+            XCTAssertTrue(plan.outputBounds.contains(plan.paperPath.boundingBoxOfPath))
         }
     }
 
@@ -101,6 +99,7 @@ final class StitchPaperCameraTests: XCTestCase {
         XCTAssertEqual(source.camera.perspective, -19)
         XCTAssertEqual(source.camera.yaw, 27)
         XCTAssertEqual(actual.documentBounds, expected.documentBounds)
+        XCTAssertEqual(actual.outputBounds, expected.outputBounds)
         XCTAssertEqual(actual.drawingOrder, expected.drawingOrder)
         XCTAssertEqual(actual.faces.count, expected.faces.count)
         for (a, b) in zip(actual.faces, expected.faces) {
@@ -109,6 +108,8 @@ final class StitchPaperCameraTests: XCTestCase {
             XCTAssertEqual(a.boundaryEdges, b.boundaryEdges)
             for (av, bv) in zip(a.vertices, b.vertices) {
                 XCTAssertEqual(av.source, bv.source)
+                XCTAssertEqual(av.rest, bv.rest)
+                XCTAssertEqual(av.world, bv.world)
                 XCTAssertEqual(av.projected, bv.projected)
                 XCTAssertEqual(av.depth, bv.depth)
             }
@@ -126,17 +127,18 @@ final class StitchPaperCameraTests: XCTestCase {
             let source = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
             let first = try XCTUnwrap(source.projection(progress: 0))
             let final = try XCTUnwrap(source.projection())
-            XCTAssertFalse(first.hasProjectedOutput)
+            XCTAssertTrue(first.hasProjectedOutput, "The opening frame includes the actual removed paper")
             XCTAssertTrue(final.hasProjectedOutput)
             XCTAssertEqual(first.faces.count, final.faces.count)
-            XCTAssertTrue(final.documentBounds.contains(final.paperPath.boundingBoxOfPath))
+            XCTAssertTrue(final.outputBounds.contains(final.paperPath.boundingBoxOfPath))
             for face in first.faces {
                 for vertex in face.vertices {
-                    XCTAssertEqual(vertex.projected.x, vertex.source.x, accuracy: 0.000001)
-                    XCTAssertEqual(vertex.projected.y, vertex.source.y, accuracy: 0.000001)
+                    XCTAssertEqual(vertex.world.x, vertex.rest.x, accuracy: 0.000001)
+                    XCTAssertEqual(vertex.world.y, vertex.rest.y, accuracy: 0.000001)
+                    XCTAssertEqual(vertex.world.z, 0, accuracy: 0.000001)
                 }
             }
-            for face in final.faces where face.isFrontFacing {
+            for face in final.faces where face.isFrontFacing && face.paperSample == nil {
                 let center = CGPoint(x: (face.a.source.x + face.b.source.x + face.c.source.x) / 3,
                                      y: (face.a.source.y + face.b.source.y + face.c.source.y) / 3)
                 let point = try XCTUnwrap(face.project(center))
@@ -206,8 +208,7 @@ final class StitchPaperCameraTests: XCTestCase {
     }
 
     private func fixture() throws -> StitchDocument {
-        // A 99px cut produces the same 240×220 sheet and crease geometry as
-        // the original camera goldens, now with an actual matching trim length.
+        // Compact texture is 240×220; the complete rest sheet remains 240×319.
         let image = try XCTUnwrap(ImageProbe.makeImage(width: 240, height: 319) { context in
             context.setFillColor(NSColor.white.cgColor)
             context.fill(CGRect(x: 0, y: 0, width: 240, height: 319))

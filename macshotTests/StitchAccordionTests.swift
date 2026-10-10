@@ -107,23 +107,26 @@ final class StitchAccordionTests: XCTestCase {
             let depth = try XCTUnwrap(first.faces.first).a.depth
             for progress in [CGFloat(0), 0.2, 0.45, 0.72, 1] {
                 let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: progress))
-                let sx = size.width / document.bounds.width, sy = size.height / document.bounds.height
+                let output = projection.outputBounds
+                let sx = size.width / output.width, sy = size.height / output.height
                 for face in projection.faces {
-                    let points = face.vertices.map { CGPoint(x: ($0.source.x - document.bounds.minX) * sx,
-                                                             y: ($0.source.y - document.bounds.minY) * sy) }
+                    let points = face.vertices.map { vertex in
+                        let local = face.paperSample == nil ? vertex.source : vertex.rest
+                        return CGPoint(x: local.x * sx, y: local.y * sy)
+                    }
                     let rect = CGRect(x: points.map(\.x).min()!, y: points.map(\.y).min()!,
                                       width: points.map(\.x).max()! - points.map(\.x).min()!,
                                       height: points.map(\.y).max()! - points.map(\.y).min()!)
                     let transform = StitchAccordionCollapseView.transform(face: face, sourceRect: rect,
-                        documentBounds: projection.documentBounds, size: size, referenceDepth: depth)
+                        outputBounds: output, size: size, referenceDepth: depth)
                     for (point, vertex) in zip(points, face.vertices) {
                         let local = CGPoint(x: point.x - rect.minX, y: point.y - rect.minY)
                         let w = local.x * transform.m14 + local.y * transform.m24 + transform.m44
                         XCTAssertGreaterThan(w, 0)
                         let x = (local.x * transform.m11 + local.y * transform.m21 + transform.m41) / w
                         let y = (local.x * transform.m12 + local.y * transform.m22 + transform.m42) / w
-                        XCTAssertEqual(x, (vertex.projected.x - document.bounds.minX) * sx, accuracy: 0.000001)
-                        XCTAssertEqual(y, (vertex.projected.y - document.bounds.minY) * sy, accuracy: 0.000001)
+                        XCTAssertEqual(x, (vertex.projected.x - output.minX) * sx, accuracy: 0.000001)
+                        XCTAssertEqual(y, (vertex.projected.y - output.minY) * sy, accuracy: 0.000001)
                     }
                 }
             }
@@ -232,21 +235,26 @@ final class StitchAccordionTests: XCTestCase {
         let controller = StitchEditorController(document: document, window: window)
         controller.attach(to: editor)
         defer { controller.suspend() }
-        XCTAssertEqual(scroll.contentInsets.top, 12)
-        XCTAssertEqual(scroll.contentInsets.left, 12)
-        XCTAssertEqual(scroll.contentInsets.bottom, 96)
-        XCTAssertEqual(scroll.contentInsets.right, 62)
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
+        let frame = StitchEditorController.paperOutputFrame(projection: projection,
+            selection: originalSelection, isFlipped: editor.isFlipped).insetBy(dx: -12, dy: -12)
+        XCTAssertEqual(editor.stitchPaperPresentationFrame, frame)
+        XCTAssertEqual(scroll.contentInsets.top, max(0, frame.maxY - originalSelection.maxY))
+        XCTAssertEqual(scroll.contentInsets.left, max(0, originalSelection.minX - frame.minX))
+        XCTAssertEqual(scroll.contentInsets.bottom, 84 + max(0, originalSelection.minY - frame.minY))
+        XCTAssertEqual(scroll.contentInsets.right, 50 + max(0, frame.maxX - originalSelection.maxX))
         XCTAssertEqual(editor.frame, originalFrame)
         XCTAssertEqual(editor.bounds, originalBounds)
         XCTAssertEqual(editor.selectionRect, originalSelection)
         editor.beautifyPadding = 48
         controller.annotationPreview = nil // The host refreshes presentation after a Background change.
-        XCTAssertEqual(scroll.contentInsets.left, 12)
+        XCTAssertEqual(editor.stitchPaperPresentationFrame, frame, "Folded paper uses background choice without Beautify frame padding")
         editor.stitchPreviewEnabled = false
         XCTAssertEqual(scroll.contentInsets.top, 0)
         XCTAssertEqual(scroll.contentInsets.left, 0)
         XCTAssertEqual(scroll.contentInsets.bottom, 84)
         XCTAssertEqual(scroll.contentInsets.right, 50)
+        XCTAssertNil(editor.stitchPaperPresentationFrame)
     }
 
     private func fixture(axis: StitchAxis, color: NSColor) throws -> StitchDocument {

@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 /// Presentation stays separate from the flat editing canvas and native annotation tools.
 @MainActor
@@ -27,6 +28,7 @@ final class StitchPaperPreviewView: NSView {
     private let progress = NSProgressIndicator()
     private var animation: StitchAccordionCollapseView?
     private var animationBackground: NSImage?
+    private var animationBackdrop: CALayer?
     private var interactivePaper: StitchAccordionCollapseView?
     private var interactiveBackground: NSImage?
     private var mouseOrigin: CGPoint?
@@ -74,18 +76,42 @@ final class StitchPaperPreviewView: NSView {
         let visibleImage = interactivePaper != nil ? interactiveBackground : (animation == nil ? image : animationBackground)
         visibleImage?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
     }
-    func animate(texture: CGImage, document: StitchDocument, frame: CGRect, background: CGImage?) {
+    func animate(texture: CGImage, document: StitchDocument, frame: CGRect, background: CGImage?, viewport: CGRect? = nil) {
         cancelAnimation()
         clearInteractivePaper()
         guard let effect = StitchAccordionCollapseView(texture: texture, document: document, frame: frame) else { return }
+        let available = viewport ?? animationViewport
+        let backgroundFrame = effect.frame.insetBy(dx: -ScreenshotPresentation.paperPadding,
+            dy: -ScreenshotPresentation.paperPadding)
+        guard available?.contains(backgroundFrame) != false else { return }
+        // The opening sheet can be much wider than its final screenshot. Extend
+        // only this disposable animation surface, leaving editor geometry fixed.
+        wantsLayer = true
+        layer?.masksToBounds = false
+        if #available(macOS 14.0, *) { clipsToBounds = false }
         animation = effect
         animationBackground = background.map { NSImage(cgImage: $0, size: bounds.size) }
+        let backdrop = CALayer()
+        backdrop.name = "stitch.accordion.backdrop"
+        backdrop.frame = backgroundFrame
+        backdrop.masksToBounds = true
+        backdrop.contents = background
+        backdrop.contentsGravity = .resizeAspectFill
+        backdrop.backgroundColor = NSColor(white: 0.15, alpha: 1).cgColor
+        animationBackdrop = backdrop
+        layer?.addSublayer(backdrop)
         addSubview(effect)
         needsDisplay = true
         effect.play { [weak self, weak effect] in
             guard self?.animation === effect else { return }
             self?.cancelAnimation()
         }
+    }
+
+    private var animationViewport: CGRect? {
+        if let clip = enclosingScrollView?.contentView { return convert(clip.bounds, from: clip) }
+        if let content = window?.contentView { return convert(content.bounds, from: content) }
+        return nil
     }
 
     /// The host caches an effected, fully composited texture before starting an orbit.
@@ -129,6 +155,8 @@ final class StitchPaperPreviewView: NSView {
         animation = nil
         old?.layer?.sublayers?.forEach { $0.removeAllAnimations() }
         old?.removeFromSuperview()
+        animationBackdrop?.removeFromSuperlayer()
+        animationBackdrop = nil
         animationBackground = nil
         needsDisplay = true
     }
@@ -207,7 +235,7 @@ final class StitchPaperPreviewView: NSView {
     func containsPaper(at point: CGPoint) -> Bool {
         guard image != nil || interactivePaper != nil, let frame = paperFrame,
               frame.width > 0, frame.height > 0, frame.contains(point), let projection else { return false }
-        let bounds = projection.documentBounds
+        let bounds = projection.outputBounds
         let mapped = CGPoint(x: bounds.minX + (point.x - frame.minX) * bounds.width / frame.width,
             y: bounds.minY + (isFlipped ? point.y - frame.minY : frame.maxY - point.y) * bounds.height / frame.height)
         return projection.unproject(mapped) != nil
