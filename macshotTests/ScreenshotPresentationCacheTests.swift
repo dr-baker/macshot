@@ -77,14 +77,14 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         }
     }
 
-    func testCameraAndPleatChangesReuseEffectedSheetAndBackgroundOnly() throws {
+    func testCameraAndPleatChangesReuseEffectedSheetAndSizeTheBackgroundAgain() throws {
         let fixture = try fixture()
-        let cache = ScreenshotPresentation.Cache()
         let effects = ImageEffectsConfig(preset: .vivid)
-        let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
-            beautify: fixture.background, projection: fixture.projection), image: fixture.composite))
-        let firstOutput = try XCTUnwrap(first.renderCGImage())
         for cameraOnly in [true, false] {
+            let cache = ScreenshotPresentation.Cache()
+            let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
+                beautify: fixture.background, projection: fixture.projection), image: fixture.composite))
+            let firstOutput = try XCTUnwrap(first.renderCGImage())
             var document = fixture.document
             if cameraOnly { document.style.accordionYaw += 7 }
             else { document.style.accordionPleats += 1 }
@@ -92,7 +92,15 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
             let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
                 beautify: fixture.background, projection: projection), image: fixture.composite, document: document))
             XCTAssertTrue(first.pixels === changed.pixels)
-            XCTAssertTrue(first.paperBackground?.pixels === changed.paperBackground?.pixels)
+            let oldDimensions = try XCTUnwrap(fixture.projection.outputPixelDimensions(pixelWidth: first.pixels.width,
+                pixelHeight: first.pixels.height))
+            let newDimensions = try XCTUnwrap(projection.outputPixelDimensions(pixelWidth: changed.pixels.width,
+                pixelHeight: changed.pixels.height))
+            let sameExtent = first.projectedSize == changed.projectedSize
+                && oldDimensions.width == newDimensions.width && oldDimensions.height == newDimensions.height
+            XCTAssertEqual(first.paperBackground?.pixels === changed.paperBackground?.pixels, sameExtent,
+                           "Only unchanged output extents may reuse the prepared background")
+            XCTAssertEqual(changed.paperBackground?.contentSize, changed.projectedSize)
             XCTAssertNil(changed.renderedCGImage)
             let output = try XCTUnwrap(changed.renderCGImage())
             XCTAssertFalse(firstOutput === output)
@@ -128,6 +136,47 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(beautify: BeautifyConfig(styleIndex: 0),
             projection: fixture.projection), image: fixture.composite))
         XCTAssertFalse(first.paperBackground?.pixels === changed.paperBackground?.pixels)
+    }
+
+    func testChangedEnvelopeInvalidatesOutputWhileReusingCompactTexture() throws {
+        let fixture = try fixture()
+        let cache = ScreenshotPresentation.Cache()
+        let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(projection: fixture.projection),
+            image: fixture.composite))
+        let output = try XCTUnwrap(first.renderCGImage())
+        let expanded = try XCTUnwrap(fixture.projection.withOutputBounds(
+            fixture.projection.outputBounds.insetBy(dx: -10, dy: -10)))
+        let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(projection: expanded),
+            image: fixture.composite))
+        XCTAssertTrue(first.pixels === changed.pixels, "A canvas extent does not change the safe compact texture")
+        XCTAssertNil(changed.renderedCGImage, "Identical faces with a different canvas must miss the native output cache")
+        let larger = try XCTUnwrap(changed.renderCGImage())
+        XCTAssertEqual(larger.width, output.width + 20)
+        XCTAssertEqual(larger.height, output.height + 20)
+        XCTAssertEqual(changed.imageSize.width, first.imageSize.width + 10)
+        XCTAssertEqual(changed.imageSize.height, first.imageSize.height + 10)
+        let hit = try XCTUnwrap(cache.prepare(ScreenshotPresentation(projection: expanded), image: fixture.composite))
+        XCTAssertTrue(larger === hit.renderedCGImage)
+    }
+
+    func testCameraEditsReuseBackgroundWhenTheOutputEnvelopeIsUnchanged() throws {
+        let fixture = try fixture()
+        var document = fixture.document
+        document.style.accordionYaw += 7
+        let rotated = try XCTUnwrap(StitchAccordionProjection(document: document))
+        let envelope = fixture.projection.outputBounds.union(rotated.outputBounds).insetBy(dx: -2, dy: -2)
+        let firstProjection = try XCTUnwrap(fixture.projection.withOutputBounds(envelope))
+        let nextProjection = try XCTUnwrap(rotated.withOutputBounds(envelope))
+        let cache = ScreenshotPresentation.Cache()
+        let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(beautify: fixture.background,
+            projection: firstProjection), image: fixture.composite))
+        let old = try XCTUnwrap(first.renderCGImage())
+        let next = try XCTUnwrap(cache.prepare(ScreenshotPresentation(beautify: fixture.background,
+            projection: nextProjection), image: fixture.composite))
+        XCTAssertTrue(first.pixels === next.pixels)
+        XCTAssertTrue(first.paperBackground?.pixels === next.paperBackground?.pixels)
+        XCTAssertNil(next.renderedCGImage)
+        XCTAssertFalse(old === next.renderCGImage())
     }
 
     func testPaperIgnoresDecorationsThatAreNotPartOfItsPresentation() throws {
@@ -203,12 +252,17 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         let output = try XCTUnwrap(first.renderCGImage())
         let hit = try XCTUnwrap(cache.prepare(presentation, image: fixture.composite))
         XCTAssertTrue(output === hit.renderedCGImage)
-        XCTAssertEqual(output.width, 200)
-        XCTAssertEqual(output.height, 160)
-        XCTAssertEqual(hit.imageSize, NSSize(width: 100, height: 80))
+        let dimensions = try XCTUnwrap(fixture.projection.outputPixelDimensions(pixelWidth: 200, pixelHeight: 160))
+        XCTAssertEqual(output.width, dimensions.width)
+        XCTAssertEqual(output.height, dimensions.height)
+        XCTAssertEqual(hit.imageSize, NSSize(width: fixture.projection.outputBounds.width / 2,
+                                           height: fixture.projection.outputBounds.height / 2))
+        XCTAssertEqual(CGFloat(output.width) / hit.imageSize.width, 2)
+        XCTAssertEqual(CGFloat(output.height) / hit.imageSize.height, 2)
         let bitmap = NSBitmapImageRep(cgImage: output)
         let projected = try XCTUnwrap(fixture.projection.project(CGPoint(x: 100, y: 130)))
-        let redaction = try XCTUnwrap(bitmap.colorAt(x: Int(projected.x.rounded()), y: Int(projected.y.rounded())))
+        let redaction = try XCTUnwrap(bitmap.colorAt(x: Int((projected.x - fixture.projection.outputBounds.minX).rounded()),
+                                                    y: Int((projected.y - fixture.projection.outputBounds.minY).rounded())))
         XCTAssertLessThan(redaction.redComponent, 0.05)
         XCTAssertGreaterThan(redaction.alphaComponent, 0.9)
         var clear = 0
@@ -219,9 +273,38 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         let decorated = try XCTUnwrap(cache.prepare(ScreenshotPresentation(beautify: fixture.background,
             projection: fixture.projection), image: fixture.composite))
         let fullNative = try XCTUnwrap(decorated.renderCGImage())
-        XCTAssertEqual(fullNative.width, 248)
-        XCTAssertEqual(fullNative.height, 208)
-        XCTAssertEqual(decorated.imageSize, NSSize(width: 124, height: 104))
+        XCTAssertEqual(fullNative.width, dimensions.width + 48)
+        XCTAssertEqual(fullNative.height, dimensions.height + 48)
+        XCTAssertEqual(decorated.imageSize, NSSize(width: hit.imageSize.width + 24,
+                                                 height: hit.imageSize.height + 24))
+    }
+
+    func testNativeCacheSamplesInsertedPaperFromTheSafeCompositeOnly() throws {
+        let original = try XCTUnwrap(ImageProbe.solidImage(width: 160, height: 140,
+            color: NSColor.green.cgColor).cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: original)])
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 40, to: 80))
+        document.style.transition = .accordion
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+        let composite = ImageProbe.solidImage(width: 320, height: 200,
+            color: CGColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1))
+        composite.size = NSSize(width: 160, height: 100)
+        let cache = ScreenshotPresentation.Cache()
+        let presentation = ScreenshotPresentation(projection: projection)
+        let prepared = try XCTUnwrap(cache.prepare(presentation, image: composite))
+        let output = try XCTUnwrap(prepared.renderCGImage())
+        let paper = try XCTUnwrap(projection.faces.first { $0.paperSample != nil && $0.isFrontFacing })
+        let x = (paper.a.projected.x + paper.b.projected.x + paper.c.projected.x) / 3
+        let y = (paper.a.projected.y + paper.b.projected.y + paper.c.projected.y) / 3
+        let color = try XCTUnwrap(NSBitmapImageRep(cgImage: output).colorAt(
+            x: Int(((x - projection.outputBounds.minX) * 2).rounded()),
+            y: Int(((y - projection.outputBounds.minY) * 2).rounded())))
+        XCTAssertLessThan(color.greenComponent, 0.2, "The raw green capture is unavailable to paper sampling")
+        XCTAssertEqual(color.redComponent, color.greenComponent, accuracy: 0.01)
+        XCTAssertEqual(color.greenComponent, color.blueComponent, accuracy: 0.01)
+        XCTAssertGreaterThan(color.alphaComponent, 0.9)
+        let hit = try XCTUnwrap(cache.prepare(presentation, image: composite))
+        XCTAssertTrue(output === hit.renderedCGImage)
     }
 
     func testRetentionIncludesCompositeWallpaperPreparedBackgroundAndFinalReservation() throws {
@@ -246,6 +329,28 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         cache.clear()
         XCTAssertEqual(cache.retainedEntryCount, 0)
         XCTAssertEqual(cache.retainedByteCount, 0)
+    }
+
+    func testRetentionReservesInsertedPaperAtItsNativeOutputSize() throws {
+        let fixture = try fixture()
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: fixture.document, progress: 0))
+        let presentation = ScreenshotPresentation(projection: projection)
+        let pixels = try XCTUnwrap(fixture.composite.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let dimensions = try XCTUnwrap(projection.outputPixelDimensions(pixelWidth: pixels.width,
+            pixelHeight: pixels.height))
+        XCTAssertEqual(dimensions.width, 200)
+        XCTAssertEqual(dimensions.height, 200)
+        let required = pixels.bytesPerRow * pixels.height + dimensions.width * dimensions.height * 4
+        let exact = ScreenshotPresentation.Cache(maximumRetainedBytes: required)
+        let prepared = try XCTUnwrap(exact.prepare(presentation, image: fixture.composite))
+        XCTAssertEqual(exact.retainedByteCount, required)
+        XCTAssertTrue(prepared.isRenderCacheEnabled)
+        let output = try XCTUnwrap(prepared.renderCGImage())
+        XCTAssertTrue(output === prepared.renderedCGImage)
+        XCTAssertEqual(prepared.imageSize, NSSize(width: 100, height: 100))
+        let tooSmall = ScreenshotPresentation.Cache(maximumRetainedBytes: required - 1)
+        XCTAssertFalse(try XCTUnwrap(tooSmall.prepare(presentation, image: fixture.composite)).isRenderCacheEnabled)
+        XCTAssertEqual(tooSmall.retainedByteCount, 0)
     }
 
     func testOneEntryReplacesHistoryInsteadOfKeepingEveryCameraSetting() throws {

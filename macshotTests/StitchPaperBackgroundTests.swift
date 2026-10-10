@@ -28,16 +28,17 @@ final class StitchPaperBackgroundTests: XCTestCase {
         XCTAssertFalse(view.beautifyEnabled, "Paper presentation must not turn the frame feature on")
         view.reset()
         let result = try XCTUnwrap(presentation.render(composite))
-        XCTAssertEqual(result.size, NSSize(width: 224, height: 184))
+        let projection = try XCTUnwrap(presentation.projection)
+        XCTAssertEqual(result.size, NSSize(width: projection.outputBounds.width + 24,
+                                          height: projection.outputBounds.height + 24))
         let margin = try XCTUnwrap(ImageProbe.pixelColor(result, x: 2, y: 90))
         XCTAssertEqual(margin.blueComponent, 0.8, accuracy: 0.02)
         XCTAssertEqual(margin.redComponent, 0.1, accuracy: 0.02)
 
-        let projection = try XCTUnwrap(presentation.projection)
         let redaction = try XCTUnwrap(projection.project(CGPoint(x: 100, y: 130)))
         let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(result.cgImage(forProposedRect: nil, context: nil, hints: nil)))
-        let mark = try XCTUnwrap(bitmap.colorAt(x: Int((redaction.x + 12).rounded()),
-            y: Int((redaction.y + 12).rounded())))
+        let mark = try XCTUnwrap(bitmap.colorAt(x: Int((redaction.x - projection.outputBounds.minX + 12).rounded()),
+            y: Int((redaction.y - projection.outputBounds.minY + 12).rounded())))
         XCTAssertLessThan(mark.redComponent, 0.05, "Only the fully composited redaction may be projected")
         XCTAssertEqual(mark.alphaComponent, 1, accuracy: 0.01)
     }
@@ -133,9 +134,10 @@ final class StitchPaperBackgroundTests: XCTestCase {
         let projection = try XCTUnwrap(StitchAccordionProjection(document: accordionDocument()))
         let output = try XCTUnwrap(ScreenshotPresentation(beautify: wallpaperConfig(), projection: projection).render(source))
         let pixels = try XCTUnwrap(output.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        XCTAssertEqual(output.size, NSSize(width: 124, height: 104))
-        XCTAssertEqual(pixels.width, 248)
-        XCTAssertEqual(pixels.height, 208)
+        XCTAssertEqual(output.size, NSSize(width: projection.outputBounds.width / 2 + 24,
+                                          height: projection.outputBounds.height / 2 + 24))
+        XCTAssertEqual(CGFloat(pixels.width) / output.size.width, 2)
+        XCTAssertEqual(CGFloat(pixels.height) / output.size.height, 2)
         for invalid in [CGFloat.nan, .infinity, -1, 51] {
             var config = wallpaperConfig()
             config.backgroundBlur = invalid

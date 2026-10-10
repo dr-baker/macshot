@@ -108,5 +108,34 @@
         546.1498749209568
       ]
     }
+  },
+  "full_size_mesh_debug": {
+    "date": "2026-10-09",
+    "geometry_base": "8b0f66a06b47d0a98f54b17963dfe9a4a4604528",
+    "fixture": "1920x1080_accordion_wallpaper_redaction_history",
+    "unit": "milliseconds_key_routing_to_readable_png_tiff",
+    "method": "One warm-up plus three measured samples; includes editable-state and history preparation, excludes physical key delivery and controller teardown; output follows full-size mesh projected bounds.",
+    "medians": {
+      "cold": 4170.8937915973365,
+      "legacy": 4142.277041566558,
+      "settled": 27.98150002490729
+    },
+    "samples": {
+      "cold": [
+        4170.8937915973365,
+        4151.079625007696,
+        4210.208666743711
+      ],
+      "legacy": [
+        4129.835833329707,
+        4142.277041566558,
+        4342.307208222337
+      ],
+      "settled": [
+        25.96391667611897,
+        27.98150002490729,
+        29.640416731126606
+      ]
+    }
   }
 }

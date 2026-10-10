@@ -12,21 +12,22 @@ final class StitchAccordionProjectionTests: XCTestCase {
             let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
             let flat = try flatImage(document)
             let output = try XCTUnwrap(StitchAccordionWarp.render(flat, projection: projection))
-            XCTAssertEqual(output.width, flat.width)
-            XCTAssertEqual(output.height, flat.height)
+            let dimensions = try XCTUnwrap(projection.outputPixelDimensions(pixelWidth: flat.width, pixelHeight: flat.height))
+            XCTAssertEqual(output.width, dimensions.width)
+            XCTAssertEqual(output.height, dimensions.height)
             let pixels = try bytes(output), source = try bytes(flat)
-            let folded = projection.faces.filter { abs($0.shade - 1) > 0.015 }
+            let folded = projection.faces.filter { $0.paperSample != nil && abs($0.shade - 1) > 0.015 }
             XCTAssertGreaterThan(folded.count, 3)
             var checked = 0
-            for face in folded {
+            for face in projection.faces where face.paperSample == nil {
                 let sourceCenter = CGPoint(x: (face.a.source.x + face.b.source.x + face.c.source.x) / 3,
                                            y: (face.a.source.y + face.b.source.y + face.c.source.y) / 3)
                 let projected = try XCTUnwrap(projection.project(sourceCenter))
-                let x = Int(floor(projected.x - projection.documentBounds.minX))
-                let y = Int(floor(projected.y - projection.documentBounds.minY))
+                let x = Int(floor(projected.x - projection.outputBounds.minX))
+                let y = Int(floor(projected.y - projection.outputBounds.minY))
                 guard x >= 0, x < output.width, y >= 0, y < output.height else { continue }
-                let center = CGPoint(x: CGFloat(x) + projection.documentBounds.minX + 0.5,
-                                     y: CGFloat(y) + projection.documentBounds.minY + 0.5)
+                let center = CGPoint(x: CGFloat(x) + projection.outputBounds.minX + 0.5,
+                                     y: CGFloat(y) + projection.outputBounds.minY + 0.5)
                 let original = try XCTUnwrap(projection.unproject(center))
                 // Small trims make narrow faces. Rounding to a raster pixel can
                 // land on the next face, whose lighting belongs to that face.
@@ -45,12 +46,18 @@ final class StitchAccordionProjectionTests: XCTestCase {
             }
             XCTAssertGreaterThan(checked, 3)
             XCTAssertNotEqual(pixels, source)
+            var outsideCorners = 0
             for (x, y) in [(0, 0), (output.width - 1, 0), (0, output.height - 1), (output.width - 1, output.height - 1)] {
-                XCTAssertEqual(pixels[(y * output.width + x) * 4 + 3], 0)
-                XCTAssertNil(projection.unproject(CGPoint(x: projection.documentBounds.minX + CGFloat(x) + 0.5,
-                                                          y: projection.documentBounds.minY + CGFloat(y) + 0.5)))
+                let alpha = pixels[(y * output.width + x) * 4 + 3]
+                let hit = projection.unproject(CGPoint(x: projection.outputBounds.minX + CGFloat(x) + 0.5,
+                                                       y: projection.outputBounds.minY + CGFloat(y) + 0.5))
+                if hit != nil { XCTAssertGreaterThan(alpha, 0) }
+                else { XCTAssertLessThan(alpha, 255); outsideCorners += 1 }
             }
-            XCTAssertTrue(projection.documentBounds.contains(projection.paperPath.boundingBoxOfPath))
+            XCTAssertGreaterThan(outsideCorners, 0)
+            XCTAssertNil(projection.unproject(CGPoint(x: projection.outputBounds.minX - 1,
+                                                      y: projection.outputBounds.midY)))
+            XCTAssertTrue(projection.outputBounds.contains(projection.paperPath.boundingBoxOfPath))
         }
     }
 
@@ -58,7 +65,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         for axis in [StitchAxis.horizontal, .vertical] {
             let document = try fixture(axis: axis, origin: CGPoint(x: -83, y: 47))
             let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
-            for face in projection.faces where face.isFrontFacing {
+            for face in projection.faces where face.isFrontFacing && face.paperSample == nil {
                 for weights in [(CGFloat(0.2), CGFloat(0.3)), (0.45, 0.15), (0.1, 0.75)] {
                     let point = CGPoint(x: face.a.source.x * weights.0 + face.b.source.x * weights.1
                                         + face.c.source.x * (1 - weights.0 - weights.1),
@@ -85,7 +92,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         let document = try fixture(axis: .horizontal)
         let flat = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
         let folded = try XCTUnwrap(StitchAccordionProjection(document: document))
-        XCTAssertFalse(flat.hasProjectedOutput)
+        XCTAssertTrue(flat.hasProjectedOutput)
         XCTAssertTrue(folded.hasProjectedOutput)
         XCTAssertEqual(flat.faces.count, folded.faces.count)
         var vertices: [String: StitchAccordionProjection.Vertex] = [:]
@@ -93,9 +100,10 @@ final class StitchAccordionProjectionTests: XCTestCase {
         for (before, after) in zip(flat.faces, folded.faces) {
             for (a, b) in zip(before.vertices, after.vertices) {
                 XCTAssertEqual(a.source, b.source)
-                XCTAssertEqual(a.projected.x, a.source.x, accuracy: 0.000001)
-                XCTAssertEqual(a.projected.y, a.source.y, accuracy: 0.000001)
-                let key = "\(b.source.x):\(b.source.y)"
+                XCTAssertEqual(a.rest, b.rest)
+                XCTAssertEqual(a.projected.x, a.rest.x + document.bounds.midX - flat.source.unfoldedBounds.midX, accuracy: 0.000001)
+                XCTAssertEqual(a.projected.y, a.rest.y + document.bounds.midY - flat.source.unfoldedBounds.midY, accuracy: 0.000001)
+                let key = "\(b.rest.x):\(b.rest.y)"
                 if let existing = vertices[key] {
                     XCTAssertEqual(existing.projected, b.projected)
                     XCTAssertEqual(existing.depth, b.depth)
@@ -109,7 +117,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         var deviation: CGFloat = 0
         for edge in [document.bounds.minX, document.bounds.maxX] {
             let side = vertices.values.filter { abs($0.source.x - edge) < 0.000001 }
-                .sorted { $0.source.y < $1.source.y }
+                .sorted { $0.rest.y < $1.rest.y }
             let first = try XCTUnwrap(side.first), last = try XCTUnwrap(side.last)
             let dx = last.projected.x - first.projected.x, dy = last.projected.y - first.projected.y
             let distance = side.map {
@@ -131,8 +139,8 @@ final class StitchAccordionProjectionTests: XCTestCase {
             var interior = 0, cracks = 0
             for y in 0..<output.height {
                 for x in 0..<output.width {
-                    let point = CGPoint(x: projection.documentBounds.minX + CGFloat(x) + 0.5,
-                                        y: projection.documentBounds.minY + CGFloat(y) + 0.5)
+                    let point = CGPoint(x: projection.outputBounds.minX + CGFloat(x) + 0.5,
+                                        y: projection.outputBounds.minY + CGFloat(y) + 0.5)
                     if projection.unproject(point) != nil && paperPath.contains(point) {
                         interior += 1
                         if pixels[(y * output.width + x) * 4 + 3] == 0 { cracks += 1 }
@@ -161,7 +169,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
             XCTAssertEqual(invalidPremultiplication, 0)
             XCTAssertGreaterThan(opaquePaperPixels, output.width * output.height / 3)
             let hole = try XCTUnwrap(projection.project(CGPoint(x: document.bounds.minX + 54, y: document.bounds.minY + 54)))
-            let x = Int(hole.x - projection.documentBounds.minX), y = Int(hole.y - projection.documentBounds.minY)
+            let x = Int(hole.x - projection.outputBounds.minX), y = Int(hole.y - projection.outputBounds.minY)
             XCTAssertEqual(pixels[(y * output.width + x) * 4 + 3], 0)
         }
     }
@@ -173,22 +181,22 @@ final class StitchAccordionProjectionTests: XCTestCase {
         let previewFlat = try flatImage(document, dimension: max(document.bounds.width, document.bounds.height) / 2)
         let preview = try XCTUnwrap(StitchAccordionWarp.render(previewFlat, projection: projection))
         let nativeBytes = try bytes(native), previewBytes = try bytes(preview)
-        XCTAssertEqual(native.width, preview.width * 2)
-        XCTAssertEqual(native.height, preview.height * 2)
+        XCTAssertLessThanOrEqual(abs(native.width - preview.width * 2), 1)
+        XCTAssertLessThanOrEqual(abs(native.height - preview.height * 2), 1)
         var checked = 0
-        for face in projection.faces {
+        for face in projection.faces where face.paperSample == nil {
             let source = CGPoint(x: (face.a.source.x + face.b.source.x + face.c.source.x) / 3,
                                  y: (face.a.source.y + face.b.source.y + face.c.source.y) / 3)
             let point = try XCTUnwrap(projection.project(source))
-            let x = Int((point.x - projection.documentBounds.minX) / 2)
-            let y = Int((point.y - projection.documentBounds.minY) / 2)
+            let x = Int((point.x - projection.outputBounds.minX) / 2)
+            let y = Int((point.y - projection.outputBounds.minY) / 2)
             // A crease has a lighting discontinuity. Compare only pixels whose
             // full native sampling footprint stays on the same paper face.
             var sameFace = true
             for dy in 0..<2 {
                 for dx in 0..<2 {
-                    let sample = CGPoint(x: projection.documentBounds.minX + CGFloat(x * 2 + dx) + 0.5,
-                                         y: projection.documentBounds.minY + CGFloat(y * 2 + dy) + 0.5)
+                    let sample = CGPoint(x: projection.outputBounds.minX + CGFloat(x * 2 + dx) + 0.5,
+                                         y: projection.outputBounds.minY + CGFloat(y * 2 + dy) + 0.5)
                     if face.unproject(sample) == nil { sameFace = false }
                 }
             }
@@ -208,7 +216,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         XCTAssertGreaterThan(checked, 3)
     }
 
-    func testMultipleAxesAndShortPartialJoinsHaveContinuousValidPaper() throws {
+    func testMultipleAxesAndShortPartialJoinsHaveValidIndependentPaperPatches() throws {
         let image = try texture(width: 120, height: 100, solid: true)
         let collage = StitchDocument(pieces: [
             StitchPiece(image: image, origin: .zero),
@@ -223,11 +231,12 @@ final class StitchAccordionProjectionTests: XCTestCase {
         for document in [collage, short] {
             let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
             XCTAssertTrue(projection.hasProjectedOutput)
-            XCTAssertTrue(projection.documentBounds.contains(projection.paperPath.boundingBoxOfPath))
+            XCTAssertTrue(projection.outputBounds.contains(projection.paperPath.boundingBoxOfPath))
             let rendered = try XCTUnwrap(StitchAccordionWarp.render(try flatImage(document), projection: projection))
-            XCTAssertEqual(rendered.width, Int(document.bounds.width))
-            XCTAssertEqual(rendered.height, Int(document.bounds.height))
-            for face in projection.faces where face.isFrontFacing {
+            let dimensions = try XCTUnwrap(projection.outputPixelDimensions(pixelWidth: Int(document.bounds.width), pixelHeight: Int(document.bounds.height)))
+            XCTAssertEqual(rendered.width, dimensions.width)
+            XCTAssertEqual(rendered.height, dimensions.height)
+            for face in projection.faces where face.isFrontFacing && face.paperSample == nil {
                 let point = CGPoint(x: (face.a.source.x + face.b.source.x + face.c.source.x) / 3,
                                     y: (face.a.source.y + face.b.source.y + face.c.source.y) / 3)
                 let restored = try XCTUnwrap(projection.unproject(try XCTUnwrap(projection.project(point))))
@@ -235,6 +244,70 @@ final class StitchAccordionProjectionTests: XCTestCase {
                 XCTAssertEqual(restored.y, point.y, accuracy: 0.000001)
             }
         }
+    }
+
+    func testLayerSamplerMatchesNativePaperOnAsymmetricSafePixels() throws {
+        var document = StitchDocument(pieces: [StitchPiece(image: try texture(width: 360, height: 280))],
+                                      style: accordionStyle(), background: .transparent)
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 70, to: 90))
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+        let width = Int(document.bounds.width), height = Int(document.bounds.height)
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                pixels[offset] = y < 120 ? 180 : 20
+                pixels[offset + 1] = y < 120 ? 30 : 80
+                pixels[offset + 2] = y < 120 ? 40 : 220
+                // Contrasting glyph-sized marks should not become paper color.
+                if x % 27 < 3 && y % 23 < 5 {
+                    pixels[offset] = 4; pixels[offset + 1] = 4; pixels[offset + 2] = 4
+                }
+            }
+        }
+        let safe = try image(pixels, width: width, height: height)
+        let output = try XCTUnwrap(StitchAccordionWarp.render(safe, projection: projection))
+        let bytes = try bytes(output)
+        for face in projection.faces where face.paperSample != nil {
+            let sample = try XCTUnwrap(face.paperSample)
+            let color = try XCTUnwrap(StitchAccordionWarp.paperColor(image: safe, sample: sample,
+                                                                    documentBounds: projection.documentBounds))
+            let rest = CGPoint(x: (face.a.rest.x + face.b.rest.x + face.c.rest.x) / 3,
+                               y: (face.a.rest.y + face.b.rest.y + face.c.rest.y) / 3)
+            let point = try XCTUnwrap(face.projectRest(rest))
+            let x = Int(point.x - projection.outputBounds.minX), y = Int(point.y - projection.outputBounds.minY)
+            let offset = (y * output.width + x) * 4
+            XCTAssertEqual(CGFloat(bytes[offset]), color.red * 255, accuracy: 1)
+            XCTAssertEqual(CGFloat(bytes[offset + 1]), color.green * 255, accuracy: 1)
+            XCTAssertEqual(CGFloat(bytes[offset + 2]), color.blue * 255, accuracy: 1)
+            XCTAssertEqual(CGFloat(bytes[offset + 3]), color.alpha * 255, accuracy: 1)
+            XCTAssertGreaterThan(color.red, color.blue, "The top seam's red background wins over bottom blue and small dark glyphs")
+        }
+    }
+
+    func testNativeDensityAndOddRemovedLengthAtNonzeroOrigin() throws {
+        let original = try texture(width: 320, height: 320, solid: true)
+        var document = StitchDocument(pieces: [StitchPiece(image: original, origin: CGPoint(x: -17, y: 31))],
+                                      style: accordionStyle(), background: .transparent)
+        document.style.accordionPerspective = 0
+        document.style.accordionYaw = 0
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 131, to: 172))
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+        XCTAssertEqual(projection.source.unfoldedBounds.size, CGSize(width: 320, height: 320))
+        let context = try XCTUnwrap(CGContext(data: nil, width: 640, height: 558,
+            bitsPerComponent: 8, bytesPerRow: 640 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(try flatImage(document), in: CGRect(x: 0, y: 0, width: 640, height: 558))
+        let native = try XCTUnwrap(StitchAccordionWarp.render(try XCTUnwrap(context.makeImage()), projection: projection))
+        let dimensions = try XCTUnwrap(projection.outputPixelDimensions(pixelWidth: 640, pixelHeight: 558))
+        XCTAssertEqual(native.width, dimensions.width)
+        XCTAssertEqual(native.height, dimensions.height)
+        XCTAssertEqual(native.width, 640)
+        // Integral alignment may add one transparent document point for an odd cut.
+        XCTAssertTrue((640...642).contains(native.height))
+        let first = try XCTUnwrap(projection.project(CGPoint(x: 3, y: 61)))
+        let next = try XCTUnwrap(projection.project(CGPoint(x: 23, y: 61)))
+        XCTAssertEqual((next.x - first.x) * 2, 40, accuracy: 0.000001)
     }
 
     func testRemovedContentCannotReappearOnFoldedFaces() throws {

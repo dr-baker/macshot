@@ -53,6 +53,9 @@ class ImageEditingView: OverlayView, NSMenuItemValidation {
         }
     }
     var onStitchPreviewChanged: (() -> Void)?
+    /// Folded output may extend past the compact editing canvas. The controller
+    /// publishes its frame so toolbar layout does not rebuild geometry during drawing.
+    var stitchPaperPresentationFrame: CGRect?
     var isShowingStitchPaperPreview: Bool {
         currentTool == .stitch && stitchPreviewEnabled && canPreviewStitchPaper
     }

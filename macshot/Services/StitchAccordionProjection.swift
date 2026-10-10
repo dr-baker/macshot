@@ -42,7 +42,12 @@ nonisolated struct StitchAccordionProjection: Sendable {
     }
 
     nonisolated struct Vertex: Sendable {
+        /// Texture coordinates in the compact, already-composited screenshot.
         let source: CGPoint
+        /// Position on the full unfolded sheet, including the omitted paper.
+        let rest: CGPoint
+        /// Deformed paper before the camera transform, in document points.
+        let world: Point3
         let projected: CGPoint
         /// Positive camera distance. Perspective-correct interpolation divides by this value.
         let depth: CGFloat
@@ -56,6 +61,9 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let isFrontFacing: Bool
         /// Bit 0 is edge b-c, bit 1 c-a, and bit 2 a-b. Only exterior edges need antialiasing.
         let boundaryEdges: Int
+        /// Omitted paper uses a dominant color sampled from this safe compact seam.
+        /// Its source triangle is intentionally degenerate: it contains no removed pixels.
+        let paperSample: CGPoint?
 
         var vertices: [Vertex] { [a, b, c] }
         var projectedBounds: CGRect {
@@ -67,6 +75,15 @@ nonisolated struct StitchAccordionProjection: Sendable {
 
         func project(_ point: CGPoint) -> CGPoint? {
             guard let weights = Self.weights(point, a.source, b.source, c.source) else { return nil }
+            return projectedPoint(weights)
+        }
+
+        func projectRest(_ point: CGPoint) -> CGPoint? {
+            guard let weights = Self.weights(point, a.rest, b.rest, c.rest) else { return nil }
+            return projectedPoint(weights)
+        }
+
+        private func projectedPoint(_ weights: Weights) -> CGPoint? {
             let wa = weights.x * a.depth, wb = weights.y * b.depth, wc = weights.z * c.depth
             let total = wa + wb + wc
             guard total > 0 else { return nil }
@@ -97,6 +114,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
     /// animation frames avoids repeated join merging and mesh edge collection.
     nonisolated struct Source: Sendable {
         let documentBounds: CGRect
+        let unfoldedBounds: CGRect
         let camera: StitchPaperCamera
         fileprivate let folds: [Fold]
         fileprivate let columns: [CGFloat]
@@ -106,8 +124,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         init?(document: StitchDocument) {
             guard document.canRender else { return nil }
             let bounds = document.bounds.integral
-            guard bounds.minX.isFinite, bounds.minY.isFinite,
-                  bounds.maxX.isFinite, bounds.maxY.isFinite else { return nil }
+            guard StitchAccordionProjection.validBounds(bounds) else { return nil }
             let style = document.style
             let documentJoins = document.joins
             let active = style.visible && style.transition == .accordion && documentJoins.contains {
@@ -120,57 +137,44 @@ nonisolated struct StitchAccordionProjection: Sendable {
                       style.accordionPerspective.isFinite, StitchPaperCamera.perspectiveRange.contains(style.accordionPerspective),
                       style.accordionYaw.isFinite, StitchPaperCamera.yawRange.contains(style.accordionYaw) else { return nil }
                 let joins = StitchAccordionProjection.mergedJoins(documentJoins, bounds: bounds)
-                folds = joins.compactMap { join in
-                    var room = min(join.position - (join.horizontal ? bounds.minY : bounds.minX),
-                                   (join.horizontal ? bounds.maxY : bounds.maxX) - join.position)
-                    for other in joins where other.horizontal == join.horizontal
-                        && abs(other.position - join.position) > 0.001
-                        && min(other.end, join.end) > max(other.start, join.start) {
-                        room = min(room, abs(other.position - join.position))
-                    }
-                    // A narrow capture keeps most of each adjoining piece flat.
-                    for piece in document.pieces {
-                        let frame = piece.frame
-                        let alongMin = join.horizontal ? frame.minX : frame.minY
-                        let alongMax = join.horizontal ? frame.maxX : frame.maxY
-                        guard min(alongMax, join.end) > max(alongMin, join.start) else { continue }
-                        let lo = join.horizontal ? frame.minY : frame.minX
-                        let hi = join.horizontal ? frame.maxY : frame.maxX
-                        if abs(hi - join.position) < 0.5 { room = min(room, join.position - lo) }
-                        if abs(lo - join.position) < 0.5 { room = min(room, hi - join.position) }
-                    }
-                    // The omitted strip sets the unfolded paper length. Each
-                    // pleat gets an equal share; neighbouring edges only limit
-                    // the space that can safely deform. Separate captures with
-                    // no measured cut retain the manual seam treatment.
-                    let paperLength = join.trimmedLength ?? (style.accordionWidth * 4)
-                    let halfWidth = min(paperLength / 2, room * 0.45, (join.end - join.start) * 0.4)
-                    guard halfWidth.isFinite, halfWidth > 0.001, join.end - join.start > 0.001 else { return nil }
-                    return Fold(join: join, halfWidth: halfWidth,
-                                pleats: Int(style.accordionPleats.rounded()), bounds: bounds)
+                var result: [Fold] = []
+                for join in joins {
+                    let length = join.trimmedLength ?? style.accordionWidth * 4
+                    guard length.isFinite, length >= 0, length <= 30_000 else { return nil }
+                    guard length > 0.001 else { continue }
+                    result.append(Fold(join: join, paperLength: length, pleats: Int(style.accordionPleats.rounded())))
                 }
-            } else {
-                folds = []
-            }
+                folds = result
+            } else { folds = [] }
 
             var xEdges = [bounds.minX, bounds.maxX], yEdges = [bounds.minY, bounds.maxY]
             for fold in folds {
-                let normal = (0...fold.pleats * 2).map {
-                    fold.join.position - fold.halfWidth + CGFloat($0) * fold.segmentLength
-                }
                 if fold.join.horizontal {
-                    yEdges += normal
-                    xEdges += fold.alongEdges
+                    yEdges.append(fold.join.position)
+                    xEdges += [fold.join.start, fold.join.end]
                 } else {
-                    xEdges += normal
-                    yEdges += fold.alongEdges
+                    xEdges.append(fold.join.position)
+                    yEdges += [fold.join.start, fold.join.end]
                 }
             }
             let columns = StitchAccordionProjection.uniqueEdges(xEdges)
             let rows = StitchAccordionProjection.uniqueEdges(yEdges)
-            // Fragmented collages fail before allocating an oversized mesh.
             guard columns.count * rows.count <= 16_384 else { return nil }
+            let paperFaces = folds.reduce(0) { total, fold in
+                let edges = fold.join.horizontal ? columns : rows
+                let intervals = zip(edges, edges.dropFirst()).filter {
+                    ($0.0 + $0.1) / 2 > fold.join.start && ($0.0 + $0.1) / 2 < fold.join.end
+                }.count
+                return total + intervals * fold.pleats * 4
+            }
+            guard (columns.count - 1) * (rows.count - 1) * 2 + paperFaces <= 32_768 else { return nil }
+            // Check restored dimensions before allocating any vertex or triangle
+            // buffers. Provenance can outlive the original captured image.
+            let unfolded = StitchAccordionProjection.restBounds(bounds: bounds, folds: folds,
+                                                                 columns: columns, rows: rows)
+            guard StitchAccordionProjection.validBounds(unfolded) else { return nil }
             self.documentBounds = bounds
+            self.unfoldedBounds = unfolded
             self.camera = StitchPaperCamera(perspective: style.accordionPerspective, yaw: style.accordionYaw)
             self.folds = folds
             self.columns = columns
@@ -183,15 +187,16 @@ nonisolated struct StitchAccordionProjection: Sendable {
     }
 
     let source: Source
+    /// The compact texture domain. Annotations and redactions stay in this space.
     let documentBounds: CGRect
+    /// The raster envelope in projected document points, independent of texture size.
+    private(set) var outputBounds: CGRect
     let hasProjectedOutput: Bool
-    /// Source order is stable throughout an animation, including at progress zero.
+    /// Content triangles precede inserted paper triangles. Order is stable at every progress.
     let faces: [Face]
-    /// Useful for layer animation. The raster renderer also resolves actual depth per pixel.
     let drawingOrder: [Int]
     private let columns: [CGFloat]
     private let rows: [CGFloat]
-    private let grid: [Vertex]
 
     @MainActor
     init?(document: StitchDocument, progress proposedProgress: CGFloat = 1) {
@@ -204,94 +209,89 @@ nonisolated struct StitchAccordionProjection: Sendable {
         guard proposedProgress.isFinite else { return nil }
         let bounds = source.documentBounds
         let progress = max(0, min(1, proposedProgress))
-        let folds = source.folds, columns = source.columns, rows = source.rows
         let angle = acos(CGFloat(0.45)) * progress
-        let compression = cos(angle)
-        let ridgeSlope = sin(angle)
-        let camera = Camera(bounds: bounds,
-                            perspective: folds.isEmpty ? 0 : source.camera.perspective * progress,
-                            yaw: folds.isEmpty ? 0 : source.camera.yaw * progress)
-        var sourcePoints: [CGPoint] = [], points3D: [Point3] = [], rawPoints: [(CGPoint, CGFloat)] = []
-        sourcePoints.reserveCapacity(columns.count * rows.count)
-        points3D.reserveCapacity(columns.count * rows.count)
-        rawPoints.reserveCapacity(columns.count * rows.count)
-        for y in rows {
-            for x in columns {
-                let source = CGPoint(x: x, y: y)
-                var paper = Point3(x: x - bounds.midX, y: y - bounds.midY, z: 0)
-                for fold in folds {
-                    let along = fold.join.horizontal ? x : y
-                    let normal = fold.join.horizontal ? y : x
-                    let weight = fold.weight(at: along)
-                    guard weight > 0 else { continue }
-                    let distance = normal - (fold.join.position - fold.halfWidth)
-                    let inside = max(0, min(fold.halfWidth * 2, distance))
-                    let displacement = ((1 - compression) * (inside - fold.halfWidth)) * weight
-                    if fold.join.horizontal { paper.y -= displacement } else { paper.x -= displacement }
-                    if distance > 0 && distance < fold.halfWidth * 2 {
-                        let phase = distance / fold.segmentLength
-                        let whole = Int(floor(phase))
-                        let fraction = phase - CGFloat(whole)
-                        let height = whole.isMultiple(of: 2) ? fraction : 1 - fraction
-                        paper.z += fold.segmentLength * ridgeSlope * height * weight
-                    }
-                }
-                guard let projected = camera.project(paper) else { return nil }
-                sourcePoints.append(source)
-                points3D.append(paper)
-                rawPoints.append(projected)
-            }
+        let mesh = Self.mesh(bounds: bounds, folds: source.folds, columns: source.columns,
+                             rows: source.rows, compression: cos(angle), ridgeSlope: sin(angle))
+        let points = mesh.flatMap { [$0.a.world, $0.b.world, $0.c.world] }
+        guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
+              let minY = points.map(\.y).min(), let maxY = points.map(\.y).max() else { return nil }
+        let center = CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
+        let camera = Camera(bounds: source.unfoldedBounds,
+                            perspective: source.folds.isEmpty ? 0 : source.camera.perspective * progress,
+                            yaw: source.folds.isEmpty ? 0 : source.camera.yaw * progress)
+        func projected(_ vertex: MeshVertex) -> (CGPoint, CGFloat)? {
+            camera.project(Point3(x: vertex.world.x - center.x, y: vertex.world.y - center.y, z: vertex.world.z))
         }
-
-        let rawMinX = rawPoints.map { $0.0.x }.min()!, rawMaxX = rawPoints.map { $0.0.x }.max()!
-        let rawMinY = rawPoints.map { $0.0.y }.min()!, rawMaxY = rawPoints.map { $0.0.y }.max()!
-        let projectedWidth = rawMaxX - rawMinX, projectedHeight = rawMaxY - rawMinY
-        guard projectedWidth > 0, projectedHeight > 0 else { return nil }
-        let hasOutput = !folds.isEmpty && progress > 0
-        let fit = hasOutput
-            ? min(bounds.width / projectedWidth, bounds.height / projectedHeight) * (1 - 0.018 * progress) : 1
+        var raw: [(a: (CGPoint, CGFloat), b: (CGPoint, CGFloat), c: (CGPoint, CGFloat))] = []
+        raw.reserveCapacity(mesh.count)
+        for triangle in mesh {
+            guard let a = projected(triangle.a), let b = projected(triangle.b), let c = projected(triangle.c) else { return nil }
+            raw.append((a, b, c))
+        }
+        let projectedPoints = raw.flatMap { [$0.a.0, $0.b.0, $0.c.0] }
+        let rawMinX = projectedPoints.map(\.x).min()!, rawMaxX = projectedPoints.map(\.x).max()!
+        let rawMinY = projectedPoints.map(\.y).min()!, rawMaxY = projectedPoints.map(\.y).max()!
         let rawCenter = CGPoint(x: (rawMinX + rawMaxX) / 2, y: (rawMinY + rawMaxY) / 2)
-        let grid = zip(sourcePoints, rawPoints).map { source, projected in
-            Vertex(source: source,
-                   projected: CGPoint(x: bounds.midX + (projected.0.x - rawCenter.x) * fit,
-                                      y: bounds.midY + (projected.0.y - rawCenter.y) * fit),
-                   depth: projected.1)
+        func vertex(_ value: MeshVertex, _ projected: (CGPoint, CGFloat)) -> Vertex {
+            Vertex(source: value.source, rest: value.rest, world: value.world,
+                   projected: CGPoint(x: bounds.midX + projected.0.x - rawCenter.x,
+                                      y: bounds.midY + projected.0.y - rawCenter.y), depth: projected.1)
         }
-        var faces: [Face] = []
-        faces.reserveCapacity((columns.count - 1) * (rows.count - 1) * 2)
-        func face(_ a: Int, _ b: Int, _ c: Int) -> Face {
-            let normal = camera.rotate(Point3.cross(points3D[b] - points3D[a], points3D[c] - points3D[a])).normalized
-            let flatNormal = camera.rotate(Point3(x: 0, y: 0, z: 1))
-            let light = Point3(x: -0.25, y: -0.5, z: 0.83).normalized
+        var edgeCounts: [EdgeKey: Int] = [:]
+        for triangle in mesh {
+            for edge in triangle.edges { edgeCounts[edge, default: 0] += 1 }
+        }
+        let flatNormal = camera.rotate(Point3(x: 0, y: 0, z: 1))
+        let light = Point3(x: -0.25, y: -0.5, z: 0.83).normalized
+        let faces = zip(mesh, raw).map { triangle, raw -> Face in
+            let a = vertex(triangle.a, raw.a), b = vertex(triangle.b, raw.b), c = vertex(triangle.c, raw.c)
+            let winding = (b.projected.x - a.projected.x) * (c.projected.y - a.projected.y)
+                - (b.projected.y - a.projected.y) * (c.projected.x - a.projected.x)
+            var normal = camera.rotate(Point3.cross(triangle.b.world - triangle.a.world,
+                                                   triangle.c.world - triangle.a.world)).normalized
+            if triangle.paperSample != nil && winding < 0 { normal = Point3(x: -normal.x, y: -normal.y, z: -normal.z) }
             let shade = max(0.72, min(1.08, 1 + 0.32 * (normal.dot(light) - flatNormal.dot(light))))
-            let mask = (Self.exteriorEdge(sourcePoints[b], sourcePoints[c], bounds) ? 1 : 0)
-                | (Self.exteriorEdge(sourcePoints[c], sourcePoints[a], bounds) ? 2 : 0)
-                | (Self.exteriorEdge(sourcePoints[a], sourcePoints[b], bounds) ? 4 : 0)
-            let winding = (grid[b].projected.x - grid[a].projected.x) * (grid[c].projected.y - grid[a].projected.y)
-                - (grid[b].projected.y - grid[a].projected.y) * (grid[c].projected.x - grid[a].projected.x)
-            return Face(a: grid[a], b: grid[b], c: grid[c], shade: shade,
-                        isFrontFacing: winding > 0.000000001, boundaryEdges: mask)
+            let edges = triangle.edges
+            let mask = (edgeCounts[edges[0]] == 1 ? 1 : 0)
+                | (edgeCounts[edges[1]] == 1 ? 2 : 0) | (edgeCounts[edges[2]] == 1 ? 4 : 0)
+            return Face(a: a, b: b, c: c, shade: shade, isFrontFacing: winding > 0.000000001,
+                        boundaryEdges: mask, paperSample: triangle.paperSample)
         }
-        for row in 0..<rows.count - 1 {
-            for column in 0..<columns.count - 1 {
-                let a = row * columns.count + column, b = a + 1
-                let d = a + columns.count, c = d + 1
-                faces.append(face(a, b, c))
-                faces.append(face(a, c, d))
-            }
-        }
+        let naturalBounds = CGRect(x: bounds.midX + rawMinX - rawCenter.x,
+                                   y: bounds.midY + rawMinY - rawCenter.y,
+                                   width: rawMaxX - rawMinX, height: rawMaxY - rawMinY).integral
+        guard Self.validBounds(naturalBounds) else { return nil }
         self.source = source
         self.documentBounds = bounds
-        self.hasProjectedOutput = hasOutput
-        self.columns = columns
-        self.rows = rows
-        self.grid = grid
+        self.outputBounds = naturalBounds
+        self.hasProjectedOutput = !source.folds.isEmpty
+        self.columns = source.columns
+        self.rows = source.rows
         self.faces = faces
         self.drawingOrder = faces.indices.sorted {
             let a = faces[$0], b = faces[$1]
             let difference = a.a.depth + a.b.depth + a.c.depth - b.a.depth - b.b.depth - b.c.depth
             return abs(difference) > 0.000001 ? difference > 0 : $0 < $1
         }
+    }
+
+    func outputPixelDimensions(pixelWidth: Int, pixelHeight: Int) -> (width: Int, height: Int)? {
+        guard pixelWidth > 0, pixelHeight > 0,
+              pixelWidth <= 30_000, pixelHeight <= 30_000,
+              pixelWidth * pixelHeight <= 100_000_000 else { return nil }
+        let width = ceil(outputBounds.width * CGFloat(pixelWidth) / documentBounds.width)
+        let height = ceil(outputBounds.height * CGFloat(pixelHeight) / documentBounds.height)
+        guard width.isFinite, height.isFinite, width > 0, height > 0,
+              width <= 30_000, height <= 30_000, width * height <= 100_000_000 else { return nil }
+        return (Int(width), Int(height))
+    }
+
+    /// Animation frames share one envelope without scaling or moving the paper.
+    func withOutputBounds(_ envelope: CGRect) -> Self? {
+        guard Self.validBounds(envelope), envelope.contains(outputBounds) else { return nil }
+        var result = self
+        result.outputBounds = envelope.integral
+        return result
     }
 
     func project(_ point: CGPoint) -> CGPoint? {
@@ -305,11 +305,12 @@ nonisolated struct StitchAccordionProjection: Sendable {
         return faces[(row * (columns.count - 1) + column) * 2 + (y <= x ? 0 : 1)].project(point)
     }
 
-    /// The nearest visible face wins where perspective hides a return face.
+    /// The nearest visible face wins. Paper return faces have the same sampled
+    /// material on both sides, and map back to their compact seam for interaction.
     func unproject(_ point: CGPoint) -> CGPoint? {
         guard point.x.isFinite, point.y.isFinite else { return nil }
         var nearest: (source: CGPoint, depth: CGFloat)?
-        for face in faces where face.isFrontFacing {
+        for face in faces where face.isFrontFacing || face.paperSample != nil {
             let bounds = face.projectedBounds.insetBy(dx: -0.000001, dy: -0.000001)
             guard bounds.contains(point), let value = face.unproject(point),
                   nearest == nil || value.depth < nearest!.depth else { continue }
@@ -318,41 +319,71 @@ nonisolated struct StitchAccordionProjection: Sendable {
         return nearest?.source
     }
 
-    var paperPath: CGPath { path(for: documentBounds)! }
+    /// A union of visible triangles includes pleat ridges, slits and partial seams.
+    var paperPath: CGPath {
+        let path = CGMutablePath()
+        for face in faces where face.isFrontFacing || face.paperSample != nil {
+            path.move(to: face.a.projected)
+            path.addLine(to: face.isFrontFacing ? face.b.projected : face.c.projected)
+            path.addLine(to: face.isFrontFacing ? face.c.projected : face.b.projected)
+            path.closeSubpath()
+        }
+        return path
+    }
 
-    /// Rectangle boundaries split at grid creases and triangle diagonals, so guides
-    /// follow exactly the same projective edges as the rendered texture.
+    /// Clip the source selection to each independent paper patch before projecting.
+    /// This also follows inserted creases when a selection spans omitted space.
     func path(for proposedRect: CGRect) -> CGPath? {
         guard !proposedRect.isNull, proposedRect.origin.x.isFinite, proposedRect.origin.y.isFinite,
               proposedRect.width.isFinite, proposedRect.height.isFinite else { return nil }
         let rect = proposedRect.standardized.intersection(documentBounds)
         guard !rect.isNull, rect.width > 0, rect.height > 0 else { return nil }
-        let top = edgePoints(from: rect.minX, to: rect.maxX, fixed: rect.minY, horizontal: true)
-        let right = edgePoints(from: rect.minY, to: rect.maxY, fixed: rect.maxX, horizontal: false)
-        let bottom = edgePoints(from: rect.minX, to: rect.maxX, fixed: rect.maxY, horizontal: true).reversed()
-        let left = edgePoints(from: rect.minY, to: rect.maxY, fixed: rect.minX, horizontal: false).reversed()
         let path = CGMutablePath()
-        var started = false
-        for source in top + right + Array(bottom) + Array(left) {
-            guard let point = project(source) else { return nil }
-            if started { path.addLine(to: point) } else { path.move(to: point); started = true }
+        for face in faces where face.isFrontFacing || face.paperSample != nil {
+            var polygon = face.vertices.map { ClipPoint(source: $0.source, rest: $0.rest) }
+            for (horizontal, edge, greater) in [(true, rect.minX, true), (true, rect.maxX, false),
+                                                (false, rect.minY, true), (false, rect.maxY, false)] {
+                polygon = Self.clip(polygon, horizontal: horizontal, edge: edge, greater: greater)
+            }
+            let points = polygon.compactMap { face.projectRest($0.rest) }
+            guard points.count >= 3 else { continue }
+            path.move(to: points[0])
+            for point in (face.isFrontFacing ? Array(points.dropFirst()) : Array(points.dropFirst().reversed())) {
+                path.addLine(to: point)
+            }
+            path.closeSubpath()
         }
-        path.closeSubpath()
         return path
     }
 
-    private func edgePoints(from: CGFloat, to: CGFloat, fixed: CGFloat, horizontal: Bool) -> [CGPoint] {
-        let along = horizontal ? columns : rows, across = horizontal ? rows : columns
-        let cell = Self.cell(containing: fixed, edges: across)
-        let fraction = (fixed - across[cell]) / (across[cell + 1] - across[cell])
-        var cuts = [from, to] + along.filter { $0 > from && $0 < to }
-        for index in 0..<along.count - 1 {
-            let diagonal = along[index] + fraction * (along[index + 1] - along[index])
-            if diagonal > from && diagonal < to { cuts.append(diagonal) }
+    private nonisolated struct ClipPoint {
+        let source: CGPoint
+        let rest: CGPoint
+    }
+
+    private static func clip(_ input: [ClipPoint], horizontal: Bool, edge: CGFloat, greater: Bool) -> [ClipPoint] {
+        guard let last = input.last else { return [] }
+        func coordinate(_ point: ClipPoint) -> CGFloat { horizontal ? point.source.x : point.source.y }
+        func inside(_ point: ClipPoint) -> Bool { greater ? coordinate(point) >= edge : coordinate(point) <= edge }
+        var result: [ClipPoint] = [], before = last
+        for point in input {
+            if inside(before) != inside(point) {
+                let t = (edge - coordinate(before)) / (coordinate(point) - coordinate(before))
+                result.append(ClipPoint(source: CGPoint(x: before.source.x + (point.source.x - before.source.x) * t,
+                                                       y: before.source.y + (point.source.y - before.source.y) * t),
+                                        rest: CGPoint(x: before.rest.x + (point.rest.x - before.rest.x) * t,
+                                                      y: before.rest.y + (point.rest.y - before.rest.y) * t)))
+            }
+            if inside(point) { result.append(point) }
+            before = point
         }
-        return Self.uniqueEdges(cuts).map {
-            horizontal ? CGPoint(x: $0, y: fixed) : CGPoint(x: fixed, y: $0)
-        }
+        return result
+    }
+
+    private static func validBounds(_ bounds: CGRect) -> Bool {
+        !bounds.isNull && bounds.minX.isFinite && bounds.minY.isFinite && bounds.maxX.isFinite && bounds.maxY.isFinite
+            && bounds.width > 0 && bounds.height > 0 && bounds.width <= 30_000 && bounds.height <= 30_000
+            && bounds.width * bounds.height <= 100_000_000
     }
 
     private static func cell(containing value: CGFloat, edges: [CGFloat]) -> Int {
@@ -370,9 +401,128 @@ nonisolated struct StitchAccordionProjection: Sendable {
         }
     }
 
-    private static func exteriorEdge(_ a: CGPoint, _ b: CGPoint, _ bounds: CGRect) -> Bool {
-        (abs(a.x - b.x) < 0.000001 && (abs(a.x - bounds.minX) < 0.000001 || abs(a.x - bounds.maxX) < 0.000001))
-            || (abs(a.y - b.y) < 0.000001 && (abs(a.y - bounds.minY) < 0.000001 || abs(a.y - bounds.maxY) < 0.000001))
+    private static func translation(at point: CGPoint, folds: [Fold], compression: CGFloat) -> CGPoint {
+        var result = CGPoint.zero
+        for fold in folds {
+            let along = fold.join.horizontal ? point.x : point.y
+            let normal = fold.join.horizontal ? point.y : point.x
+            guard along > fold.join.start, along < fold.join.end, normal > fold.join.position else { continue }
+            if fold.join.horizontal { result.y += fold.paperLength * compression }
+            else { result.x += fold.paperLength * compression }
+        }
+        return result
+    }
+
+    private static func restBounds(bounds: CGRect, folds: [Fold], columns: [CGFloat], rows: [CGFloat]) -> CGRect {
+        var result = CGRect.null
+        for row in 0..<rows.count - 1 {
+            for column in 0..<columns.count - 1 {
+                let rect = CGRect(x: columns[column], y: rows[row], width: columns[column + 1] - columns[column],
+                                  height: rows[row + 1] - rows[row])
+                let offset = translation(at: CGPoint(x: rect.midX, y: rect.midY), folds: folds, compression: 1)
+                result = result.union(rect.offsetBy(dx: offset.x, dy: offset.y))
+            }
+        }
+        return result
+    }
+
+    private nonisolated struct MeshVertex {
+        let source: CGPoint
+        let rest: CGPoint
+        let world: Point3
+    }
+
+    private nonisolated struct Triangle {
+        let a: MeshVertex
+        let b: MeshVertex
+        let c: MeshVertex
+        let paperSample: CGPoint?
+        var edges: [EdgeKey] { [EdgeKey(b.world, c.world), EdgeKey(c.world, a.world), EdgeKey(a.world, b.world)] }
+    }
+
+    private nonisolated struct PositionKey: Hashable, Comparable {
+        let x: CGFloat
+        let y: CGFloat
+        let z: CGFloat
+        init(_ point: Point3) {
+            x = (point.x * 1_000_000).rounded() / 1_000_000
+            y = (point.y * 1_000_000).rounded() / 1_000_000
+            z = (point.z * 1_000_000).rounded() / 1_000_000
+        }
+        static func < (a: Self, b: Self) -> Bool {
+            a.x != b.x ? a.x < b.x : (a.y != b.y ? a.y < b.y : a.z < b.z)
+        }
+    }
+
+    private nonisolated struct EdgeKey: Hashable {
+        let a: PositionKey
+        let b: PositionKey
+        init(_ first: Point3, _ second: Point3) {
+            let first = PositionKey(first), second = PositionKey(second)
+            a = min(first, second); b = max(first, second)
+        }
+    }
+
+    private static func mesh(bounds: CGRect, folds: [Fold], columns: [CGFloat], rows: [CGFloat],
+                             compression: CGFloat, ridgeSlope: CGFloat) -> [Triangle] {
+        var result: [Triangle] = []
+        func appendQuad(_ a: MeshVertex, _ b: MeshVertex, _ c: MeshVertex, _ d: MeshVertex, sample: CGPoint? = nil) {
+            result.append(Triangle(a: a, b: b, c: c, paperSample: sample))
+            result.append(Triangle(a: a, b: c, c: d, paperSample: sample))
+        }
+        // Every surviving cell is a rigid patch. It translates to make room for
+        // actual omitted paper; no surviving screenshot pixels become pleats.
+        for row in 0..<rows.count - 1 {
+            for column in 0..<columns.count - 1 {
+                let x0 = columns[column], x1 = columns[column + 1], y0 = rows[row], y1 = rows[row + 1]
+                let midpoint = CGPoint(x: (x0 + x1) / 2, y: (y0 + y1) / 2)
+                let restOffset = translation(at: midpoint, folds: folds, compression: 1)
+                let offset = translation(at: midpoint, folds: folds, compression: compression)
+                func vertex(_ x: CGFloat, _ y: CGFloat) -> MeshVertex {
+                    MeshVertex(source: CGPoint(x: x, y: y), rest: CGPoint(x: x + restOffset.x, y: y + restOffset.y),
+                               world: Point3(x: x + offset.x, y: y + offset.y, z: 0))
+                }
+                appendQuad(vertex(x0, y0), vertex(x1, y0), vertex(x1, y1), vertex(x0, y1))
+            }
+        }
+        // Perpendicular creases are slit into independent strips at their
+        // intersection. The central crossing is background, rather than a
+        // sheared patch produced by adding two unrelated height fields.
+        for fold in folds {
+            let horizontal = fold.join.horizontal
+            let alongEdges = horizontal ? columns : rows
+            for (start, end) in zip(alongEdges, alongEdges.dropFirst()) {
+                let midpoint = (start + end) / 2
+                guard midpoint > fold.join.start, midpoint < fold.join.end else { continue }
+                let reference = horizontal ? CGPoint(x: midpoint, y: fold.join.position - 0.00001)
+                    : CGPoint(x: fold.join.position - 0.00001, y: midpoint)
+                let restOffset = translation(at: reference, folds: folds, compression: 1)
+                let offset = translation(at: reference, folds: folds, compression: compression)
+                let sample = horizontal ? CGPoint(x: midpoint, y: fold.join.position)
+                    : CGPoint(x: fold.join.position, y: midpoint)
+                func vertex(_ along: CGFloat, _ segment: Int) -> MeshVertex {
+                    let distance = CGFloat(segment) * fold.segmentLength
+                    let height = segment.isMultiple(of: 2) ? 0 : fold.segmentLength * ridgeSlope
+                    let source = horizontal ? CGPoint(x: along, y: fold.join.position)
+                        : CGPoint(x: fold.join.position, y: along)
+                    let rest = horizontal ? CGPoint(x: along + restOffset.x, y: fold.join.position + restOffset.y + distance)
+                        : CGPoint(x: fold.join.position + restOffset.x + distance, y: along + restOffset.y)
+                    let world = horizontal ? Point3(x: along + offset.x, y: fold.join.position + offset.y + distance * compression, z: height)
+                        : Point3(x: fold.join.position + offset.x + distance * compression, y: along + offset.y, z: height)
+                    return MeshVertex(source: source, rest: rest, world: world)
+                }
+                for segment in 0..<fold.pleats * 2 {
+                    if horizontal {
+                        appendQuad(vertex(start, segment), vertex(end, segment), vertex(end, segment + 1),
+                                   vertex(start, segment + 1), sample: sample)
+                    } else {
+                        appendQuad(vertex(start, segment), vertex(start, segment + 1), vertex(end, segment + 1),
+                                   vertex(end, segment), sample: sample)
+                    }
+                }
+            }
+        }
+        return result
     }
 
     fileprivate nonisolated struct Join: Sendable {
@@ -389,7 +539,9 @@ nonisolated struct StitchAccordionProjection: Sendable {
             let horizontal = join.axis == .horizontal
             let start = max(join.start, horizontal ? bounds.minX : bounds.minY)
             let end = min(join.end, horizontal ? bounds.maxX : bounds.maxY)
-            guard start.isFinite, end.isFinite, join.position.isFinite, end > start else { return nil }
+            let normalMin = horizontal ? bounds.minY : bounds.minX, normalMax = horizontal ? bounds.maxY : bounds.maxX
+            guard start.isFinite, end.isFinite, join.position.isFinite, end > start,
+                  join.position > normalMin, join.position < normalMax else { return nil }
             return Join(horizontal: horizontal, position: join.position, start: start, end: end,
                         trimmedLength: join.trimmedLength)
         }.sorted {
@@ -397,25 +549,18 @@ nonisolated struct StitchAccordionProjection: Sendable {
             if $0.position != $1.position { return $0.position < $1.position }
             return $0.start != $1.start ? $0.start < $1.start : $0.end < $1.end
         }
-        var result: [Join] = []
-        var group: [Join] = []
+        var result: [Join] = [], group: [Join] = []
         func appendGroup() {
             guard let first = group.first else { return }
             let edges = uniqueEdges(group.flatMap { [$0.start, $0.end] })
             for index in 0..<edges.count - 1 {
-                let start = edges[index], end = edges[index + 1]
-                let midpoint = (start + end) / 2
+                let start = edges[index], end = edges[index + 1], midpoint = (edges[index] + edges[index + 1]) / 2
                 let overlapping = group.filter { $0.start < midpoint && $0.end > midpoint }
                 guard !overlapping.isEmpty else { continue }
-                // Coincident contacts describe one crease, even in a layered
-                // collage. A measured interval takes precedence over a cosmetic
-                // join. Different adjacent lengths retain their own geometry.
-                let trimmedLength = overlapping.compactMap(\.trimmedLength).max()
-                let segment = Join(horizontal: first.horizontal, position: first.position,
-                                   start: start, end: end, trimmedLength: trimmedLength)
+                let segment = Join(horizontal: first.horizontal, position: first.position, start: start, end: end,
+                                   trimmedLength: overlapping.compactMap(\.trimmedLength).max())
                 if let last = result.last, last.horizontal == segment.horizontal,
-                   abs(last.position - segment.position) < 0.001,
-                   abs(last.end - segment.start) < 0.001,
+                   abs(last.position - segment.position) < 0.001, abs(last.end - segment.start) < 0.001,
                    last.trimmedLength == segment.trimmedLength {
                     result[result.count - 1].end = end
                 } else { result.append(segment) }
@@ -424,8 +569,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         for join in joins {
             if let first = group.first,
                first.horizontal != join.horizontal || abs(first.position - join.position) >= 0.001 {
-                appendGroup()
-                group.removeAll(keepingCapacity: true)
+                appendGroup(); group.removeAll(keepingCapacity: true)
             }
             group.append(join)
         }
@@ -435,34 +579,15 @@ nonisolated struct StitchAccordionProjection: Sendable {
 
     fileprivate nonisolated struct Fold: Sendable {
         let join: Join
-        let halfWidth: CGFloat
+        let paperLength: CGFloat
         let pleats: Int
-        let startTaper: CGFloat
-        let endTaper: CGFloat
-        var segmentLength: CGFloat { halfWidth / CGFloat(pleats) }
-        var alongEdges: [CGFloat] {
-            [join.start, join.start + startTaper, join.end - endTaper, join.end]
-        }
-        init(join: Join, halfWidth: CGFloat, pleats: Int, bounds: CGRect) {
-            self.join = join
-            self.halfWidth = halfWidth
-            self.pleats = pleats
-            let taper = min(halfWidth * 1.25, (join.end - join.start) / 4)
-            startTaper = abs(join.start - (join.horizontal ? bounds.minX : bounds.minY)) < 0.001 ? 0 : taper
-            endTaper = abs(join.end - (join.horizontal ? bounds.maxX : bounds.maxY)) < 0.001 ? 0 : taper
-        }
-        func weight(at along: CGFloat) -> CGFloat {
-            guard along >= join.start, along <= join.end else { return 0 }
-            let before = startTaper > 0 ? min(1, (along - join.start) / startTaper) : 1
-            let after = endTaper > 0 ? min(1, (join.end - along) / endTaper) : 1
-            return max(0, min(before, after))
-        }
+        var segmentLength: CGFloat { paperLength / CGFloat(pleats * 2) }
     }
 
-    private nonisolated struct Point3: Sendable {
-        var x: CGFloat
-        var y: CGFloat
-        var z: CGFloat
+    nonisolated struct Point3: Sendable, Equatable {
+        let x: CGFloat
+        let y: CGFloat
+        let z: CGFloat
         static func - (a: Self, b: Self) -> Self { Self(x: a.x - b.x, y: a.y - b.y, z: a.z - b.z) }
         static func cross(_ a: Self, _ b: Self) -> Self {
             Self(x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x)
@@ -490,8 +615,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
                           z: point.y * sin(pitch) + z * cos(pitch))
         }
         func project(_ point: Point3) -> (CGPoint, CGFloat)? {
-            let rotated = rotate(point)
-            let depth = distance - rotated.z
+            let rotated = rotate(point), depth = distance - rotated.z
             guard depth.isFinite, depth > distance * 0.2 else { return nil }
             return (CGPoint(x: rotated.x * distance / depth, y: rotated.y * distance / depth), depth)
         }

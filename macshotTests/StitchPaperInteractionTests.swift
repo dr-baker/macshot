@@ -3,6 +3,68 @@ import XCTest
 
 @MainActor
 final class StitchPaperInteractionTests: XCTestCase {
+    func testHitTestingIncludesInsertedPaperBeyondCompactCanvas() throws {
+        let pixels = try XCTUnwrap(ImageProbe.solidImage(width: 600, height: 240)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: pixels)])
+        XCTAssertTrue(document.collapse(axis: .vertical, from: 100, to: 500))
+        document.style.transition = .accordion
+        document.style.accordionPerspective = 0
+        document.style.accordionYaw = 0
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+        let output = projection.outputBounds
+        let preview = StitchPaperPreviewView(frame: CGRect(x: 0, y: 0, width: output.width / 2 + 48, height: output.height / 2 + 48))
+        preview.projection = projection
+        preview.paperFrame = CGRect(x: 24, y: 24, width: output.width / 2, height: output.height / 2)
+        preview.image = NSImage(cgImage: try XCTUnwrap(StitchRenderer.render(document)), size: document.bounds.size)
+        let faces = projection.faces.filter { $0.paperSample != nil }
+        XCTAssertFalse(faces.isEmpty)
+        for face in faces {
+            let center = CGPoint(x: face.vertices.map(\.projected.x).reduce(0, +) / 3,
+                y: face.vertices.map(\.projected.y).reduce(0, +) / 3)
+            let point = CGPoint(x: 24 + (center.x - output.minX) / 2,
+                y: 24 + (output.maxY - center.y) / 2)
+            XCTAssertTrue(preview.containsPaper(at: point), "The unfolded inserted strip must accept camera dragging")
+        }
+        XCTAssertFalse(preview.containsPaper(at: CGPoint(x: 2, y: 2)))
+    }
+
+    func testOpeningAnimationKeepsPhysicalSizeAndSkipsAnInsufficientBackdrop() throws {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let pixels = try XCTUnwrap(ImageProbe.solidImage(width: 600, height: 240)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var document = StitchDocument(pieces: [StitchPiece(image: pixels)])
+        XCTAssertTrue(document.collapse(axis: .vertical, from: 100, to: 500))
+        document.style.transition = .accordion
+        document.style.accordionPerspective = 0
+        document.style.accordionYaw = 0
+        let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
+        let texture = try XCTUnwrap(StitchRenderer.render(document))
+        let paperFrame = CGRect(origin: CGPoint(x: 12, y: 12), size: projection.outputBounds.size)
+        let preview = StitchPaperPreviewView(frame: paperFrame.insetBy(dx: -12, dy: -12))
+        let effect = try XCTUnwrap(StitchAccordionCollapseView(texture: texture, document: document, frame: paperFrame))
+        XCTAssertFalse(preview.bounds.contains(effect.frame))
+        XCTAssertTrue(preview.bounds.insetBy(dx: -600, dy: -600).contains(effect.frame))
+        preview.image = NSImage(cgImage: texture, size: document.bounds.size)
+        preview.animate(texture: texture, document: document, frame: paperFrame, background: nil, viewport: preview.bounds)
+        XCTAssertTrue(preview.subviews.compactMap { $0 as? StitchAccordionCollapseView }.isEmpty,
+            "Opening paper should not be clipped or squeezed into the shorter final canvas")
+        XCTAssertNotNil(preview.image)
+        let background = try XCTUnwrap(ImageProbe.solidImage(width: 50, height: 50)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil))
+        preview.animate(texture: texture, document: document, frame: paperFrame, background: background,
+            viewport: preview.bounds.insetBy(dx: -600, dy: -600))
+        let animation = try XCTUnwrap(preview.subviews.compactMap { $0 as? StitchAccordionCollapseView }.first)
+        XCTAssertGreaterThan(animation.frame.width, paperFrame.width)
+        let backdrop = try XCTUnwrap(preview.layer?.sublayers?.first { $0.name == "stitch.accordion.backdrop" })
+        XCTAssertTrue(backdrop.frame.contains(animation.frame), "The selected background must cover the full opening envelope")
+        XCTAssertNotNil(backdrop.contents)
+        preview.cancelAnimation()
+        XCTAssertTrue(preview.subviews.compactMap { $0 as? StitchAccordionCollapseView }.isEmpty)
+        XCTAssertFalse(preview.layer?.sublayers?.contains { $0.name == "stitch.accordion.backdrop" } == true)
+        XCTAssertNotNil(preview.image)
+    }
+
     func testStationaryPaperAndBackgroundClicksKeepPreviewVisible() throws {
         let (preview, _, point) = try previewFixture()
         var edits = 0, begins = 0
@@ -96,16 +158,25 @@ final class StitchPaperInteractionTests: XCTestCase {
             XCTAssertNil(layer.animation(forKey: "transform"), "Direct manipulation must follow the pointer without an implicit animation")
             let index = try XCTUnwrap(Int(name.replacingOccurrences(of: "accordion.face.", with: "")))
             let face = next.faces[index]
-            let sx = frame.width / next.documentBounds.width, sy = frame.height / next.documentBounds.height
-            for vertex in face.vertices {
-                let local = CGPoint(x: (vertex.source.x - next.documentBounds.minX) * sx - layer.contentsRect.minX * frame.width,
-                                    y: (vertex.source.y - next.documentBounds.minY) * sy - layer.contentsRect.minY * frame.height)
+            let sx = frame.width / next.outputBounds.width, sy = frame.height / next.outputBounds.height
+            let points = face.vertices.map { vertex in
+                let point = face.paperSample == nil ? vertex.source : vertex.rest
+                return CGPoint(x: point.x * sx, y: point.y * sy)
+            }
+            let minX = try XCTUnwrap(points.map(\.x).min()), minY = try XCTUnwrap(points.map(\.y).min())
+            for (point, vertex) in zip(points, face.vertices) {
+                let local = CGPoint(x: point.x - minX, y: point.y - minY)
                 let transform = layer.transform
                 let w = local.x * transform.m14 + local.y * transform.m24 + transform.m44
                 XCTAssertEqual((local.x * transform.m11 + local.y * transform.m21 + transform.m41) / w,
-                    (vertex.projected.x - next.documentBounds.minX) * sx, accuracy: 0.00001)
+                    (vertex.projected.x - next.outputBounds.minX) * sx, accuracy: 0.00001)
                 XCTAssertEqual((local.x * transform.m12 + local.y * transform.m22 + transform.m42) / w,
-                    (vertex.projected.y - next.documentBounds.minY) * sy, accuracy: 0.00001)
+                    (vertex.projected.y - next.outputBounds.minY) * sy, accuracy: 0.00001)
+            }
+            if face.paperSample != nil {
+                XCTAssertNil(layer.contents, "Removed content must never become a paper-face texture")
+                XCTAssertNotNil(layer.backgroundColor)
+                XCTAssertEqual(layer.opacity, 1, "Inserted paper is double-sided")
             }
         }
         XCTAssertFalse(effect.acceptsFirstResponder)
@@ -267,12 +338,13 @@ final class StitchPaperInteractionTests: XCTestCase {
     private func previewFixture() throws -> (StitchPaperPreviewView, StitchDocument, CGPoint) {
         let document = try documentFixture()
         let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
-        let preview = StitchPaperPreviewView(frame: CGRect(x: 0, y: 0, width: document.bounds.width + 48, height: document.bounds.height + 48))
+        let output = projection.outputBounds
+        let preview = StitchPaperPreviewView(frame: CGRect(x: 0, y: 0, width: output.width + 48, height: output.height + 48))
         preview.projection = projection
-        preview.paperFrame = CGRect(x: 24, y: 24, width: document.bounds.width, height: document.bounds.height)
+        preview.paperFrame = CGRect(x: 24, y: 24, width: output.width, height: output.height)
         preview.image = NSImage(cgImage: try XCTUnwrap(StitchRenderer.render(document)), size: document.bounds.size)
         let mapped = try XCTUnwrap(projection.project(CGPoint(x: 35, y: 35)))
-        let point = CGPoint(x: 24 + mapped.x, y: 24 + document.bounds.height - mapped.y)
+        let point = CGPoint(x: 24 + mapped.x - output.minX, y: 24 + output.maxY - mapped.y)
         XCTAssertTrue(preview.containsPaper(at: point))
         return (preview, document, point)
     }
