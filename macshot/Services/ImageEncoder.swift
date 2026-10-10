@@ -189,7 +189,8 @@ enum ImageEncoder {
     /// Generic CGImageDestination encoder — embeds the source color profile.
     /// The CGImage already carries its display's ICC profile (e.g. Display P3).
     /// CGImageDestination embeds it automatically — no pixel conversion needed.
-    nonisolated static func encodeWithCGImageDestination(cgImage: CGImage, type: String, lossyQuality: CGFloat?) -> Data? {
+    nonisolated static func encodeWithCGImageDestination(cgImage: CGImage, type: String, lossyQuality: CGFloat?,
+                                                         pngFilter: Int? = nil) -> Data? {
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data as CFMutableData, type as CFString, 1, nil) else { return nil }
 
@@ -198,14 +199,18 @@ enum ImageEncoder {
             properties[kCGImageDestinationLossyCompressionQuality as String] = q
         }
 
+        if let pngFilter, type == "public.png" {
+            properties[kCGImagePropertyPNGDictionary as String] = [
+                kCGImagePropertyPNGCompressionFilter as String: pngFilter,
+            ]
+        }
         CGImageDestinationAddImage(dest, cgImage, properties as CFDictionary)
         return CGImageDestinationFinalize(dest) ? data as Data : nil
     }
 
     // MARK: - Clipboard
 
-    private static let clipboardGenerationLock = NSLock()
-    private static var clipboardGeneration = 0
+    private nonisolated static let clipboardGeneration = ClipboardCopyGeneration()
 
     /// No file URL: it points into our sandbox, which Teams/RDP/web apps prefer but can't read (#309, #393).
     /// Opt-in: also offer the configured format (e.g. AVIF) to apps that read it (#373).
@@ -213,20 +218,26 @@ enum ImageEncoder {
         UserDefaults.standard.bool(forKey: "clipboardIncludesImageFormat")
     }
 
-    static func copyToClipboard(_ image: NSImage) {
-        let pasteboard = NSPasteboard.general
-        let generation = beginClipboardCopy()
+    @MainActor static func copyToClipboard(_ image: NSImage,
+                                          pasteboard: NSPasteboard = .general,
+                                          completion: ((Bool) -> Void)? = nil) {
+        let generation = clipboardGeneration.beginCopy()
         let changeCount = pasteboard.changeCount
         let includeFormat = clipboardIncludesImageFormat
-        guard let prepared = try? PreparedImage(image) else { return }
+        guard let prepared = try? PreparedImage(image) else { completion?(false); return }
 
         DispatchQueue.global(qos: .userInitiated).async {
+            // Repeated copies supersede queued jobs before they allocate encoders.
+            guard clipboardGeneration.isCurrent(generation) else {
+                DispatchQueue.main.async { completion?(false) }
+                return
+            }
             let representations = clipboardRepresentations(for: prepared, includeConfiguredFormat: includeFormat)
-            guard !representations.isEmpty else { return }
-
             DispatchQueue.main.async {
-                guard isCurrentClipboardCopy(generation), pasteboard.changeCount == changeCount else { return }
+                guard !representations.isEmpty, clipboardGeneration.isCurrent(generation),
+                      pasteboard.changeCount == changeCount else { completion?(false); return }
                 writeImagePasteboard(pasteboard, representations: representations)
+                completion?(true)
             }
         }
     }
@@ -237,33 +248,73 @@ enum ImageEncoder {
     /// smaller file. Returns nothing only if PNG encoding fails.
     nonisolated static func clipboardRepresentations(for prepared: PreparedImage,
                                                      includeConfiguredFormat: Bool) -> [(type: NSPasteboard.PasteboardType, data: Data)] {
-        guard let pixels = try? prepared.pixelsForEncoding(),
-              let pngData = encodeWithCGImageDestination(cgImage: pixels, type: "public.png", lossyQuality: nil) else {
-            return []
+        guard let pixels = try? prepared.pixelsForEncoding() else { return [] }
+        let includesExtra = includeConfiguredFormat && prepared.format != .png
+        let results = ClipboardEncodingResults()
+        // The formats are independent and consume the same frozen pixels.
+        // Publish once all encoders finish, retaining the established flavor order.
+        DispatchQueue.concurrentPerform(iterations: includesExtra ? 3 : 2) { index in
+            let data: Data?
+            switch index {
+            case 0: data = encodeClipboardPNG(pixels)
+            case 1: data = encodeWithCGImageDestination(cgImage: pixels, type: "public.tiff", lossyQuality: nil)
+            default: data = prepared.encode(pixels: pixels)
+            }
+            results.store(data, at: index)
         }
+        guard let pngData = results.data(at: 0) else { return [] }
         var representations: [(type: NSPasteboard.PasteboardType, data: Data)] = []
-        if includeConfiguredFormat, prepared.format != .png,
-           let data = prepared.encode(pixels: pixels) {
+        if includesExtra, let data = results.data(at: 2) {
             representations.append((NSPasteboard.PasteboardType(prepared.format.utType.identifier), data))
         }
         representations.append((.png, pngData))
-        if let tiffData = encodeWithCGImageDestination(cgImage: pixels, type: "public.tiff", lossyQuality: nil) {
-            representations.append((.tiff, tiffData))
-        }
+        if let tiffData = results.data(at: 1) { representations.append((.tiff, tiffData)) }
         return representations
     }
 
-    private static func beginClipboardCopy() -> Int {
-        clipboardGenerationLock.lock()
-        defer { clipboardGenerationLock.unlock() }
-        clipboardGeneration += 1
-        return clipboardGeneration
+    /// Limit filter search to vertical and horizontal prediction. UP alone
+    /// compresses projected paper poorly; UP plus SUB keeps that case fast
+    /// while preserving every pixel and the color profile.
+    /// File saves retain their existing compression policy.
+    nonisolated static func encodeClipboardPNG(_ pixels: CGImage) -> Data? {
+        encodeWithCGImageDestination(cgImage: pixels, type: "public.png", lossyQuality: nil,
+                                     pngFilter: Int(IMAGEIO_PNG_FILTER_UP | IMAGEIO_PNG_FILTER_SUB))
     }
 
-    private static func isCurrentClipboardCopy(_ generation: Int) -> Bool {
-        clipboardGenerationLock.lock()
-        defer { clipboardGenerationLock.unlock() }
-        return generation == clipboardGeneration
+    private nonisolated final class ClipboardEncodingResults: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int: Data] = [:]
+
+        func store(_ data: Data?, at index: Int) {
+            lock.lock()
+            defer { lock.unlock() }
+            values[index] = data
+        }
+
+        func data(at index: Int) -> Data? {
+            lock.lock()
+            defer { lock.unlock() }
+            return values[index]
+        }
+    }
+
+    /// Queue and main-actor checks share only this locked counter.
+    private nonisolated final class ClipboardCopyGeneration: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+
+        func beginCopy() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            value += 1
+            return value
+        }
+
+        func isCurrent(_ generation: Int) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return generation == value
+        }
     }
 
     static func writeImagePasteboard(
