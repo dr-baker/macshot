@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// Samples only the already-composited flat screenshot. Source captures and
-/// removed pixels are never available to this renderer.
+/// Samples the already-composited screenshot and explicitly retained, sanitized
+/// cut textures. It never reaches back into the source captures.
 nonisolated enum StitchAccordionWarp {
     nonisolated struct PaperColor: Sendable {
         /// Premultiplied sRGB components in 0...1, matching the raster renderer.
@@ -58,11 +58,37 @@ nonisolated enum StitchAccordionWarp {
         let outputBounds = projection.outputBounds
         let outputWidth = dimensions.width, outputHeight = dimensions.height
         let scaleX = CGFloat(width) / bounds.width, scaleY = CGFloat(height) / bounds.height
+        let textureDensity = min(scaleX, scaleY)
+        var textures: [ObjectIdentifier: TextureRaster] = [:]
+        var textureScales: [ObjectIdentifier: CGFloat] = [:]
+        var texturePixels = 0
+        for face in projection.faces {
+            guard let texture = face.paperTexture else { continue }
+            guard texture.isValid, face.vertices.allSatisfy({ vertex in
+                guard let uv = vertex.paperUV else { return false }
+                return uv.x.isFinite && uv.y.isFinite && (0...1).contains(uv.x) && (0...1).contains(uv.y)
+            }) else { return nil }
+            let identity = ObjectIdentifier(texture.image)
+            guard let materialDensity = materialDensity(face) else { return nil }
+            textureScales[identity] = max(textureScales[identity] ?? 0, min(1, textureDensity / materialDensity))
+        }
+        for face in projection.faces {
+            guard let texture = face.paperTexture else { continue }
+            let identity = ObjectIdentifier(texture.image)
+            guard textures[identity] == nil, let scale = textureScales[identity] else { continue }
+            guard let size = textureRasterDimensions(width: texture.image.width, height: texture.image.height,
+                                                     outputDensity: scale) else { return nil }
+            texturePixels += size.width * size.height
+            guard texturePixels <= 100_000_000,
+                  let raster = TextureRaster(image: texture.image, width: size.width, height: size.height,
+                                             colorSpace: colorSpace) else { return nil }
+            textures[identity] = raster
+        }
         var colors: [SampleWindow: PaperColor] = [:]
         let rasterFaces = projection.faces.compactMap { face -> RasterFace? in
             guard face.isFrontFacing || face.paperSample != nil else { return nil }
             let paperColor: PaperColor?
-            if let sample = face.paperSample {
+            if face.paperTexture == nil, let sample = face.paperSample {
                 guard let window = sampleWindow(sample: sample, bounds: bounds, width: width, height: height) else { return nil }
                 if let existing = colors[window] { paperColor = existing }
                 else {
@@ -83,7 +109,8 @@ nonisolated enum StitchAccordionWarp {
             let y0 = max(0, Int(floor(min(a.y, b.y, c.y) - 0.5)))
             let y1 = min(outputHeight - 1, Int(ceil(max(a.y, b.y, c.y) + 0.5)))
             guard x1 >= x0, y1 >= y0 else { return nil }
-            return RasterFace(face: face, paperColor: paperColor, a: a, b: b, c: c, denominator: denominator,
+            let texture = face.paperTexture.flatMap { textures[ObjectIdentifier($0.image)] }
+            return RasterFace(face: face, paperColor: paperColor, texture: texture, a: a, b: b, c: c, denominator: denominator,
                               edgeA: abs(denominator) / hypot(b.x - c.x, b.y - c.y),
                               edgeB: abs(denominator) / hypot(c.x - a.x, c.y - a.y),
                               edgeC: abs(denominator) / hypot(a.x - b.x, a.y - b.y),
@@ -129,18 +156,38 @@ nonisolated enum StitchAccordionWarp {
                         nearestDepth[x] = depth
                         continue
                     }
-                    let sourceX = ((wa * face.a.source.x + wb * face.b.source.x + wc * face.c.source.x) / total - bounds.minX) * scaleX - 0.5
-                    let sourceY = ((wa * face.a.source.y + wb * face.b.source.y + wc * face.c.source.y) / total - bounds.minY) * scaleY - 0.5
-                    let sx = max(0, min(CGFloat(width - 1), sourceX)), sy = max(0, min(CGFloat(height - 1), sourceY))
+                    let sourceX: CGFloat, sourceY: CGFloat
+                    let sampleWidth: Int, sampleHeight: Int, pixels: UnsafePointer<UInt8>
+                    let minSampleX: CGFloat, maxSampleX: CGFloat, minSampleY: CGFloat, maxSampleY: CGFloat
+                    if let material = face.paperTexture, let raster = triangle.texture,
+                       let auv = face.a.paperUV, let buv = face.b.paperUV, let cuv = face.c.paperUV {
+                        let u = (wa * auv.x + wb * buv.x + wc * cuv.x) / total
+                        let v = (wa * auv.y + wb * buv.y + wc * cuv.y) / total
+                        sourceX = (material.source.minX + (material.horizontalFlipped ? 1 - u : u) * material.source.width) * raster.scaleX - 0.5
+                        sourceY = (material.source.minY + (material.verticalFlipped ? 1 - v : v) * material.source.height) * raster.scaleY - 0.5
+                        sampleWidth = raster.width; sampleHeight = raster.height; pixels = raster.pixels
+                        minSampleX = material.source.minX * raster.scaleX
+                        maxSampleX = max(minSampleX, material.source.maxX * raster.scaleX - 1)
+                        minSampleY = material.source.minY * raster.scaleY
+                        maxSampleY = max(minSampleY, material.source.maxY * raster.scaleY - 1)
+                    } else {
+                        sourceX = ((wa * face.a.source.x + wb * face.b.source.x + wc * face.c.source.x) / total - bounds.minX) * scaleX - 0.5
+                        sourceY = ((wa * face.a.source.y + wb * face.b.source.y + wc * face.c.source.y) / total - bounds.minY) * scaleY - 0.5
+                        sampleWidth = width; sampleHeight = height; pixels = UnsafePointer(input)
+                        minSampleX = 0; maxSampleX = CGFloat(width - 1)
+                        minSampleY = 0; maxSampleY = CGFloat(height - 1)
+                    }
+                    let sx = max(0, min(CGFloat(sampleWidth - 1), max(minSampleX, min(maxSampleX, sourceX))))
+                    let sy = max(0, min(CGFloat(sampleHeight - 1), max(minSampleY, min(maxSampleY, sourceY))))
                     let left = Int(floor(sx)), top = Int(floor(sy))
-                    let right = min(width - 1, left + 1), bottom = min(height - 1, top + 1)
+                    let right = min(sampleWidth - 1, left + 1), bottom = min(sampleHeight - 1, top + 1)
                     let fx = sx - CGFloat(left), fy = sy - CGFloat(top)
-                    let p00 = (top * width + left) * 4, p10 = (top * width + right) * 4
-                    let p01 = (bottom * width + left) * 4, p11 = (bottom * width + right) * 4
+                    let p00 = (top * sampleWidth + left) * 4, p10 = (top * sampleWidth + right) * 4
+                    let p01 = (bottom * sampleWidth + left) * 4, p11 = (bottom * sampleWidth + right) * 4
                     let w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy
                     func sampled(_ channel: Int) -> CGFloat {
-                        CGFloat(input[p00 + channel]) * w00 + CGFloat(input[p10 + channel]) * w10
-                            + CGFloat(input[p01 + channel]) * w01 + CGFloat(input[p11 + channel]) * w11
+                        CGFloat(pixels[p00 + channel]) * w00 + CGFloat(pixels[p10 + channel]) * w10
+                            + CGFloat(pixels[p01 + channel]) * w01 + CGFloat(pixels[p11 + channel]) * w11
                     }
                     let alpha = sampled(3) * coverage
                     let offset = (y * outputWidth + x) * 4
@@ -153,7 +200,65 @@ nonisolated enum StitchAccordionWarp {
                 }
             }
         }
-        return destination.makeImage()
+        // Raw sample pointers borrow decoded CGContext storage. Keep every
+        // owning context alive through the final scanline in optimized builds.
+        return withExtendedLifetime((source, textures)) { destination.makeImage() }
+    }
+
+    /// A bounded preview or animation never decodes a native cut strip into a
+    /// second full-size buffer. Native-density Copy keeps every captured pixel.
+    static func textureRasterDimensions(width: Int, height: Int,
+                                        outputDensity: CGFloat) -> (width: Int, height: Int)? {
+        guard width > 0, height > 0, width <= 30_000, height <= 30_000,
+              width * height <= 100_000_000, outputDensity.isFinite, outputDensity > 0 else { return nil }
+        let scale = min(1, outputDensity)
+        func extent(_ value: CGFloat) -> Int {
+            // UV/rest arithmetic can turn an exact 120px extent into
+            // 120.00000000000016. An extra pixel changes the texture's sampling
+            // grid. Snap numerical noise before preserving genuine fractions.
+            let nearest = value.rounded()
+            let snapped = abs(value - nearest) < 0.0000001 ? nearest : value
+            return max(1, Int(ceil(snapped)))
+        }
+        return (extent(CGFloat(width) * scale), extent(CGFloat(height) * scale))
+    }
+
+    /// Already-bounded animation materials have fewer pixels per physical paper
+    /// point. Their density keeps the rasterizer from downsampling them twice.
+    private static func materialDensity(_ face: StitchAccordionProjection.Face) -> CGFloat? {
+        guard let texture = face.paperTexture else { return nil }
+        guard let a = face.a.paperUV, let b = face.b.paperUV, let c = face.c.paperUV else { return nil }
+        let restWidth = max(face.a.rest.x, face.b.rest.x, face.c.rest.x) - min(face.a.rest.x, face.b.rest.x, face.c.rest.x)
+        let restHeight = max(face.a.rest.y, face.b.rest.y, face.c.rest.y) - min(face.a.rest.y, face.b.rest.y, face.c.rest.y)
+        let uvWidth = max(a.x, b.x, c.x) - min(a.x, b.x, c.x)
+        let uvHeight = max(a.y, b.y, c.y) - min(a.y, b.y, c.y)
+        guard restWidth > 0, restHeight > 0, uvWidth > 0, uvHeight > 0 else { return nil }
+        let density = min(texture.source.width * uvWidth / restWidth, texture.source.height * uvHeight / restHeight)
+        return density.isFinite && density > 0 ? density : nil
+    }
+
+    /// The CGContext retains the decoded buffer for the entire render. Faces
+    /// share one raster per material image even when their source crops differ.
+    private nonisolated struct TextureRaster {
+        let context: CGContext
+        let width: Int
+        let height: Int
+        let scaleX: CGFloat
+        let scaleY: CGFloat
+        let pixels: UnsafePointer<UInt8>
+
+        init?(image: CGImage, width: Int, height: Int, colorSpace: CGColorSpace) {
+            guard let context = CGContext(data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let data = context.data else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            self.context = context
+            self.width = width; self.height = height
+            scaleX = CGFloat(width) / CGFloat(image.width)
+            scaleY = CGFloat(height) / CGFloat(image.height)
+            pixels = UnsafePointer(data.assumingMemoryBound(to: UInt8.self))
+        }
     }
 
     private nonisolated struct SampleWindow: Hashable {
@@ -216,6 +321,7 @@ nonisolated enum StitchAccordionWarp {
     private nonisolated struct RasterFace {
         let face: StitchAccordionProjection.Face
         let paperColor: PaperColor?
+        let texture: TextureRaster?
         let a: CGPoint
         let b: CGPoint
         let c: CGPoint

@@ -60,7 +60,28 @@ struct ScreenshotPresentation {
     /// a separate output extent at the same native pixel density.
     private func prepareProjected(pixels: CGImage, sourceSize: NSSize,
                                   previous: Prepared? = nil) -> Prepared? {
-        guard let projection, let extent = Prepared.projectedExtent(
+        guard let originalProjection = projection else { return nil }
+        let projection: StitchAccordionProjection
+        var effectedPaperTextures: [ObjectIdentifier: CGImage] = [:]
+        if effects.isIdentity {
+            projection = originalProjection
+        } else {
+            guard let effected = originalProjection.mappingPaperTextures({ texture in
+                let identity = ObjectIdentifier(texture)
+                if let existing = previous?.effectedPaperTextures[identity] {
+                    effectedPaperTextures[identity] = existing
+                    return existing
+                }
+                guard let image = ImageEffects.apply(to: NSImage(cgImage: texture,
+                    size: NSSize(width: texture.width, height: texture.height)), config: effects)
+                    .cgImage(forProposedRect: nil, context: nil, hints: nil)
+                    else { return nil }
+                effectedPaperTextures[identity] = image
+                return image
+            }) else { return nil }
+            projection = effected
+        }
+        guard let extent = Prepared.projectedExtent(
             pixels: pixels, sourceSize: sourceSize, projection: projection) else { return nil }
         let background: BeautifyRenderer.PaperBackground?
         if let beautify {
@@ -77,7 +98,8 @@ struct ScreenshotPresentation {
             background = nil
         }
         return Prepared(pixels: pixels, sourceSize: sourceSize, projection: projection,
-            cornerRadius: 0, paperBackground: background, paperBackgroundConfig: beautify)
+            cornerRadius: 0, paperBackground: background, paperBackgroundConfig: beautify,
+            effectedPaperTextures: effectedPaperTextures)
     }
 
     /// Reuse only Beautify's background choice. The sheet keeps its own silhouette.
@@ -212,6 +234,7 @@ struct ScreenshotPresentation {
                         Self.matches(a.a, b.a) && Self.matches(a.b, b.b) && Self.matches(a.c, b.c)
                             && a.shade == b.shade && a.isFrontFacing == b.isFrontFacing
                             && a.boundaryEdges == b.boundaryEdges && a.paperSample == b.paperSample
+                            && Self.matches(a.paperTexture, b.paperTexture)
                     }
                 default: return false
                 }
@@ -220,6 +243,17 @@ struct ScreenshotPresentation {
             private static func matches(_ a: StitchAccordionProjection.Vertex,
                                         _ b: StitchAccordionProjection.Vertex) -> Bool {
                 a.source == b.source && a.rest == b.rest && a.projected == b.projected && a.depth == b.depth
+                    && a.paperUV == b.paperUV
+            }
+
+            private static func matches(_ a: StitchJoinTexture?, _ b: StitchJoinTexture?) -> Bool {
+                switch (a, b) {
+                case (nil, nil): return true
+                case (.some(let a), .some(let b)):
+                    return a.image === b.image && a.source == b.source
+                        && a.horizontalFlipped == b.horizontalFlipped && a.verticalFlipped == b.verticalFlipped
+                default: return false
+                }
             }
         }
 
@@ -259,6 +293,8 @@ struct ScreenshotPresentation {
 
         private static func retentionCost(key: Key, prepared: Prepared) -> (total: Int, rendered: Int)? {
             var images = [key.pixels, prepared.pixels]
+            images += key.projection?.faces.compactMap { $0.paperTexture?.image } ?? []
+            images += prepared.projection?.faces.compactMap { $0.paperTexture?.image } ?? []
             if let background = key.beautify?.background { images.append(background) }
             if let background = prepared.paperBackground { images.append(background.pixels) }
             var retained: [CGImage] = []
@@ -358,19 +394,22 @@ struct ScreenshotPresentation {
         let paperBackground: BeautifyRenderer.PaperBackground?
         private let paperBackgroundConfig: BeautifyConfig?
         private let renderedPixels: RenderedPixels?
+        fileprivate let effectedPaperTextures: [ObjectIdentifier: CGImage]
 
         init(pixels: CGImage, sourceSize: NSSize, projection: StitchAccordionProjection?,
              cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?,
-             paperBackgroundConfig: BeautifyConfig? = nil) {
+             paperBackgroundConfig: BeautifyConfig? = nil,
+             effectedPaperTextures: [ObjectIdentifier: CGImage] = [:]) {
             self.init(pixels: pixels, sourceSize: sourceSize, projection: projection,
                 cornerRadius: cornerRadius, paperBackground: paperBackground,
-                paperBackgroundConfig: paperBackgroundConfig, renderedPixels: nil)
+                paperBackgroundConfig: paperBackgroundConfig, renderedPixels: nil,
+                effectedPaperTextures: effectedPaperTextures)
         }
 
         private init(pixels: CGImage, sourceSize: NSSize, projection: StitchAccordionProjection?,
                      cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?,
                      paperBackgroundConfig: BeautifyConfig?,
-                     renderedPixels: RenderedPixels?) {
+                     renderedPixels: RenderedPixels?, effectedPaperTextures: [ObjectIdentifier: CGImage]) {
             self.pixels = pixels
             self.sourceSize = sourceSize
             self.projection = projection
@@ -378,6 +417,7 @@ struct ScreenshotPresentation {
             self.paperBackground = paperBackground
             self.paperBackgroundConfig = paperBackgroundConfig
             self.renderedPixels = renderedPixels
+            self.effectedPaperTextures = effectedPaperTextures
         }
 
         /// Point dimensions of the full projected sheet, before background padding.
@@ -392,7 +432,8 @@ struct ScreenshotPresentation {
             Self(pixels: pixels, sourceSize: sourceSize, projection: projection,
                 cornerRadius: cornerRadius, paperBackground: paperBackground,
                 paperBackgroundConfig: paperBackgroundConfig,
-                renderedPixels: RenderedPixels(maximumRetainedBytes: maximumRetainedBytes))
+                renderedPixels: RenderedPixels(maximumRetainedBytes: maximumRetainedBytes),
+                effectedPaperTextures: effectedPaperTextures)
         }
 
         /// Animation uses one envelope for all frames. Prepare the original background

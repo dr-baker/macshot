@@ -190,7 +190,7 @@ final class StitchAccordionSizingTests: XCTestCase {
         }
     }
 
-    func testProjectedOutputNeverUsesTrimmedPixels() throws {
+    func testProjectedOutputUsesSanitizedCutPixelsInsteadOfTheRemovedRawStripe() throws {
         for axis in [StitchAxis.horizontal, .vertical] {
             let image = try XCTUnwrap(ImageProbe.makeImage(width: 320, height: 320) { context in
                 context.setFillColor(NSColor(white: 0.25, alpha: 1).cgColor)
@@ -200,7 +200,10 @@ final class StitchAccordionSizingTests: XCTestCase {
                     : CGRect(x: 140, y: 0, width: 40, height: 320))
             }.cgImage(forProposedRect: nil, context: nil, hints: nil))
             var document = StitchDocument(pieces: [StitchPiece(image: image)], background: .transparent)
-            XCTAssertTrue(document.collapse(axis: axis, from: 140, to: 180))
+            let sanitized = try XCTUnwrap(ImageProbe.solidImage(width: 320, height: 320,
+                color: NSColor(white: 0.25, alpha: 1).cgColor)
+                .cgImage(forProposedRect: nil, context: nil, hints: nil))
+            XCTAssertTrue(document.collapse(axis: axis, from: 140, to: 180, texture: sanitized))
             document.style.transition = .accordion
             let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
             let flat = try XCTUnwrap(StitchRenderer.render(document))
@@ -213,7 +216,7 @@ final class StitchAccordionSizingTests: XCTestCase {
                 let blue: UInt8 = pixels[offset + 2]
                 if red != green || green != blue { coloredPixels += 1 }
             }
-            XCTAssertEqual(coloredPixels, 0, "The omitted red strip must never appear on a folded face")
+            XCTAssertEqual(coloredPixels, 0, "The original red stripe must stay hidden beneath the composited censor")
         }
     }
 

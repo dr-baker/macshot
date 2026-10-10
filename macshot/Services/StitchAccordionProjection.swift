@@ -46,6 +46,9 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let source: CGPoint
         /// Position on the full unfolded sheet, including the omitted paper.
         let rest: CGPoint
+        /// Unflipped coordinates within the cut-strip material, in 0...1.
+        /// Surviving content continues to use `source` in the compact image.
+        let paperUV: CGPoint?
         /// Deformed paper before the camera transform, in document points.
         let world: Point3
         let projected: CGPoint
@@ -61,9 +64,11 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let isFrontFacing: Bool
         /// Bit 0 is edge b-c, bit 1 c-a, and bit 2 a-b. Only exterior edges need antialiasing.
         let boundaryEdges: Int
-        /// Omitted paper uses a dominant color sampled from this safe compact seam.
-        /// Its source triangle is intentionally degenerate: it contains no removed pixels.
+        /// Fallback material location for joins without a retained cut texture.
+        /// `source` remains degenerate on inserted paper for document interaction.
         let paperSample: CGPoint?
+        /// An immutable, sanitized cut strip. Its printed pixels deform with the paper.
+        let paperTexture: StitchJoinTexture?
 
         var vertices: [Vertex] { [a, b, c] }
         var projectedBounds: CGRect {
@@ -110,8 +115,8 @@ nonisolated struct StitchAccordionProjection: Sendable {
         }
     }
 
-    /// Validated geometry without captured pixels or UI objects. Reusing it for
-    /// animation frames avoids repeated join merging and mesh edge collection.
+    /// Validated geometry and immutable cut materials, without UI objects.
+    /// Animation frames retain the same sanitized printed strips.
     nonisolated struct Source: Sendable {
         let documentBounds: CGRect
         let unfoldedBounds: CGRect
@@ -119,6 +124,15 @@ nonisolated struct StitchAccordionProjection: Sendable {
         fileprivate let folds: [Fold]
         fileprivate let columns: [CGFloat]
         fileprivate let rows: [CGFloat]
+
+        fileprivate init(copying source: Self, folds: [Fold], camera: StitchPaperCamera? = nil) {
+            documentBounds = source.documentBounds
+            unfoldedBounds = source.unfoldedBounds
+            self.camera = camera ?? source.camera
+            self.folds = folds
+            columns = source.columns
+            rows = source.rows
+        }
 
         @MainActor
         init?(document: StitchDocument) {
@@ -184,6 +198,18 @@ nonisolated struct StitchAccordionProjection: Sendable {
         func projection(progress: CGFloat = 1) -> StitchAccordionProjection? {
             StitchAccordionProjection(source: self, progress: progress)
         }
+
+        /// Freeze bounded printed materials once for an animation or live layer
+        /// preview. Geometry and physical removed lengths remain native-sized.
+        func resizingPaperTextures(maxDimension: Int) -> Self? {
+            guard let mapping = StitchAccordionProjection.resizedMaterials(folds, maxDimension: maxDimension) else { return nil }
+            return Self(copying: self, folds: mapping.folds(folds))
+        }
+
+        /// A camera drag reuses the validated topology and bounded materials.
+        func withCamera(_ camera: StitchPaperCamera) -> Self {
+            Self(copying: self, folds: folds, camera: camera)
+        }
     }
 
     let source: Source
@@ -233,7 +259,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let rawMinY = projectedPoints.map(\.y).min()!, rawMaxY = projectedPoints.map(\.y).max()!
         let rawCenter = CGPoint(x: (rawMinX + rawMaxX) / 2, y: (rawMinY + rawMaxY) / 2)
         func vertex(_ value: MeshVertex, _ projected: (CGPoint, CGFloat)) -> Vertex {
-            Vertex(source: value.source, rest: value.rest, world: value.world,
+            Vertex(source: value.source, rest: value.rest, paperUV: value.paperUV, world: value.world,
                    projected: CGPoint(x: bounds.midX + projected.0.x - rawCenter.x,
                                       y: bounds.midY + projected.0.y - rawCenter.y), depth: projected.1)
         }
@@ -255,7 +281,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
             let mask = (edgeCounts[edges[0]] == 1 ? 1 : 0)
                 | (edgeCounts[edges[1]] == 1 ? 2 : 0) | (edgeCounts[edges[2]] == 1 ? 4 : 0)
             return Face(a: a, b: b, c: c, shade: shade, isFrontFacing: winding > 0.000000001,
-                        boundaryEdges: mask, paperSample: triangle.paperSample)
+                        boundaryEdges: mask, paperSample: triangle.paperSample, paperTexture: triangle.paperTexture)
         }
         let naturalBounds = CGRect(x: bounds.midX + rawMinX - rawCenter.x,
                                    y: bounds.midY + rawMinY - rawCenter.y,
@@ -292,6 +318,107 @@ nonisolated struct StitchAccordionProjection: Sendable {
         var result = self
         result.outputBounds = envelope.integral
         return result
+    }
+
+    /// Prepare image effects once for every unique printed strip. The camera,
+    /// mesh, framing and UV coordinates are unchanged. A failed effect cannot
+    /// fall back to the uneffected pixels.
+    func mappingPaperTextures(_ transform: (CGImage) -> CGImage?) -> Self? {
+        guard let mapping = Self.mappedMaterials(source.folds, preservingSize: true, transform) else { return nil }
+        return replacingMaterials(mapping)
+    }
+
+    /// Layer previews and movie exports need only bounded printed images.
+    /// Native Copy retains the original projection and native cut textures.
+    func resizingPaperTextures(maxDimension: Int) -> Self? {
+        guard let mapping = Self.resizedMaterials(source.folds, maxDimension: maxDimension) else { return nil }
+        return replacingMaterials(mapping)
+    }
+
+    private func replacingMaterials(_ mapping: MaterialMapping) -> Self {
+        let faces = faces.map { face in
+            Face(a: face.a, b: face.b, c: face.c, shade: face.shade, isFrontFacing: face.isFrontFacing,
+                 boundaryEdges: face.boundaryEdges, paperSample: face.paperSample,
+                 paperTexture: mapping.material(face.paperTexture))
+        }
+        return Self(copying: self, source: Source(copying: source, folds: mapping.folds(source.folds)), faces: faces)
+    }
+
+    private nonisolated struct MaterialMapping {
+        let images: [ObjectIdentifier: CGImage]
+
+        func material(_ texture: StitchJoinTexture?) -> StitchJoinTexture? {
+            guard let texture, let image = images[ObjectIdentifier(texture.image)] else { return nil }
+            let source: CGRect
+            if image.width == texture.image.width && image.height == texture.image.height {
+                source = texture.source
+            } else {
+                let scale = CGAffineTransform(scaleX: CGFloat(image.width) / CGFloat(texture.image.width),
+                                              y: CGFloat(image.height) / CGFloat(texture.image.height))
+                source = texture.source.applying(scale).intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            }
+            return StitchJoinTexture(image: image, source: source,
+                                     horizontalFlipped: texture.horizontalFlipped,
+                                     verticalFlipped: texture.verticalFlipped)
+        }
+
+        func folds(_ input: [Fold]) -> [Fold] {
+            input.map { fold in
+                Fold(join: Join(horizontal: fold.join.horizontal, position: fold.join.position,
+                                start: fold.join.start, end: fold.join.end,
+                                trimmedLength: fold.join.trimmedLength, texture: material(fold.join.texture)),
+                     paperLength: fold.paperLength, pleats: fold.pleats)
+            }
+        }
+    }
+
+    private static func mappedMaterials(_ folds: [Fold], preservingSize: Bool,
+                                        _ transform: (CGImage) -> CGImage?) -> MaterialMapping? {
+        var mapped: [ObjectIdentifier: CGImage] = [:]
+        var pixels = 0
+        for fold in folds {
+            guard let texture = fold.join.texture else { continue }
+            guard texture.isValid else { return nil }
+            let identity = ObjectIdentifier(texture.image)
+            guard mapped[identity] == nil else { continue }
+            guard let result = transform(texture.image), result.width > 0, result.height > 0,
+                  result.width <= 30_000, result.height <= 30_000,
+                  !preservingSize || (result.width == texture.image.width && result.height == texture.image.height)
+            else { return nil }
+            pixels += result.width * result.height
+            guard pixels <= 100_000_000 else { return nil }
+            mapped[identity] = result
+        }
+        return MaterialMapping(images: mapped)
+    }
+
+    private static func resizedMaterials(_ folds: [Fold], maxDimension: Int) -> MaterialMapping? {
+        guard maxDimension > 0, maxDimension <= 30_000 else { return nil }
+        return mappedMaterials(folds, preservingSize: false) { image in
+            let scale = min(1, CGFloat(maxDimension) / CGFloat(max(image.width, image.height)))
+            guard scale < 1 else { return image }
+            guard let dimensions = StitchAccordionWarp.textureRasterDimensions(width: image.width, height: image.height,
+                                                                               outputDensity: scale) else { return nil }
+            let width = dimensions.width, height = dimensions.height
+            guard let context = CGContext(data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return context.makeImage()
+        }
+    }
+
+    private init(copying projection: Self, source: Source, faces: [Face]) {
+        self.source = source
+        documentBounds = projection.documentBounds
+        outputBounds = projection.outputBounds
+        hasProjectedOutput = projection.hasProjectedOutput
+        self.faces = faces
+        drawingOrder = projection.drawingOrder
+        columns = projection.columns
+        rows = projection.rows
     }
 
     func project(_ point: CGPoint) -> CGPoint? {
@@ -429,6 +556,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
     private nonisolated struct MeshVertex {
         let source: CGPoint
         let rest: CGPoint
+        let paperUV: CGPoint?
         let world: Point3
     }
 
@@ -437,6 +565,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let b: MeshVertex
         let c: MeshVertex
         let paperSample: CGPoint?
+        let paperTexture: StitchJoinTexture?
         var edges: [EdgeKey] { [EdgeKey(b.world, c.world), EdgeKey(c.world, a.world), EdgeKey(a.world, b.world)] }
     }
 
@@ -466,9 +595,10 @@ nonisolated struct StitchAccordionProjection: Sendable {
     private static func mesh(bounds: CGRect, folds: [Fold], columns: [CGFloat], rows: [CGFloat],
                              compression: CGFloat, ridgeSlope: CGFloat) -> [Triangle] {
         var result: [Triangle] = []
-        func appendQuad(_ a: MeshVertex, _ b: MeshVertex, _ c: MeshVertex, _ d: MeshVertex, sample: CGPoint? = nil) {
-            result.append(Triangle(a: a, b: b, c: c, paperSample: sample))
-            result.append(Triangle(a: a, b: c, c: d, paperSample: sample))
+        func appendQuad(_ a: MeshVertex, _ b: MeshVertex, _ c: MeshVertex, _ d: MeshVertex,
+                        sample: CGPoint? = nil, texture: StitchJoinTexture? = nil) {
+            result.append(Triangle(a: a, b: b, c: c, paperSample: sample, paperTexture: texture))
+            result.append(Triangle(a: a, b: c, c: d, paperSample: sample, paperTexture: texture))
         }
         // Every surviving cell is a rigid patch. It translates to make room for
         // actual omitted paper; no surviving screenshot pixels become pleats.
@@ -479,7 +609,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
                 let restOffset = translation(at: midpoint, folds: folds, compression: 1)
                 let offset = translation(at: midpoint, folds: folds, compression: compression)
                 func vertex(_ x: CGFloat, _ y: CGFloat) -> MeshVertex {
-                    MeshVertex(source: CGPoint(x: x, y: y), rest: CGPoint(x: x + restOffset.x, y: y + restOffset.y),
+                    MeshVertex(source: CGPoint(x: x, y: y), rest: CGPoint(x: x + restOffset.x, y: y + restOffset.y), paperUV: nil,
                                world: Point3(x: x + offset.x, y: y + offset.y, z: 0))
                 }
                 appendQuad(vertex(x0, y0), vertex(x1, y0), vertex(x1, y1), vertex(x0, y1))
@@ -509,15 +639,18 @@ nonisolated struct StitchAccordionProjection: Sendable {
                         : CGPoint(x: fold.join.position + restOffset.x + distance, y: along + restOffset.y)
                     let world = horizontal ? Point3(x: along + offset.x, y: fold.join.position + offset.y + distance * compression, z: height)
                         : Point3(x: fold.join.position + offset.x + distance * compression, y: along + offset.y, z: height)
-                    return MeshVertex(source: source, rest: rest, world: world)
+                    let tangent = max(0, min(1, (along - fold.join.start) / (fold.join.end - fold.join.start)))
+                    let normal = max(0, min(1, distance / fold.paperLength))
+                    let uv = horizontal ? CGPoint(x: tangent, y: normal) : CGPoint(x: normal, y: tangent)
+                    return MeshVertex(source: source, rest: rest, paperUV: uv, world: world)
                 }
                 for segment in 0..<fold.pleats * 2 {
                     if horizontal {
                         appendQuad(vertex(start, segment), vertex(end, segment), vertex(end, segment + 1),
-                                   vertex(start, segment + 1), sample: sample)
+                                   vertex(start, segment + 1), sample: sample, texture: fold.join.texture)
                     } else {
                         appendQuad(vertex(start, segment), vertex(start, segment + 1), vertex(end, segment + 1),
-                                   vertex(end, segment), sample: sample)
+                                   vertex(end, segment), sample: sample, texture: fold.join.texture)
                     }
                 }
             }
@@ -531,6 +664,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let start: CGFloat
         var end: CGFloat
         let trimmedLength: CGFloat?
+        let texture: StitchJoinTexture?
     }
 
     @MainActor
@@ -543,7 +677,9 @@ nonisolated struct StitchAccordionProjection: Sendable {
             guard start.isFinite, end.isFinite, join.position.isFinite, end > start,
                   join.position > normalMin, join.position < normalMax else { return nil }
             return Join(horizontal: horizontal, position: join.position, start: start, end: end,
-                        trimmedLength: join.trimmedLength)
+                        trimmedLength: join.trimmedLength,
+                        texture: croppedTexture(join.texture, horizontal: horizontal, from: join.start, to: join.end,
+                                                start: start, end: end))
         }.sorted {
             if $0.horizontal != $1.horizontal { return $0.horizontal }
             if $0.position != $1.position { return $0.position < $1.position }
@@ -557,11 +693,17 @@ nonisolated struct StitchAccordionProjection: Sendable {
                 let start = edges[index], end = edges[index + 1], midpoint = (edges[index] + edges[index + 1]) / 2
                 let overlapping = group.filter { $0.start < midpoint && $0.end > midpoint }
                 guard !overlapping.isEmpty else { continue }
+                let length = overlapping.compactMap(\.trimmedLength).max()
+                let printed = overlapping.first { $0.trimmedLength == length && $0.texture != nil }
                 let segment = Join(horizontal: first.horizontal, position: first.position, start: start, end: end,
-                                   trimmedLength: overlapping.compactMap(\.trimmedLength).max())
+                                   trimmedLength: length,
+                                   texture: printed.flatMap {
+                                       croppedTexture($0.texture, horizontal: $0.horizontal, from: $0.start, to: $0.end,
+                                                      start: start, end: end)
+                                   })
                 if let last = result.last, last.horizontal == segment.horizontal,
                    abs(last.position - segment.position) < 0.001, abs(last.end - segment.start) < 0.001,
-                   last.trimmedLength == segment.trimmedLength {
+                   last.trimmedLength == segment.trimmedLength, last.texture == nil, segment.texture == nil {
                     result[result.count - 1].end = end
                 } else { result.append(segment) }
             }
@@ -575,6 +717,17 @@ nonisolated struct StitchAccordionProjection: Sendable {
         }
         appendGroup()
         return result
+    }
+
+    /// Splitting a tangent interval must split the printed crop with it. A flipped
+    /// interval selects the opposite end of the image while keeping UV unflipped.
+    private static func croppedTexture(_ texture: StitchJoinTexture?, horizontal: Bool,
+                                       from originalStart: CGFloat, to originalEnd: CGFloat,
+                                       start: CGFloat, end: CGFloat) -> StitchJoinTexture? {
+        guard let texture, texture.isValid else { return nil }
+        let join = StitchJoin(axis: horizontal ? .horizontal : .vertical, position: 0,
+                              start: originalStart, end: originalEnd, texture: texture)
+        return texture.restricted(from: start, to: end, within: join)
     }
 
     fileprivate nonisolated struct Fold: Sendable {
