@@ -231,7 +231,7 @@ extension OverlayView {
         UserDefaults.standard.set(pngData, forKey: "beautifyCustomBgImageData")
         UserDefaults.standard.set(wallpaperID, forKey: "beautifyWallpaperID")
         beautifyWallpaperID = wallpaperID
-        customBeautifyBackground = image
+        replaceCustomBeautifyBackground(image, originalPNG: pngData)
         prepareBeautifyBackgroundCache()
         beautifyStyleIndex = -1
         UserDefaults.standard.set(-1, forKey: "beautifyStyleIndex")
@@ -265,7 +265,7 @@ extension OverlayView {
     func loadCustomBeautifyBackground() {
         guard let data = UserDefaults.standard.data(forKey: "beautifyCustomBgImageData"),
               let image = NSImage(data: data) else { return }
-        customBeautifyBackground = image
+        replaceCustomBeautifyBackground(image, originalPNG: data)
         prepareBeautifyBackgroundCache()
     }
 

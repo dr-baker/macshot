@@ -1,5 +1,6 @@
 import AVFoundation
 import Cocoa
+import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor
@@ -500,6 +501,8 @@ class OverlayView: NSView {
         didSet {
             beautifyBackgroundSelection.invalidate()
             cachedBeautifyBgCGImage = nil
+            cachedBeautifyBackgroundPNG = nil
+            beautifyBackgroundPNGPrepared = false
         }
     }
     var beautifyBackgroundBlur: CGFloat = UserDefaults.standard.object(forKey: "beautifyBgBlur") as? CGFloat ?? 0 {
@@ -509,6 +512,48 @@ class OverlayView: NSView {
         }
     }
     private var cachedBeautifyBgCGImage: CGImage?
+    /// Original wallpaper bytes for editable history. Keep these independently
+    /// from the blurred drawing cache and invalidate only on image assignment.
+    private var cachedBeautifyBackgroundPNG: Data?
+    private var beautifyBackgroundPNGPrepared = false
+
+    func beautifyBackgroundPNGForHistory() -> Data? {
+        guard let image = customBeautifyBackground else { return nil }
+        if !beautifyBackgroundPNGPrepared {
+            // Installed backgrounds are immutable between assignments. Encode
+            // native source pixels once, including a failed preparation attempt.
+            beautifyBackgroundPNGPrepared = true
+            if let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                cachedBeautifyBackgroundPNG = ImageEncoder.encodeWithCGImageDestination(
+                    cgImage: pixels, type: "public.png", lossyQuality: nil)
+            }
+        }
+        return cachedBeautifyBackgroundPNG
+    }
+
+    /// Replace the image and seed its original PNG together, before callbacks
+    /// can request edit state. Callers supply the bytes used to load this image.
+    func replaceCustomBeautifyBackground(_ image: NSImage?, originalPNG: Data? = nil) {
+        customBeautifyBackground = image
+        guard let image, let data = originalPNG,
+              data.count <= SavedCaptureValidation.maximumImageBytes,
+              // ImageIO can report complete after IDAT even without IEND.
+              // Re-encode truncated input instead of retaining it in history.
+              data.suffix(12).elementsEqual([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]),
+              let source = CGImageSourceCreateWithData(data as CFData,
+                [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetType(source) as String? == "public.png",
+              CGImageSourceGetCount(source) == 1,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+              let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              Double(pixels.width) * Double(pixels.height) <= Double(SavedCaptureValidation.maximumImagePixels),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+              width.intValue == pixels.width, height.intValue == pixels.height else { return }
+        cachedBeautifyBackgroundPNG = data
+        beautifyBackgroundPNGPrepared = true
+    }
 
     func prepareBeautifyBackgroundCache() {
         guard let bg = customBeautifyBackground else { return }
@@ -527,7 +572,7 @@ class OverlayView: NSView {
         guard beautifyStyleIndex == -1, customBeautifyBackground == nil else { return }
         if let data = UserDefaults.standard.data(forKey: "beautifyCustomBgImageData"),
            let img = NSImage(data: data) {
-            customBeautifyBackground = img
+            replaceCustomBeautifyBackground(img, originalPNG: data)
             prepareBeautifyBackgroundCache()
         }
     }

@@ -113,12 +113,7 @@ extension CaptureEditState {
 
 extension OverlayView {
     func captureEditState() -> CaptureEditState {
-        let customBackgroundData: Data? = {
-            guard beautifyStyleIndex == -1, let image = customBeautifyBackground else { return nil }
-            guard let tiff = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
-            return bitmap.representation(using: .png, properties: [:])
-        }()
+        let customBackgroundData = beautifyStyleIndex == -1 ? beautifyBackgroundPNGForHistory() : nil
 
         return CaptureEditState(
             effectsPresetRaw: effectsPreset.rawValue,
@@ -158,7 +153,8 @@ extension OverlayView {
         beautifyShadowRadius = CGFloat(state.beautifyShadowRadius)
         beautifyBackgroundBlur = CGFloat(state.beautifyBackgroundBlur)
         selectionIsWindowSnap = state.beautifyIsWindowSnap
-        customBeautifyBackground = state.customBeautifyBackground
+        replaceCustomBeautifyBackground(state.customBeautifyBackground,
+            originalPNG: state.customBeautifyBackgroundPNG)
         beautifyWallpaperID = state.beautifyWallpaperID
         if customBeautifyBackground != nil {
             prepareBeautifyBackgroundCache()
