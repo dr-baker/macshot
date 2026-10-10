@@ -24,7 +24,8 @@ extension StitchDocument {
         default: return false
         }
         return zip(pieces, other.pieces).allSatisfy { a, b in
-            a.id == b.id && a.lineageID == b.lineageID && a.image === b.image && a.source == b.source && a.origin == b.origin && a.label == b.label
+            a.id == b.id && a.lineageID == b.lineageID && a.image === b.image && a.source == b.source
+                && a.origin == b.origin && a.label == b.label && a.trimStamps == b.trimStamps
         }
     }
 
@@ -53,6 +54,10 @@ extension StitchDocument {
             replacement.id = piece.id
             replacement.lineageID = piece.lineageID
             replacement.source = piece.source
+            replacement.trimStamps = piece.trimStamps.map {
+                $0.mirrored(horizontal: horizontal,
+                            imageSize: CGSize(width: piece.image.width, height: piece.image.height))
+            }
             if horizontal {
                 replacement.origin.x = rasterBounds.minX + rasterBounds.maxX - piece.frame.maxX
                 replacement.source.origin.x = CGFloat(piece.image.width) - piece.source.maxX

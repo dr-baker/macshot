@@ -72,13 +72,13 @@ private enum StitchSeamParameter: Int, CaseIterable {
             : String(format: "%.1f px", Double(value))
     }
 
-    static func visible(for transition: StitchTransition) -> [Self] {
+    static func visible(for transition: StitchTransition, hasUnmeasuredAccordionJoins: Bool) -> [Self] {
         switch transition {
         case .wave, .breakLine: return [.blur, .feather, .lineWidth, .shape]
         case .blend: return [.blur, .feather]
         case .torn: return [.tearWidth, .shape]
         case .fold: return [.foldDepth, .foldStrength]
-        case .accordion: return [.accordionWidth, .accordionPleats]
+        case .accordion: return hasUnmeasuredAccordionJoins ? [.accordionWidth, .accordionPleats] : [.accordionPleats]
         }
     }
 }
@@ -216,7 +216,7 @@ final class StitchEditorController: NSObject {
                 guard self.commitDocument(next) else { return }
                 self.canvas.selectedID = nil
                 self.refresh(); self.showFeedback(L("Space collapsed. Undo restores the original pieces."))
-                if next.style.visible && next.style.transition == .accordion && next.style.accordionWidth > 0 {
+                if next.hasAccordionFolds {
                     self.animatesNextPaperPreview = true
                     self.editorView?.stitchPreviewEnabled = true
                     self.schedulePaperPreview()
@@ -520,7 +520,7 @@ final class StitchEditorController: NSObject {
     }
     private func syncSeamControls() {
         let s = document.style
-        let parameters = StitchSeamParameter.visible(for: s.transition)
+        let parameters = visibleSeamParameters
         let hasColor = s.transition.hasEditableColor
         if !s.visible { PopoverHelper.moveFocusBeforeChanging(seamStylePicker) }
         if !hasColor || !s.visible { PopoverHelper.moveFocusBeforeChanging(color) }
@@ -1020,7 +1020,7 @@ final class StitchEditorController: NSObject {
     }
     @objc private func changeStyle(_ sender: NSSlider) {
         guard document.style.visible, let parameter = StitchSeamParameter(rawValue: sender.tag),
-              StitchSeamParameter.visible(for: document.style.transition).contains(parameter) else { return }
+              visibleSeamParameters.contains(parameter) else { return }
         let keyPath = parameter.keyPath(for: document.style.transition)
         let value = parameter == .accordionPleats ? sender.doubleValue.rounded() : sender.doubleValue
         if adjustingStyle {
@@ -1033,6 +1033,13 @@ final class StitchEditorController: NSObject {
         values[sender.tag].stringValue = parameter.formattedValue(value)
         scheduleRender()
     }
+
+    private var visibleSeamParameters: [StitchSeamParameter] {
+        StitchSeamParameter.visible(for: document.style.transition,
+            hasUnmeasuredAccordionJoins: document.style.transition == .accordion
+                && document.joins.contains { $0.trimmedLength == nil })
+    }
+
     private func selectSeamTransition(_ transition: StitchTransition) {
         guard document.style.visible, document.style.transition != transition else { return }
         editorView?.previewStitchSeamColor(nil)

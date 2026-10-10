@@ -58,8 +58,7 @@ class ImageEditingView: OverlayView, NSMenuItemValidation {
     }
     var canPreviewStitchPaper: Bool {
         guard let document = stitchDocument else { return false }
-        return document.style.visible && document.style.transition == .accordion
-            && document.style.accordionWidth > 0 && !document.joins.isEmpty
+        return document.hasAccordionFolds
     }
     var onStitchToolChanged: ((Bool) -> Void)?
     var onStitchOptions: ((StitchOptionsAction, NSView) -> Void)?

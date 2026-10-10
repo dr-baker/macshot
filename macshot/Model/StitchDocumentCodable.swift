@@ -11,6 +11,33 @@ struct SavedStitchDocument: Codable, Equatable {
         var source: [CGFloat]
         var origin: [CGFloat]
         var label: String
+        var trimStamps: [StitchTrimStamp]
+
+        private enum CodingKeys: String, CodingKey {
+            case id, lineageID, imageIndex, source, origin, label, trimStamps
+        }
+
+        init(id: UUID, lineageID: UUID, imageIndex: Int, source: [CGFloat], origin: [CGFloat],
+             label: String, trimStamps: [StitchTrimStamp] = []) {
+            self.id = id
+            self.lineageID = lineageID
+            self.imageIndex = imageIndex
+            self.source = source
+            self.origin = origin
+            self.label = label
+            self.trimStamps = trimStamps
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            id = try values.decode(UUID.self, forKey: .id)
+            lineageID = try values.decode(UUID.self, forKey: .lineageID)
+            imageIndex = try values.decode(Int.self, forKey: .imageIndex)
+            source = try values.decode([CGFloat].self, forKey: .source)
+            origin = try values.decode([CGFloat].self, forKey: .origin)
+            label = try values.decode(String.self, forKey: .label)
+            trimStamps = try values.decodeIfPresent([StitchTrimStamp].self, forKey: .trimStamps) ?? []
+        }
     }
     var images: [Data]
     var pieces: [Piece]
@@ -104,7 +131,7 @@ struct SavedStitchDocument: Codable, Equatable {
             }
             pieces.append(Piece(id: piece.id, lineageID: piece.lineageID, imageIndex: index,
                 source: [piece.source.minX, piece.source.minY, piece.source.width, piece.source.height],
-                origin: [piece.origin.x, piece.origin.y], label: piece.label))
+                origin: [piece.origin.x, piece.origin.y], label: piece.label, trimStamps: piece.trimStamps))
         }
         imageData.removeAll { cached in !sources.contains(where: { $0 === cached.image }) }
         self.images = images
@@ -139,6 +166,8 @@ struct SavedStitchDocument: Codable, Equatable {
         guard !pieces.isEmpty, pieces.count <= StitchDocument.maximumPieces,
               !images.isEmpty, images.count <= pieces.count,
               Set(pieces.map(\.id)).count == pieces.count,
+              pieces.reduce(0, { $0 + $1.trimStamps.count }) <= StitchDocument.maximumTrimStamps,
+              pieces.allSatisfy({ $0.trimStamps.count <= StitchPiece.maximumTrimStamps }),
               images.reduce(0, { $0 + min($1.count, SavedCaptureValidation.maximumImageBytes + 1) }) <= SavedCaptureValidation.maximumImageBytes,
               [lineWidth, wave, blur, feather, tearWidth, tearRoughness, foldDepth, foldStrength, breakSize, packingLength].allSatisfy({ $0.isFinite && $0 >= 0 }),
               lineWidth <= 100, wave <= 100, blur <= 100, feather <= 4096,
@@ -174,11 +203,13 @@ struct SavedStitchDocument: Codable, Equatable {
                   let origin = SavedCaptureValidation.point(piece.origin),
                   source.width >= 1, source.height >= 1,
                   source == source.integral,
+                  piece.trimStamps.allSatisfy({ $0.isValid(on: source) }),
                   CGRect(x: 0, y: 0, width: pixels[piece.imageIndex].width, height: pixels[piece.imageIndex].height).contains(source) else { return nil }
             var next = StitchPiece(image: pixels[piece.imageIndex], origin: origin, label: piece.label)
             next.id = piece.id
             next.lineageID = piece.lineageID
             next.source = source
+            next.trimStamps = piece.trimStamps
             restored.append(next)
         }
         let fill: StitchBackground
