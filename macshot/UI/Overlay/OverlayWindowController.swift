@@ -268,9 +268,10 @@ class OverlayWindowController {
                 guard let self, let view else { return false }
                 self.applyingStitchChange = true
                 defer { self.applyingStitchChange = false }
+                let reusesFlatImage = view.stitchDocument?.hasSameAccordionPixels(as: document) == true
                 let applied = view.applyStitchDocument(document, registerUndo: registerUndo)
                 if applied {
-                    self.updateStitchAnnotations()
+                    if !reusesFlatImage { self.updateStitchAnnotations() }
                     self.stitchController?.updateUndoState()
                 }
                 return applied
@@ -771,7 +772,9 @@ class OverlayWindowController {
 
     private func capturePresentedImage() -> NSImage? {
         guard let snapshot = capturePresentationInput(),
-              let image = snapshot.presentation.render(snapshot.image) else {
+              let view = overlayView,
+              let image = view.presentationCache.render(snapshot.presentation, image: snapshot.image,
+                  document: view.stitchDocument) else {
             overlayView?.showOverlayError(L("Unable to render this canvas. Reduce its size and try again."))
             return nil
         }

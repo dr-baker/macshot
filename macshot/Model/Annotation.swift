@@ -139,37 +139,39 @@ enum ArrowStyle: Int, CaseIterable {
 }
 
 class Annotation {
+    /// Changes to rendered state invalidate capture reuse, including model-only edits.
+    private(set) var renderRevision: UInt64 = 0
     let tool: AnnotationTool
-    var startPoint: NSPoint
-    var endPoint: NSPoint
-    var color: NSColor
-    var strokeWidth: CGFloat
-    var text: String?
-    var attributedText: NSAttributedString?  // rich text (overrides text + style flags)
-    var number: Int?
-    var numberFormat: NumberFormat = .decimal
-    var points: [NSPoint]?
-    var pressures: [CGFloat]?  // per-point pressure (parallel to points), nil = uniform width
-    var sourceImage: NSImage?    // current canvas source for later censor/loupe edits
-    var sourceImageBounds: NSRect = .zero  // the bounds the image was drawn into
-    var bakedBlurNSImage: NSImage?    // baked result for pixelate/blur (NSImage avoids CGImage flip issues)
-    var stitchAttachment: StitchAnnotationAttachment?
+    var startPoint: NSPoint { didSet { renderRevision &+= 1 } }
+    var endPoint: NSPoint { didSet { renderRevision &+= 1 } }
+    var color: NSColor { didSet { renderRevision &+= 1 } }
+    var strokeWidth: CGFloat { didSet { renderRevision &+= 1 } }
+    var text: String? { didSet { renderRevision &+= 1 } }
+    var attributedText: NSAttributedString? { didSet { renderRevision &+= 1 } }  // rich text (overrides text + style flags)
+    var number: Int? { didSet { renderRevision &+= 1 } }
+    var numberFormat: NumberFormat = .decimal { didSet { renderRevision &+= 1 } }
+    var points: [NSPoint]? { didSet { renderRevision &+= 1 } }
+    var pressures: [CGFloat]? { didSet { renderRevision &+= 1 } }  // per-point pressure (parallel to points), nil = uniform width
+    var sourceImage: NSImage? { didSet { renderRevision &+= 1 } }  // current canvas source for later censor/loupe edits
+    var sourceImageBounds: NSRect = .zero { didSet { renderRevision &+= 1 } }  // the bounds the image was drawn into
+    var bakedBlurNSImage: NSImage? { didSet { renderRevision &+= 1 } }  // baked result for pixelate/blur (NSImage avoids CGImage flip issues)
+    var stitchAttachment: StitchAnnotationAttachment? { didSet { renderRevision &+= 1 } }
     var outlineGlowImage: NSImage?   // cached selection outline glow (invalidated on move/change)
     var outlineGlowRect: NSRect = .zero  // the rect the cached glow covers
-    var textImage: NSImage?   // snapshot of the NSTextView at commit time — drawn as-is, no coord math
-    var textDrawRect: NSRect = .zero  // where to draw textImage in OverlayView coords
-    var fontSize: CGFloat = 20
-    var isBold: Bool = false
-    var isItalic: Bool = false
+    var textImage: NSImage? { didSet { renderRevision &+= 1 } }  // snapshot of the NSTextView at commit time — drawn as-is, no coord math
+    var textDrawRect: NSRect = .zero { didSet { renderRevision &+= 1 } }  // where to draw textImage in OverlayView coords
+    var fontSize: CGFloat = 20 { didSet { renderRevision &+= 1 } }
+    var isBold: Bool = false { didSet { renderRevision &+= 1 } }
+    var isItalic: Bool = false { didSet { renderRevision &+= 1 } }
     var groupID: UUID?  // for batch undo (e.g. auto-redact)
-    var isUnderline: Bool = false
-    var isStrikethrough: Bool = false
-    var rotation: CGFloat = 0         // rotation angle in radians
+    var isUnderline: Bool = false { didSet { renderRevision &+= 1 } }
+    var isStrikethrough: Bool = false { didSet { renderRevision &+= 1 } }
+    var rotation: CGFloat = 0 { didSet { renderRevision &+= 1 } }  // rotation angle in radians
     /// For .highlight: opacity of the dim applied OUTSIDE the highlighted rect
     /// (0 = no dimming, 1 = fully black). The highlighted region itself stays
     /// bright. The dim is rendered globally (union of all highlight rects), not
     /// baked per-annotation.
-    var dimOpacity: CGFloat = 0.55
+    var dimOpacity: CGFloat = 0.55 { didSet { renderRevision &+= 1 } }
 
     var supportsRotation: Bool {
         switch tool {
@@ -179,10 +181,10 @@ class Annotation {
             return false
         }
     }
-    var controlPoint: NSPoint? = nil  // optional bend point for line/arrow (legacy single bend)
+    var controlPoint: NSPoint? = nil { didSet { renderRevision &+= 1 } }  // optional bend point for line/arrow (legacy single bend)
     /// Ordered waypoints for multi-anchor lines/arrows: [start, anchor1, anchor2, ..., end].
     /// When set, overrides startPoint/endPoint/controlPoint for rendering.
-    var anchorPoints: [NSPoint]?
+    var anchorPoints: [NSPoint]? { didSet { renderRevision &+= 1 } }
 
     /// Returns the full ordered path: anchorPoints if set, otherwise [start, end].
     /// Legacy controlPoint is NOT included — it uses the original bezier rendering.
@@ -196,41 +198,41 @@ class Annotation {
     /// Whether this annotation uses multi-anchor points (vs legacy single bend).
     var hasMultiAnchor: Bool { anchorPoints != nil && (anchorPoints?.count ?? 0) >= 3 }
 
-    var isRounded: Bool = false       // legacy — kept for compat, see rectCornerRadius
-    var rectCornerRadius: CGFloat = 0 // 0..30, actual corner radius for rect tools
-    var lineStyle: LineStyle = .solid // line/arrow/rect/ellipse stroke style
-    var arrowStyle: ArrowStyle = .single // arrow head style
-    var arrowReversed: Bool = false      // head at start instead of end
-    var rectFillStyle: RectFillStyle = .stroke // rectangle fill mode
-    var stampImage: NSImage?          // rendered emoji or loaded picture for stamp tool
+    var isRounded: Bool = false { didSet { renderRevision &+= 1 } }  // legacy — kept for compat, see rectCornerRadius
+    var rectCornerRadius: CGFloat = 0 { didSet { renderRevision &+= 1 } }  // 0..30, actual corner radius for rect tools
+    var lineStyle: LineStyle = .solid { didSet { renderRevision &+= 1 } }  // line/arrow/rect/ellipse stroke style
+    var arrowStyle: ArrowStyle = .single { didSet { renderRevision &+= 1 } }  // arrow head style
+    var arrowReversed: Bool = false { didSet { renderRevision &+= 1 } }  // head at start instead of end
+    var rectFillStyle: RectFillStyle = .stroke { didSet { renderRevision &+= 1 } }  // rectangle fill mode
+    var stampImage: NSImage? { didSet { renderRevision &+= 1 } }  // rendered emoji or loaded picture for stamp tool
     /// True when the stamp is a full capture added via "Add Capture" in the editor
     /// (as opposed to an emoji/image placed with the stamp tool). Capture stamps
     /// don't update the remembered default stamp size when resized.
     var isCaptureStamp: Bool = false
-    var measureInPoints: Bool = false  // true = show pt, false = show px
-    var censorMode: CensorMode = .pixelate
-    var textBgColor: NSColor?         // background pill color (nil = no background)
-    var textOutlineColor: NSColor?    // text outline/stroke color (nil = no outline)
-    var textGlyphStrokeColor: NSColor? // per-glyph stroke color drawn around each character (nil = none)
-    var textAlignment: NSTextAlignment = .left // text alignment within the box
-    var fontFamilyName: String?       // font family for text (nil = system default)
-    var outlineColor: NSColor?        // shape/arrow/line outline color (nil = no outline)
+    var measureInPoints: Bool = false { didSet { renderRevision &+= 1 } }  // true = show pt, false = show px
+    var censorMode: CensorMode = .pixelate { didSet { renderRevision &+= 1 } }
+    var textBgColor: NSColor? { didSet { renderRevision &+= 1 } }  // background pill color (nil = no background)
+    var textOutlineColor: NSColor? { didSet { renderRevision &+= 1 } }  // text outline/stroke color (nil = no outline)
+    var textGlyphStrokeColor: NSColor? { didSet { renderRevision &+= 1 } }  // per-glyph stroke color drawn around each character (nil = none)
+    var textAlignment: NSTextAlignment = .left { didSet { renderRevision &+= 1 } }  // text alignment within the box
+    var fontFamilyName: String? { didSet { renderRevision &+= 1 } }  // font family for text (nil = system default)
+    var outlineColor: NSColor? { didSet { renderRevision &+= 1 } }  // shape/arrow/line outline color (nil = no outline)
     /// Stable per-annotation seed for deterministic procedural variation
     /// (e.g. the sketchy arrow style's wobble offsets). Seeded on creation,
     /// preserved across clone/codable so the same arrow renders identically
     /// across redraws and reloads.
-    var randomSeed: UInt32 = UInt32.random(in: 1...UInt32.max)
+    var randomSeed: UInt32 = UInt32.random(in: 1...UInt32.max) { didSet { renderRevision &+= 1 } }
     /// Magnification factor for loupe annotations.
-    var loupeMagnification: CGFloat = 2.0
+    var loupeMagnification: CGFloat = 2.0 { didSet { renderRevision &+= 1 } }
     /// Rooted-magnifier source circle (#197). When non-nil, the loupe is a
     /// two-circle magnifier: this rect is the SOURCE spot that's sampled, and the
     /// annotation's bounding box (startPoint/endPoint) is the LENS circle that
     /// shows the magnified view. The two are connected by a line. nil = legacy
     /// single-circle loupe that magnifies the region under itself.
-    var loupeSourceRect: NSRect?
+    var loupeSourceRect: NSRect? { didSet { renderRevision &+= 1 } }
     /// When true, the loupe ring (and connecting line) use `outlineColor` instead
     /// of the default gray gradient ring.
-    var loupeOutlineEnabled: Bool = false
+    var loupeOutlineEnabled: Bool = false { didSet { renderRevision &+= 1 } }
 
     init(tool: AnnotationTool, startPoint: NSPoint, endPoint: NSPoint, color: NSColor, strokeWidth: CGFloat) {
         self.tool = tool
@@ -240,6 +242,7 @@ class Annotation {
         self.strokeWidth = strokeWidth
     }
 
+    // Rendered properties must advance renderRevision for capture cache correctness.
     // NOTE: When adding new properties, also update CodableAnnotation in AnnotationCodable.swift
     // (toCodable + fromCodable) so they are preserved in editable history.
     func clone() -> Annotation {
@@ -656,7 +659,7 @@ class Annotation {
             drawCensor(in: context)
         case .blur:
             // Legacy: existing blur annotations from before the merge
-            censorMode = .blur
+            if censorMode != .blur { censorMode = .blur }
             drawCensor(in: context)
         case .measure:
             drawMeasure()
@@ -1974,7 +1977,7 @@ class Annotation {
         // Legacy blur annotations + unified pixelate tool
         guard (tool == .pixelate || tool == .blur), bakedBlurNSImage == nil else { return }
         // Legacy .blur tool → set censorMode so drawing dispatches correctly
-        if tool == .blur { censorMode = .blur }
+        if tool == .blur && censorMode != .blur { censorMode = .blur }
 
         let mode = censorMode
         let rect = boundingRect

@@ -1,6 +1,14 @@
 import AppKit
 
 extension StitchDocument {
+    /// Accordion styling changes the projection, never the flat captured pixels.
+    func hasSameAccordionPixels(as other: StitchDocument) -> Bool {
+        guard style.transition == .accordion, other.style.transition == .accordion else { return false }
+        var flat = other
+        flat.style = style
+        return isIdentical(to: flat)
+    }
+
     /// Cheap in-memory equality. Original capture pixels are immutable, so
     /// pointer identity suffices without encoding or comparing large images.
     func isIdentical(to other: StitchDocument) -> Bool {

@@ -97,16 +97,286 @@ struct ScreenshotPresentation {
         return config
     }
 
+    /// One editor owns one native-resolution presentation. The key retains the
+    /// immutable composite, so replacing a CGImage cannot reuse an old pointer.
+    final class Cache {
+        static let defaultMaximumRetainedBytes = 128 * 1024 * 1024
+        let maximumRetainedBytes: Int
+        private var entry: Entry?
+
+        var retainedEntryCount: Int { entry == nil ? 0 : 1 }
+        var retainedByteCount: Int { entry?.byteCount ?? 0 }
+
+        init(maximumRetainedBytes: Int = defaultMaximumRetainedBytes) {
+            self.maximumRetainedBytes = max(0, maximumRetainedBytes)
+        }
+
+        func clear() { entry = nil }
+
+        func prepare(_ presentation: ScreenshotPresentation, image: NSImage,
+                     document: StitchDocument? = nil) -> Prepared? {
+            // A previously valid entry must never conceal an invalid current plan.
+            guard presentation.isValidForReuse, document?.canRender != false,
+                  image.size.width.isFinite, image.size.height.isFinite,
+                  image.size.width > 0, image.size.height > 0,
+                  let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                clear()
+                return nil
+            }
+            let key = Key(presentation: presentation, pixels: pixels, size: image.size)
+            if let entry, entry.key.matches(key) { return entry.prepared }
+
+            let previous = entry
+            entry = nil
+            let prepared: Prepared
+            if let previous, presentation.hasProjectedOutput,
+               previous.key.matchesInput(key) {
+                // Camera and pleat edits change the mesh. Effects and the
+                // target-sized background still use the same frozen pixels.
+                prepared = Prepared(pixels: previous.prepared.pixels,
+                    sourceSize: previous.prepared.sourceSize, projection: presentation.projection,
+                    cornerRadius: previous.prepared.cornerRadius,
+                    paperBackground: previous.prepared.paperBackground)
+            } else {
+                let frozen = NSImage(cgImage: pixels, size: image.size)
+                guard let result = presentation.prepare(frozen) else { return nil }
+                prepared = result
+            }
+
+            guard let cost = Self.retentionCost(key: key, prepared: prepared),
+                  cost.total <= maximumRetainedBytes else { return prepared }
+            let cached = prepared.cachingRenderedPixels(maximumRetainedBytes: cost.rendered)
+            entry = Entry(key: key, prepared: cached, byteCount: cost.total)
+            return cached
+        }
+
+        func render(_ presentation: ScreenshotPresentation, image: NSImage,
+                    document: StitchDocument? = nil) -> NSImage? {
+            guard let prepared = prepare(presentation, image: image, document: document),
+                  let pixels = prepared.renderCGImage() else { return nil }
+            return NSImage(cgImage: pixels, size: prepared.imageSize)
+        }
+
+        private struct Entry {
+            let key: Key
+            let prepared: Prepared
+            let byteCount: Int
+        }
+
+        private struct Key {
+            let pixels: CGImage
+            let size: NSSize
+            let effects: ImageEffectsConfig
+            let beautify: BeautifyKey?
+            let projection: StitchAccordionProjection?
+
+            init(presentation: ScreenshotPresentation, pixels: CGImage, size: NSSize) {
+                self.pixels = pixels
+                self.size = size
+                effects = presentation.effects
+                beautify = presentation.beautify.map { BeautifyKey($0, projected: presentation.hasProjectedOutput) }
+                projection = presentation.projection
+            }
+
+            func matchesInput(_ other: Self) -> Bool {
+                pixels === other.pixels && size == other.size && beautify == other.beautify
+                    && effects.preset == other.effects.preset && effects.brightness == other.effects.brightness
+                    && effects.contrast == other.effects.contrast && effects.saturation == other.effects.saturation
+                    && effects.sharpness == other.effects.sharpness
+                    && (projection?.hasProjectedOutput == true) == (other.projection?.hasProjectedOutput == true)
+            }
+
+            func matches(_ other: Self) -> Bool {
+                guard matchesInput(other) else { return false }
+                switch (projection, other.projection) {
+                case (nil, nil): return true
+                case (.some(let a), .some(let b)):
+                    guard a.documentBounds == b.documentBounds, a.source.camera == b.source.camera,
+                          a.hasProjectedOutput == b.hasProjectedOutput, a.faces.count == b.faces.count,
+                          a.drawingOrder == b.drawingOrder else { return false }
+                    return zip(a.faces, b.faces).allSatisfy { a, b in
+                        Self.matches(a.a, b.a) && Self.matches(a.b, b.b) && Self.matches(a.c, b.c)
+                            && a.shade == b.shade && a.isFrontFacing == b.isFrontFacing
+                            && a.boundaryEdges == b.boundaryEdges
+                    }
+                default: return false
+                }
+            }
+
+            private static func matches(_ a: StitchAccordionProjection.Vertex,
+                                        _ b: StitchAccordionProjection.Vertex) -> Bool {
+                a.source == b.source && a.projected == b.projected && a.depth == b.depth
+            }
+        }
+
+        private struct BeautifyKey: Equatable {
+            let mode: BeautifyMode
+            let styleIndex: Int
+            let padding: CGFloat
+            let cornerRadius: CGFloat
+            let shadowRadius: CGFloat
+            let bgRadius: CGFloat
+            let isWindowSnap: Bool
+            let backgroundBlur: CGFloat
+            let customBackground: Bool
+            let background: CGImage?
+
+            init(_ config: BeautifyConfig, projected: Bool) {
+                mode = projected ? .rounded : config.mode
+                styleIndex = projected && config.isCustomBackground ? 0 : config.styleIndex
+                padding = projected ? 0 : config.padding
+                cornerRadius = projected ? 0 : config.cornerRadius
+                shadowRadius = projected ? 0 : config.shadowRadius
+                bgRadius = projected ? 0 : config.bgRadius
+                isWindowSnap = !projected && config.isWindowSnap
+                backgroundBlur = projected && !config.isCustomBackground ? 0 : config.backgroundBlur
+                customBackground = config.isCustomBackground
+                background = config.isCustomBackground ? config.cachedBackgroundCGImage : nil
+            }
+
+            static func == (a: Self, b: Self) -> Bool {
+                a.mode == b.mode && a.styleIndex == b.styleIndex && a.padding == b.padding
+                    && a.cornerRadius == b.cornerRadius && a.shadowRadius == b.shadowRadius
+                    && a.bgRadius == b.bgRadius && a.isWindowSnap == b.isWindowSnap
+                    && a.backgroundBlur == b.backgroundBlur && a.customBackground == b.customBackground
+                    && a.background === b.background
+            }
+        }
+
+        private static func retentionCost(key: Key, prepared: Prepared) -> (total: Int, rendered: Int)? {
+            var images = [key.pixels, prepared.pixels]
+            if let background = key.beautify?.background { images.append(background) }
+            if let background = prepared.paperBackground { images.append(background.pixels) }
+            var retained: [CGImage] = []
+            var total = 0
+            for image in images where !retained.contains(where: { $0 === image }) {
+                guard let bytes = pixelByteCount(image) else { return nil }
+                let sum = total.addingReportingOverflow(bytes)
+                guard !sum.overflow else { return nil }
+                total = sum.partialValue
+                retained.append(image)
+            }
+            var rendered = 0
+            if prepared.projection?.hasProjectedOutput == true {
+                let output = prepared.paperBackground?.pixels ?? prepared.pixels
+                let row = output.width.multipliedReportingOverflow(by: 4)
+                let bytes = row.partialValue.multipliedReportingOverflow(by: output.height)
+                guard !row.overflow, !bytes.overflow else { return nil }
+                rendered = bytes.partialValue
+                let sum = total.addingReportingOverflow(rendered)
+                guard !sum.overflow else { return nil }
+                total = sum.partialValue
+            }
+            return (total, rendered)
+        }
+    }
+
+    private var isValidForReuse: Bool {
+        guard !projectionPlanningFailed,
+              [effects.brightness, effects.contrast, effects.saturation, effects.sharpness].allSatisfy(\.isFinite) else {
+            return false
+        }
+        if let beautify {
+            guard beautify.backgroundBlur.isFinite, (0...50).contains(beautify.backgroundBlur),
+                  !beautify.isCustomBackground || beautify.cachedBackgroundCGImage != nil else { return false }
+            if !hasProjectedOutput {
+                guard [beautify.padding, beautify.cornerRadius, beautify.shadowRadius, beautify.bgRadius]
+                    .allSatisfy({ $0.isFinite && $0 >= 0 }) else { return false }
+            }
+        }
+        return true
+    }
+
+    private nonisolated static func pixelByteCount(_ image: CGImage) -> Int? {
+        let bytes = image.bytesPerRow.multipliedReportingOverflow(by: image.height)
+        return bytes.overflow ? nil : bytes.partialValue
+    }
+
+    /// The lock only protects state. Main-actor lookup never waits for a warm
+    /// render; workers share its result instead of projecting the sheet twice.
+    nonisolated final class RenderedPixels: @unchecked Sendable {
+        private let condition = NSCondition()
+        private let maximumRetainedBytes: Int
+        private var rendering = false
+        private var pixels: CGImage?
+
+        init(maximumRetainedBytes: Int) { self.maximumRetainedBytes = maximumRetainedBytes }
+
+        var image: CGImage? {
+            condition.lock()
+            defer { condition.unlock() }
+            return pixels
+        }
+
+        func render(_ body: () -> CGImage?) -> CGImage? {
+            condition.lock()
+            while rendering && pixels == nil {
+                if Thread.isMainThread {
+                    condition.unlock()
+                    return body()
+                }
+                condition.wait()
+            }
+            if let pixels {
+                condition.unlock()
+                return pixels
+            }
+            rendering = true
+            condition.unlock()
+            let rendered = body()
+            condition.lock()
+            if let rendered, let bytes = ScreenshotPresentation.pixelByteCount(rendered),
+               bytes <= maximumRetainedBytes { pixels = rendered }
+            rendering = false
+            condition.broadcast()
+            condition.unlock()
+            return rendered
+        }
+    }
+
     nonisolated struct Prepared: @unchecked Sendable {
         let pixels: CGImage
         let sourceSize: NSSize
         let projection: StitchAccordionProjection?
         let cornerRadius: CGFloat
         let paperBackground: BeautifyRenderer.PaperBackground?
+        private let renderedPixels: RenderedPixels?
+
+        init(pixels: CGImage, sourceSize: NSSize, projection: StitchAccordionProjection?,
+             cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?) {
+            self.init(pixels: pixels, sourceSize: sourceSize, projection: projection,
+                cornerRadius: cornerRadius, paperBackground: paperBackground, renderedPixels: nil)
+        }
+
+        private init(pixels: CGImage, sourceSize: NSSize, projection: StitchAccordionProjection?,
+                     cornerRadius: CGFloat, paperBackground: BeautifyRenderer.PaperBackground?,
+                     renderedPixels: RenderedPixels?) {
+            self.pixels = pixels
+            self.sourceSize = sourceSize
+            self.projection = projection
+            self.cornerRadius = cornerRadius
+            self.paperBackground = paperBackground
+            self.renderedPixels = renderedPixels
+        }
 
         var imageSize: NSSize { paperBackground?.imageSize ?? sourceSize }
+        var isRenderCacheEnabled: Bool { renderedPixels != nil }
+        var renderedCGImage: CGImage? {
+            projection?.hasProjectedOutput == true ? renderedPixels?.image : pixels
+        }
+
+        fileprivate func cachingRenderedPixels(maximumRetainedBytes: Int) -> Self {
+            Self(pixels: pixels, sourceSize: sourceSize, projection: projection,
+                cornerRadius: cornerRadius, paperBackground: paperBackground,
+                renderedPixels: RenderedPixels(maximumRetainedBytes: maximumRetainedBytes))
+        }
 
         nonisolated func renderCGImage() -> CGImage? {
+            if let renderedPixels { return renderedPixels.render { renderUncached() } }
+            return renderUncached()
+        }
+
+        private nonisolated func renderUncached() -> CGImage? {
             guard let projection, projection.hasProjectedOutput else { return pixels }
             guard let clipped = Self.clipCorners(pixels, size: sourceSize, radius: cornerRadius),
                   let projected = StitchAccordionWarp.render(clipped, projection: projection),
