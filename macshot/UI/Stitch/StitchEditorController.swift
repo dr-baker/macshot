@@ -751,7 +751,10 @@ final class StitchEditorController: NSObject {
         let presentationFrame = outputFrame.insetBy(dx: -ScreenshotPresentation.paperPadding,
             dy: -ScreenshotPresentation.paperPadding)
         editor.stitchPaperPresentationFrame = presentationFrame
-        paperPreview.frame = presentationFrame
+        // Rotation can make the projected output narrower than the editing
+        // canvas. Keep that canvas covered instead of revealing its flat pixels.
+        paperPreview.frame = presentationFrame.union(editor.selectionRect)
+        paperPreview.presentationRect = paperPreview.convert(presentationFrame, from: editor)
         editor.needsDisplay = true
         guard let scroll = editor.enclosingScrollView else { return }
         if savedPreviewInsets == nil {
