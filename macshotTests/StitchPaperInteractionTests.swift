@@ -29,7 +29,7 @@ final class StitchPaperInteractionTests: XCTestCase {
         XCTAssertFalse(preview.containsPaper(at: CGPoint(x: 2, y: 2)))
     }
 
-    func testOpeningAnimationKeepsPhysicalSizeAndSkipsAnInsufficientBackdrop() throws {
+    func testExpansionAnimationKeepsPhysicalSizeAndSkipsAnInsufficientBackdrop() throws {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         let pixels = try XCTUnwrap(ImageProbe.solidImage(width: 600, height: 240)
             .cgImage(forProposedRect: nil, context: nil, hints: nil))
@@ -43,21 +43,28 @@ final class StitchPaperInteractionTests: XCTestCase {
         let paperFrame = CGRect(origin: CGPoint(x: 12, y: 12), size: projection.outputBounds.size)
         let preview = StitchPaperPreviewView(frame: paperFrame.insetBy(dx: -12, dy: -12))
         let effect = try XCTUnwrap(StitchAccordionCollapseView(texture: texture, document: document, frame: paperFrame))
-        XCTAssertFalse(preview.bounds.contains(effect.frame))
-        XCTAssertTrue(preview.bounds.insetBy(dx: -600, dy: -600).contains(effect.frame))
+        let source = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
+        let plans = try StitchAccordionAnimation.editorProgresses.map { progress in
+            try XCTUnwrap(source.expandingProjection(progress: progress))
+        }
+        let envelope = plans.reduce(CGRect.null) { $0.union($1.outputBounds) }
+        XCTAssertEqual(effect.frame.width, envelope.width, accuracy: 0.001)
+        XCTAssertEqual(effect.frame.height, envelope.height, accuracy: 0.001)
+        XCTAssertEqual(plans.first?.outputBounds, document.bounds)
         preview.image = NSImage(cgImage: texture, size: document.bounds.size)
-        preview.animate(texture: texture, document: document, frame: paperFrame, background: nil, viewport: preview.bounds)
+        preview.animate(texture: texture, document: document, frame: paperFrame, background: nil,
+            viewport: CGRect(x: paperFrame.midX, y: paperFrame.midY, width: 1, height: 1))
         XCTAssertTrue(preview.subviews.compactMap { $0 as? StitchAccordionCollapseView }.isEmpty,
-            "Opening paper should not be clipped or squeezed into the shorter final canvas")
+            "The connected sheet should not be clipped or squeezed into an insufficient viewport")
         XCTAssertNotNil(preview.image)
         let background = try XCTUnwrap(ImageProbe.solidImage(width: 50, height: 50)
             .cgImage(forProposedRect: nil, context: nil, hints: nil))
         preview.animate(texture: texture, document: document, frame: paperFrame, background: background,
             viewport: preview.bounds.insetBy(dx: -600, dy: -600))
         let animation = try XCTUnwrap(preview.subviews.compactMap { $0 as? StitchAccordionCollapseView }.first)
-        XCTAssertGreaterThan(animation.frame.width, paperFrame.width)
+        XCTAssertGreaterThanOrEqual(animation.frame.width, paperFrame.width)
         let backdrop = try XCTUnwrap(preview.layer?.sublayers?.first { $0.name == "stitch.accordion.backdrop" })
-        XCTAssertTrue(backdrop.frame.contains(animation.frame), "The selected background must cover the full opening envelope")
+        XCTAssertTrue(backdrop.frame.contains(animation.frame), "The selected background must cover the expansion envelope")
         XCTAssertNotNil(backdrop.contents)
         preview.cancelAnimation()
         XCTAssertTrue(preview.subviews.compactMap { $0 as? StitchAccordionCollapseView }.isEmpty)

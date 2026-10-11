@@ -5,7 +5,7 @@ import QuartzCore
 /// A bounded, disposable animation of the same textured faces used by the export renderer.
 @MainActor
 final class StitchAccordionCollapseView: NSView {
-    static let duration: CFTimeInterval = 0.48
+    static let duration: CFTimeInterval = StitchAccordionAnimation.editorDuration
     static let maximumTextureDimension: CGFloat = 1600
     private let texture: CGImage
     private var plans: [StitchAccordionProjection]
@@ -18,7 +18,6 @@ final class StitchAccordionCollapseView: NSView {
     }
     private var paperColors: [PaperSampleKey: CGColor] = [:]
     private let interactive: Bool
-    private static let fractions: [CGFloat] = [0, 0.2, 0.45, 0.72, 1]
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -26,11 +25,14 @@ final class StitchAccordionCollapseView: NSView {
     init?(texture: CGImage, document: StitchDocument, frame: CGRect,
           preparedSource: StitchAccordionProjection.Source? = nil) {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              texture.width <= Int(Self.maximumTextureDimension), texture.height <= Int(Self.maximumTextureDimension) else { return nil }
-        guard let source = preparedSource ?? StitchAccordionProjection.Source(document: document) else { return nil }
-        let plans = Self.fractions.compactMap { StitchAccordionProjection(source: source, progress: $0) }
-        guard plans.count == Self.fractions.count, let final = plans.last, final.hasProjectedOutput,
-              final.faces.count <= 512, plans.allSatisfy({ $0.faces.count == final.faces.count }) else { return nil }
+              texture.width <= Int(Self.maximumTextureDimension), texture.height <= Int(Self.maximumTextureDimension),
+              frame.width.isFinite, frame.height.isFinite, frame.width > 0, frame.height > 0 else { return nil }
+        guard let source = preparedSource ?? StitchAccordionProjection.Source(document: document),
+              let final = source.expandingProjection(progress: 1), final.hasProjectedOutput,
+              final.faces.count <= 512 else { return nil }
+        let progress = StitchAccordionAnimation.editorProgresses
+        let plans = progress.dropLast().compactMap { source.expandingProjection(progress: $0) } + [final]
+        guard plans.count == progress.count, plans.allSatisfy({ $0.faces.count == final.faces.count }) else { return nil }
         self.texture = texture
         self.plans = plans
         let envelope = plans.reduce(CGRect.null) { $0.union($1.outputBounds) }
@@ -100,6 +102,11 @@ final class StitchAccordionCollapseView: NSView {
         let outputBounds = self.outputBounds
         let scaleX = bounds.width / outputBounds.width, scaleY = bounds.height / outputBounds.height
         let referenceDepth = first.faces.first?.a.depth ?? 1
+        let depthRanks = plans.map { plan -> [CGFloat] in
+            var ranks = Array(repeating: CGFloat.zero, count: plan.faces.count)
+            for (rank, index) in plan.drawingOrder.enumerated() { ranks[index] = CGFloat(rank) }
+            return ranks
+        }
         for index in final.drawingOrder {
             let face = final.faces[index]
             // Inserted paper has a degenerate UV triangle at the cut. Its full
@@ -188,8 +195,10 @@ final class StitchAccordionCollapseView: NSView {
             }
             sheet.transform = transforms.last!
             sheet.opacity = face.isFrontFacing || face.paperSample != nil ? 1 : 0
+            sheet.zPosition = depthRanks.last![index]
             if animated {
                 animate("transform", values: transforms.map { NSValue(caTransform3D: $0) }, on: sheet)
+                animate("zPosition", values: depthRanks.map { NSNumber(value: Double($0[index])) }, on: sheet)
                 animate("opacity", values: plans.map {
                     NSNumber(value: $0.faces[index].isFrontFacing || $0.faces[index].paperSample != nil ? 1 : 0)
                 }, on: sheet)
@@ -243,14 +252,18 @@ final class StitchAccordionCollapseView: NSView {
     private func animate(_ key: String, values: [Any], on layer: CALayer) {
         let animation = CAKeyframeAnimation(keyPath: key)
         animation.values = values
-        animation.keyTimes = Self.fractions.map { NSNumber(value: Double($0)) }
-        animation.timingFunctions = (1..<values.count).map { _ in CAMediaTimingFunction(name: .easeInEaseOut) }
+        animation.keyTimes = StitchAccordionAnimation.editorKeyTimes.map { NSNumber(value: Double($0)) }
+        // Core Animation must display one connected mesh sample at a time.
+        // Interpolating independently decomposed face transforms can separate
+        // their shared vertices between the mathematically exact keyframes.
+        animation.calculationMode = .discrete
         animation.duration = Self.duration
         layer.add(animation, forKey: key)
     }
 
     /// A plane's homogeneous coordinates form a linear function of its source triangle.
-    /// The shared camera denominator keeps neighbouring layers joined throughout interpolation.
+    /// Discrete animation samples preserve the shared camera denominator and
+    /// projected vertices; Core Animation does not interpolate separate planes.
     static func transform(face: StitchAccordionProjection.Face, sourceRect: CGRect,
                           outputBounds: CGRect, size: CGSize, referenceDepth: CGFloat) -> CATransform3D {
         let sx = size.width / outputBounds.width, sy = size.height / outputBounds.height

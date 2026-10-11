@@ -43,13 +43,12 @@ nonisolated enum StitchAnimationExporter {
         var duration: Double { StitchAnimationExporter.duration }
     }
 
-    static let duration: Double = 1.8
+    static let duration: Double = StitchAccordionAnimation.exportDuration
 
-    /// Hold the flat sheet, reveal the fold, then hold the finished composition.
-    static func foldProgress(at seconds: Double) -> CGFloat {
-        guard seconds.isFinite else { return 0 }
-        let t = max(0, min(1, (seconds - 0.25) / 0.9))
-        return CGFloat(t * t * (3 - 2 * t))
+    /// Hold the compact sheet, open its pleats while turning it, then hold the
+    /// finished composition. The editor uses the same eased expansion path.
+    static func expansionProgress(at seconds: Double) -> CGFloat {
+        StitchAccordionAnimation.exportProgress(at: seconds)
     }
 
     @MainActor
@@ -62,7 +61,7 @@ nonisolated enum StitchAnimationExporter {
               documentSource.documentBounds == source.documentBounds,
               documentSource.unfoldedBounds == source.unfoldedBounds,
               documentSource.camera == source.camera,
-              let projection = source.projection(), projection.hasProjectedOutput,
+              let projection = source.expandingProjection(progress: 1), projection.hasProjectedOutput,
               presentation.projection?.hasProjectedOutput == true,
               presentation.projection?.documentBounds == source.documentBounds,
               presentation.sourceSize.width.isFinite, presentation.sourceSize.height.isFinite,
@@ -122,20 +121,20 @@ nonisolated enum StitchAnimationExporter {
     }
 
     /// Union the exact encoder samples, including both held endpoints. An
-    /// animation's opening sheet includes the omitted paper at its full length;
-    /// the final folded frame alone cannot determine a safe movie canvas.
+    /// opening sheet starts compact and face-on, then expands with the camera.
+    /// Intermediate silhouettes can extend beyond the final frame.
     private static func animationBounds(source: StitchAccordionProjection.Source) -> CGRect? {
         var samples: Set<CGFloat> = [0, 1]
         for format in Format.allCases {
             let fps = format.framesPerSecond
             let count = Int((duration * Double(fps)).rounded())
             for frame in 0..<count {
-                samples.insert(foldProgress(at: Double(frame) / Double(fps)))
+                samples.insert(expansionProgress(at: Double(frame) / Double(fps)))
             }
         }
         var envelope = CGRect.null
         for progress in samples.sorted() {
-            guard let projection = source.projection(progress: progress), projection.hasProjectedOutput else {
+            guard let projection = source.expandingProjection(progress: progress), projection.hasProjectedOutput else {
                 return nil
             }
             envelope = envelope.union(projection.outputBounds)
@@ -193,7 +192,7 @@ nonisolated enum StitchAnimationExporter {
             try cancellation.check()
             try autoreleasepool {
                 let time = CMTime(value: Int64(index), timescale: CMTimeScale(fps))
-                let frame = try work.frames.frame(progress: foldProgress(at: time.seconds))
+                let frame = try work.frames.frame(progress: expansionProgress(at: time.seconds))
                 let pixels = try pixelBuffer(for: frame)
                 try cancellation.check()
                 try encoder.addFrame(pixels, at: time)
@@ -230,7 +229,7 @@ nonisolated enum StitchAnimationExporter {
 
         func frame(progress: CGFloat) throws -> CGImage {
             if progress == lastProgress, let lastFrame { return lastFrame }
-            guard let projection = source.projection(progress: progress)?.withOutputBounds(outputBounds),
+            guard let projection = source.expandingProjection(progress: progress)?.withOutputBounds(outputBounds),
                   projection.hasProjectedOutput,
                   let sheet = StitchAccordionWarp.render(texture, projection: projection)
             else { throw ExportError.renderFailed }
@@ -378,7 +377,7 @@ nonisolated enum StitchAnimationExporter {
                     }
                     try autoreleasepool {
                         let time = CMTime(value: Int64(frameIndex), timescale: CMTimeScale(fps))
-                        let image = try work.frames.frame(progress: foldProgress(at: time.seconds))
+                        let image = try work.frames.frame(progress: expansionProgress(at: time.seconds))
                         let pixels = try pixelBuffer(for: image, pool: adaptor.pixelBufferPool)
                         try cancellation.check()
                         guard adaptor.append(pixels, withPresentationTime: time) else {
