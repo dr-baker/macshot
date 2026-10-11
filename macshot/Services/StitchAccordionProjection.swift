@@ -199,6 +199,16 @@ nonisolated struct StitchAccordionProjection: Sendable {
             StitchAccordionProjection(source: self, progress: progress)
         }
 
+        /// Reveal the omitted paper from an edge-on accordion, then rotate the
+        /// connected sheet into its saved camera. Rest lengths never change.
+        func expandingProjection(progress: CGFloat) -> StitchAccordionProjection? {
+            guard progress.isFinite else { return nil }
+            let progress = max(0, min(1, progress))
+            let angle = .pi / 2 + (acos(CGFloat(0.45)) - .pi / 2) * progress
+            return StitchAccordionProjection(source: self, compression: progress == 0 ? 0 : cos(angle),
+                ridgeSlope: sin(angle), cameraProgress: progress, depthStrength: progress)
+        }
+
         /// Freeze bounded printed materials once for an animation or live layer
         /// preview. Geometry and physical removed lengths remain native-sized.
         func resizingPaperTextures(maxDimension: Int) -> Self? {
@@ -233,18 +243,25 @@ nonisolated struct StitchAccordionProjection: Sendable {
 
     init?(source: Source, progress proposedProgress: CGFloat = 1) {
         guard proposedProgress.isFinite else { return nil }
-        let bounds = source.documentBounds
         let progress = max(0, min(1, proposedProgress))
         let angle = acos(CGFloat(0.45)) * progress
+        self.init(source: source, compression: cos(angle), ridgeSlope: sin(angle),
+                  cameraProgress: progress, depthStrength: 1)
+    }
+
+    private init?(source: Source, compression: CGFloat, ridgeSlope: CGFloat,
+                  cameraProgress: CGFloat, depthStrength: CGFloat) {
+        let bounds = source.documentBounds
         let mesh = Self.mesh(bounds: bounds, folds: source.folds, columns: source.columns,
-                             rows: source.rows, compression: cos(angle), ridgeSlope: sin(angle))
+                             rows: source.rows, compression: compression, ridgeSlope: ridgeSlope)
         let points = mesh.flatMap { [$0.a.world, $0.b.world, $0.c.world] }
         guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
               let minY = points.map(\.y).min(), let maxY = points.map(\.y).max() else { return nil }
         let center = CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
         let camera = Camera(bounds: source.unfoldedBounds,
-                            perspective: source.folds.isEmpty ? 0 : source.camera.perspective * progress,
-                            yaw: source.folds.isEmpty ? 0 : source.camera.yaw * progress)
+                            perspective: source.folds.isEmpty ? 0 : source.camera.perspective * cameraProgress,
+                            yaw: source.folds.isEmpty ? 0 : source.camera.yaw * cameraProgress,
+                            depthStrength: depthStrength)
         func projected(_ vertex: MeshVertex) -> (CGPoint, CGFloat)? {
             camera.project(Point3(x: vertex.world.x - center.x, y: vertex.world.y - center.y, z: vertex.world.z))
         }
@@ -756,10 +773,12 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let distance: CGFloat
         let pitch: CGFloat
         let yaw: CGFloat
-        init(bounds: CGRect, perspective: CGFloat, yaw: CGFloat) {
+        let depthStrength: CGFloat
+        init(bounds: CGRect, perspective: CGFloat, yaw: CGFloat, depthStrength: CGFloat = 1) {
             distance = max(bounds.width, bounds.height) * 3.2
             pitch = -perspective * .pi / 180
             self.yaw = yaw * .pi / 180
+            self.depthStrength = depthStrength
         }
         func rotate(_ point: Point3) -> Point3 {
             let x = point.x * cos(yaw) + point.z * sin(yaw)
@@ -768,8 +787,11 @@ nonisolated struct StitchAccordionProjection: Sendable {
                           z: point.y * sin(pitch) + z * cos(pitch))
         }
         func project(_ point: Point3) -> (CGPoint, CGFloat)? {
-            let rotated = rotate(point), depth = distance - rotated.z
+            let rotated = rotate(point), depth = distance - rotated.z * depthStrength
             guard depth.isFinite, depth > distance * 0.2 else { return nil }
+            if depthStrength == 0 {
+                return (CGPoint(x: rotated.x, y: rotated.y), distance)
+            }
             return (CGPoint(x: rotated.x * distance / depth, y: rotated.y * distance / depth), depth)
         }
     }

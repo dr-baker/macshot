@@ -129,6 +129,50 @@ final class StitchAccordionProjectionTests: XCTestCase {
         XCTAssertEqual(Set(folded.drawingOrder), Set(folded.faces.indices))
     }
 
+    func testExpansionStartsCompactAndKeepsPhysicalPaperAndSharedVertices() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let document = try fixture(axis: axis)
+            let source = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
+            let opening = try XCTUnwrap(source.expandingProjection(progress: 0))
+            XCTAssertEqual(opening.outputBounds, document.bounds.integral)
+            for face in opening.faces where face.paperSample == nil {
+                for vertex in face.vertices {
+                    XCTAssertEqual(vertex.projected.x, vertex.source.x, accuracy: 0.000001)
+                    XCTAssertEqual(vertex.projected.y, vertex.source.y, accuracy: 0.000001)
+                }
+            }
+            let final = try XCTUnwrap(source.projection())
+            for step in 0...60 {
+                let projection = try XCTUnwrap(source.expandingProjection(progress: CGFloat(step) / 60))
+                XCTAssertEqual(projection.faces.count, final.faces.count)
+                var shared: [String: StitchAccordionProjection.Vertex] = [:]
+                for face in projection.faces {
+                    for vertex in face.vertices {
+                        let key = "\(vertex.rest.x):\(vertex.rest.y)"
+                        if let other = shared[key] {
+                            XCTAssertEqual(vertex.projected, other.projected)
+                            XCTAssertEqual(vertex.depth, other.depth)
+                        } else { shared[key] = vertex }
+                    }
+                    for (a, b) in [(face.a, face.b), (face.b, face.c), (face.c, face.a)] {
+                        let rest = hypot(a.rest.x - b.rest.x, a.rest.y - b.rest.y)
+                        let dx = a.world.x - b.world.x, dy = a.world.y - b.world.y, dz = a.world.z - b.world.z
+                        XCTAssertEqual(sqrt(dx * dx + dy * dy + dz * dz), rest, accuracy: 0.000001)
+                    }
+                }
+            }
+            let settled = try XCTUnwrap(source.expandingProjection(progress: 1))
+            XCTAssertEqual(settled.outputBounds, final.outputBounds)
+            for (a, b) in zip(settled.faces, final.faces) {
+                for (a, b) in zip(a.vertices, b.vertices) {
+                    XCTAssertEqual(a.projected.x, b.projected.x, accuracy: 0.000001)
+                    XCTAssertEqual(a.projected.y, b.projected.y, accuracy: 0.000001)
+                }
+            }
+            XCTAssertNil(source.expandingProjection(progress: .nan))
+        }
+    }
+
     func testSharedEdgesDoNotLeaveTransparentCracks() throws {
         for axis in [StitchAxis.horizontal, .vertical] {
             let document = try fixture(axis: axis, solid: true)
