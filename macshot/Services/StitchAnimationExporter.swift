@@ -61,6 +61,7 @@ nonisolated enum StitchAnimationExporter {
               documentSource.documentBounds == source.documentBounds,
               documentSource.unfoldedBounds == source.unfoldedBounds,
               documentSource.camera == source.camera,
+              documentSource.spread == source.spread,
               let projection = source.expandingProjection(progress: 1), projection.hasProjectedOutput,
               presentation.projection?.hasProjectedOutput == true,
               presentation.projection?.documentBounds == source.documentBounds,

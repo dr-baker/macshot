@@ -24,6 +24,7 @@ extension StitchDocument {
             style.foldStrength == other.style.foldStrength,
             style.accordionWidth == other.style.accordionWidth,
             style.accordionPleats == other.style.accordionPleats,
+            style.accordionSpread == other.style.accordionSpread,
             style.accordionPerspective == other.style.accordionPerspective,
             style.accordionYaw == other.style.accordionYaw, style.visible == other.style.visible else { return false }
         let textures = activeFoldTextures, otherTextures = other.activeFoldTextures

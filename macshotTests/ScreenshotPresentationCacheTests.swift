@@ -77,17 +77,20 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         }
     }
 
-    func testCameraAndPleatChangesReuseEffectedSheetAndSizeTheBackgroundAgain() throws {
+    func testCameraPleatAndSpreadChangesReuseEffectedSheetAndSizeTheBackgroundAgain() throws {
         let fixture = try fixture()
         let effects = ImageEffectsConfig(preset: .vivid)
-        for cameraOnly in [true, false] {
+        let changes: [(WritableKeyPath<StitchStyle, CGFloat>, CGFloat)] = [
+            (\.accordionYaw, fixture.document.style.accordionYaw + 7),
+            (\.accordionPleats, fixture.document.style.accordionPleats + 1),
+            (\.accordionSpread, 0.8)]
+        for (parameter, value) in changes {
             let cache = ScreenshotPresentation.Cache()
             let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
                 beautify: fixture.background, projection: fixture.projection), image: fixture.composite))
             let firstOutput = try XCTUnwrap(first.renderCGImage())
             var document = fixture.document
-            if cameraOnly { document.style.accordionYaw += 7 }
-            else { document.style.accordionPleats += 1 }
+            document.style[keyPath: parameter] = value
             let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
             let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
                 beautify: fixture.background, projection: projection), image: fixture.composite, document: document))
@@ -346,20 +349,24 @@ final class ScreenshotPresentationCacheTests: XCTestCase {
         XCTAssertTrue(opening.faces.first { $0.paperTexture != nil }?.paperTexture?.image === material.image)
     }
 
-    func testCameraEditsReuseEffectedStripPixels() throws {
+    func testCameraAndSpreadEditsReuseEffectedStripPixels() throws {
         let fixture = try fixture()
         let cache = ScreenshotPresentation.Cache()
         let effects = ImageEffectsConfig(saturation: 0)
         let first = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
             projection: fixture.projection), image: fixture.composite))
         let originalMaterial = try XCTUnwrap(first.projection?.faces.first { $0.paperTexture != nil }?.paperTexture?.image)
-        var rotated = fixture.document
-        rotated.style.accordionYaw += 5
-        let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
-            projection: try XCTUnwrap(StitchAccordionProjection(document: rotated))), image: fixture.composite))
-        let nextMaterial = try XCTUnwrap(changed.projection?.faces.first { $0.paperTexture != nil }?.paperTexture?.image)
-        XCTAssertTrue(originalMaterial === nextMaterial, "A camera edit must not run the strip effect again")
-        XCTAssertTrue(first.pixels === changed.pixels)
+        let changes: [(WritableKeyPath<StitchStyle, CGFloat>, CGFloat)] = [
+            (\.accordionYaw, fixture.document.style.accordionYaw + 5), (\.accordionSpread, 0.8)]
+        for (parameter, value) in changes {
+            var document = fixture.document
+            document.style[keyPath: parameter] = value
+            let changed = try XCTUnwrap(cache.prepare(ScreenshotPresentation(effects: effects,
+                projection: try XCTUnwrap(StitchAccordionProjection(document: document))), image: fixture.composite))
+            let nextMaterial = try XCTUnwrap(changed.projection?.faces.first { $0.paperTexture != nil }?.paperTexture?.image)
+            XCTAssertTrue(originalMaterial === nextMaterial, "A projection edit must not run the strip effect again")
+            XCTAssertTrue(first.pixels === changed.pixels)
+        }
     }
 
     func testRetentionIncludesCompositeWallpaperPreparedBackgroundAndFinalReservation() throws {

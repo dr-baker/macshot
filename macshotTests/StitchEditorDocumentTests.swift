@@ -14,15 +14,20 @@ final class StitchEditorDocumentTests: XCTestCase {
         next.style.accordionPerspective = -20
         next.style.accordionYaw = 30
         next.style.accordionPleats = 6
+        next.style.accordionSpread = 0.8
+        XCTAssertFalse(next.isIdentical(to: original))
+        XCTAssertTrue(next.hasSameAccordionPixels(as: original))
         XCTAssertTrue(view.applyStitchDocument(next))
         XCTAssertTrue(view.screenshotImage === source)
         XCTAssertTrue(view.annotations[0] === annotation)
         XCTAssertTrue(view.captureSelectedRegion() === first)
         XCTAssertEqual(annotation.boundingRect.midX, 20, accuracy: 0.001)
         XCTAssertEqual(view.stitchDocument?.style.accordionPleats, 6)
+        XCTAssertEqual(view.stitchDocument?.style.accordionSpread, 0.8)
         XCTAssertEqual(view.undoStack.count, 1)
         view.undo()
         XCTAssertEqual(view.stitchDocument?.style.accordionPleats, original.style.accordionPleats)
+        XCTAssertEqual(view.stitchDocument?.style.accordionSpread, original.style.accordionSpread)
         XCTAssertTrue(view.screenshotImage === source)
     }
 
