@@ -121,6 +121,8 @@ nonisolated struct StitchAccordionProjection: Sendable {
         let documentBounds: CGRect
         let unfoldedBounds: CGRect
         let camera: StitchPaperCamera
+        /// Physical opening fraction. The paper's rest length remains unchanged.
+        let spread: CGFloat
         fileprivate let folds: [Fold]
         fileprivate let columns: [CGFloat]
         fileprivate let rows: [CGFloat]
@@ -129,6 +131,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
             documentBounds = source.documentBounds
             unfoldedBounds = source.unfoldedBounds
             self.camera = camera ?? source.camera
+            spread = source.spread
             self.folds = folds
             columns = source.columns
             rows = source.rows
@@ -148,6 +151,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
             if active {
                 guard style.accordionWidth.isFinite, style.accordionWidth >= 0, style.accordionWidth <= 80,
                       style.accordionPleats.isFinite, (2...6).contains(style.accordionPleats),
+                      style.accordionSpread.isFinite, StitchStyle.accordionSpreadRange.contains(style.accordionSpread),
                       style.accordionPerspective.isFinite, StitchPaperCamera.perspectiveRange.contains(style.accordionPerspective),
                       style.accordionYaw.isFinite, StitchPaperCamera.yawRange.contains(style.accordionYaw) else { return nil }
                 let joins = StitchAccordionProjection.mergedJoins(documentJoins, bounds: bounds)
@@ -190,6 +194,7 @@ nonisolated struct StitchAccordionProjection: Sendable {
             self.documentBounds = bounds
             self.unfoldedBounds = unfolded
             self.camera = StitchPaperCamera(perspective: style.accordionPerspective, yaw: style.accordionYaw)
+            self.spread = active ? style.accordionSpread : StitchStyle().accordionSpread
             self.folds = folds
             self.columns = columns
             self.rows = rows
@@ -204,9 +209,11 @@ nonisolated struct StitchAccordionProjection: Sendable {
         func expandingProjection(progress: CGFloat) -> StitchAccordionProjection? {
             guard progress.isFinite else { return nil }
             let progress = max(0, min(1, progress))
-            let angle = .pi / 2 + (acos(CGFloat(0.45)) - .pi / 2) * progress
-            return StitchAccordionProjection(source: self, compression: progress == 0 ? 0 : cos(angle),
-                ridgeSlope: sin(angle), cameraProgress: progress, depthStrength: progress)
+            let angle = .pi / 2 + (acos(spread) - .pi / 2) * progress
+            let compression = progress == 0 ? 0 : progress == 1 ? spread : cos(angle)
+            let ridgeSlope = progress == 1 ? sqrt(1 - spread * spread) : sin(angle)
+            return StitchAccordionProjection(source: self, compression: compression,
+                ridgeSlope: ridgeSlope, cameraProgress: progress, depthStrength: progress)
         }
 
         /// Freeze bounded printed materials once for an animation or live layer
@@ -244,8 +251,10 @@ nonisolated struct StitchAccordionProjection: Sendable {
     init?(source: Source, progress proposedProgress: CGFloat = 1) {
         guard proposedProgress.isFinite else { return nil }
         let progress = max(0, min(1, proposedProgress))
-        let angle = acos(CGFloat(0.45)) * progress
-        self.init(source: source, compression: cos(angle), ridgeSlope: sin(angle),
+        let angle = acos(source.spread) * progress
+        let compression = progress == 1 ? source.spread : cos(angle)
+        let ridgeSlope = progress == 1 ? sqrt(1 - source.spread * source.spread) : sin(angle)
+        self.init(source: source, compression: compression, ridgeSlope: ridgeSlope,
                   cameraProgress: progress, depthStrength: 1)
     }
 

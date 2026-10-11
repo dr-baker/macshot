@@ -12,7 +12,7 @@ private final class StitchSlider: NSSlider {
 }
 
 private enum StitchSeamParameter: Int, CaseIterable {
-    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength, accordionWidth, accordionPleats
+    case blur, feather, lineWidth, shape, tearWidth, foldDepth, foldStrength, accordionWidth, accordionPleats, accordionSpread
 
     func keyPath(for transition: StitchTransition) -> WritableKeyPath<StitchStyle, CGFloat> {
         switch self {
@@ -30,6 +30,7 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .foldStrength: return \.foldStrength
         case .accordionWidth: return \.accordionWidth
         case .accordionPleats: return \.accordionPleats
+        case .accordionSpread: return \.accordionSpread
         }
     }
 
@@ -44,6 +45,7 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .foldStrength: return 0...Double(StitchStyle.maximumFoldStrength)
         case .accordionWidth: return 4...64
         case .accordionPleats: return 2...6
+        case .accordionSpread: return Double(StitchStyle.accordionSpreadRange.lowerBound)...Double(StitchStyle.accordionSpreadRange.upperBound)
         }
     }
 
@@ -63,11 +65,13 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .foldStrength: return L("Strength")
         case .accordionWidth: return L("Fold width")
         case .accordionPleats: return L("Pleats")
+        case .accordionSpread: return L("Spread")
         }
     }
 
     func formattedValue(_ value: CGFloat) -> String {
         if self == .accordionPleats { return String(Int(value.rounded())) }
+        if self == .accordionSpread { return String(format: "%.0f%%", Double(value) * 100) }
         return self == .foldStrength ? String(format: "%.0f%%", Double(value / StitchStyle.maximumFoldStrength) * 100)
             : String(format: "%.1f px", Double(value))
     }
@@ -78,7 +82,7 @@ private enum StitchSeamParameter: Int, CaseIterable {
         case .blend: return [.blur, .feather]
         case .torn: return [.tearWidth, .shape]
         case .fold: return [.foldDepth, .foldStrength]
-        case .accordion: return hasUnmeasuredAccordionJoins ? [.accordionWidth, .accordionPleats] : [.accordionPleats]
+        case .accordion: return hasUnmeasuredAccordionJoins ? [.accordionWidth, .accordionPleats, .accordionSpread] : [.accordionPleats, .accordionSpread]
         }
     }
 }
@@ -747,7 +751,10 @@ final class StitchEditorController: NSObject {
         let presentationFrame = outputFrame.insetBy(dx: -ScreenshotPresentation.paperPadding,
             dy: -ScreenshotPresentation.paperPadding)
         editor.stitchPaperPresentationFrame = presentationFrame
-        paperPreview.frame = presentationFrame
+        // Rotation can make the projected output narrower than the editing
+        // canvas. Keep that canvas covered instead of revealing its flat pixels.
+        paperPreview.frame = presentationFrame.union(editor.selectionRect)
+        paperPreview.presentationRect = paperPreview.convert(presentationFrame, from: editor)
         editor.needsDisplay = true
         guard let scroll = editor.enclosingScrollView else { return }
         if savedPreviewInsets == nil {

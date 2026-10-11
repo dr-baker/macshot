@@ -157,6 +157,8 @@ enum StitchTransition: String, CaseIterable, Codable {
 struct StitchStyle {
     /// One retains the original full-strength fold at the slider's midpoint.
     static let maximumFoldStrength: CGFloat = 2
+    /// Fraction of the omitted paper visible across its folded span.
+    static let accordionSpreadRange: ClosedRange<CGFloat> = 0.05...1
 
     var transition: StitchTransition = .wave
     var color = NSColor(calibratedRed: 0.23, green: 0.28, blue: 0.34, alpha: 0.9)
@@ -171,6 +173,7 @@ struct StitchStyle {
     var foldStrength: CGFloat = 1
     var accordionWidth: CGFloat = 30
     var accordionPleats: CGFloat = 3
+    var accordionSpread: CGFloat = 0.45
     /// Vertical camera tilt in degrees. Positive values view the sheet from above.
     var accordionPerspective: CGFloat = 14
     /// Horizontal camera rotation in degrees, independent of vertical tilt.

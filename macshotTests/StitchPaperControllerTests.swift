@@ -72,6 +72,42 @@ final class StitchPaperControllerTests: XCTestCase {
         return (editor, controller, preview, window)
     }
 
+    func testSpreadSliderChangesOnlyAccordionAndSupportsUndo() throws {
+        let (editor, controller, _, window) = try fixture()
+        defer { controller.suspend(); window.orderOut(nil) }
+        let options = controller.makeSeamOptions()
+        let slider = try XCTUnwrap(options.subviews.first {
+            $0.identifier?.rawValue == "stitch.seam.accordionSpread"
+        } as? NSSlider)
+        let value = try XCTUnwrap(options.subviews.first {
+            $0.identifier?.rawValue == "stitch.seam.accordionSpread.value"
+        } as? NSTextField)
+        XCTAssertFalse(slider.isHidden)
+        XCTAssertTrue(slider.isEnabled)
+        XCTAssertTrue(slider.isContinuous)
+        XCTAssertEqual(slider.minValue, 0.05)
+        XCTAssertEqual(slider.maxValue, 1)
+        XCTAssertEqual(slider.doubleValue, 0.45)
+        XCTAssertEqual(value.stringValue, "45%")
+        XCTAssertTrue(options.bounds.contains(slider.frame))
+        let originalPixels = try XCTUnwrap(editor.screenshotImage)
+        let initialUndo = editor.undoStack.count
+        slider.doubleValue = 0.8
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.8)
+        XCTAssertEqual(editor.undoStack.count, initialUndo + 1)
+        XCTAssertEqual(value.stringValue, "80%")
+        XCTAssertTrue(editor.screenshotImage === originalPixels)
+        editor.undo()
+        XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.45)
+        XCTAssertEqual(slider.doubleValue, 0.45)
+        var wave = try XCTUnwrap(editor.stitchDocument)
+        wave.style.transition = .wave
+        controller.restore(wave)
+        XCTAssertTrue(slider.isHidden)
+        XCTAssertFalse(slider.isEnabled)
+    }
+
     func testCameraDragAddsOneUndoEntryAndCancellationRestoresBothAngles() throws {
         let (editor, controller, preview, window) = try fixture()
         defer { controller.suspend(); window.orderOut(nil) }

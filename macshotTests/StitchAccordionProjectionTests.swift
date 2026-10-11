@@ -173,6 +173,34 @@ final class StitchAccordionProjectionTests: XCTestCase {
         }
     }
 
+    func testExpansionAndCopiedSourcesKeepTheSavedSpreadTarget() throws {
+        var document = try fixture(axis: .horizontal)
+        for spread in [CGFloat(0.05), 0.8, 1] {
+            document.style.accordionSpread = spread
+            let source = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
+            let resized = try XCTUnwrap(source.resizingPaperTextures(maxDimension: 40))
+            let rotated = resized.withCamera(StitchPaperCamera(perspective: -24, yaw: 31))
+            XCTAssertEqual(resized.spread, spread)
+            XCTAssertEqual(rotated.spread, spread)
+            XCTAssertEqual(rotated.unfoldedBounds, source.unfoldedBounds)
+            for snapshot in [source, resized, rotated] {
+                let compact = try XCTUnwrap(snapshot.expandingProjection(progress: 0))
+                XCTAssertEqual(compact.outputBounds, document.bounds.integral)
+                let expanded = try XCTUnwrap(snapshot.expandingProjection(progress: 1))
+                let settled = try XCTUnwrap(snapshot.projection())
+                XCTAssertEqual(expanded.outputBounds, settled.outputBounds)
+                for (opening, final) in zip(expanded.faces, settled.faces) {
+                    for (a, b) in zip(opening.vertices, final.vertices) {
+                        XCTAssertEqual(a.rest, b.rest)
+                        XCTAssertEqual(a.world, b.world)
+                        XCTAssertEqual(a.projected, b.projected)
+                        XCTAssertEqual(a.depth, b.depth)
+                    }
+                }
+            }
+        }
+    }
+
     func testSharedEdgesDoNotLeaveTransparentCracks() throws {
         for axis in [StitchAxis.horizontal, .vertical] {
             let document = try fixture(axis: axis, solid: true)
@@ -459,6 +487,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
 
     func testMaterialEffectsMapOnceAndRemainInAnimationSourceWithoutChangingGeometry() throws {
         var document = StitchDocument(pieces: [StitchPiece(image: try printedTexture())], style: accordionStyle(), background: .transparent)
+        document.style.accordionSpread = 0.8
         XCTAssertTrue(document.collapse(axis: .horizontal, from: 80, to: 144))
         let original = try XCTUnwrap(StitchAccordionProjection(document: document))
         var calls = 0
@@ -468,6 +497,7 @@ final class StitchAccordionProjectionTests: XCTestCase {
         })
         XCTAssertEqual(calls, 1)
         XCTAssertEqual(mapped.outputBounds, original.outputBounds)
+        XCTAssertEqual(mapped.source.spread, 0.8)
         XCTAssertEqual(mapped.drawingOrder, original.drawingOrder)
         for (a, b) in zip(original.faces, mapped.faces) {
             XCTAssertEqual(a.a.projected, b.a.projected)

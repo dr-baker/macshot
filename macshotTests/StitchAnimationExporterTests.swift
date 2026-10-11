@@ -274,6 +274,26 @@ final class StitchAnimationExporterTests: XCTestCase {
         XCTAssertGreaterThan(CGImageSourceGetCount(source), 10)
     }
 
+    func testAnimationUsesSavedSpreadAndRejectsAStalePreparedTarget() throws {
+        for spread in [CGFloat(0.05), 0.8, 1] {
+            let fixture = try makeFixture(spread: spread)
+            XCTAssertEqual(fixture.plan.source.spread, spread)
+            let final = try XCTUnwrap(fixture.plan.source.expandingProjection(progress: 1))
+            let prepared = try XCTUnwrap(fixture.prepared.projection)
+            XCTAssertEqual(final.outputBounds, prepared.outputBounds)
+            for (animated, staticFace) in zip(final.faces, prepared.faces) {
+                for (a, b) in zip(animated.vertices, staticFace.vertices) {
+                    XCTAssertEqual(a.projected, b.projected)
+                    XCTAssertEqual(a.world, b.world)
+                }
+            }
+            var changed = fixture.document
+            changed.style.accordionSpread = 0.45
+            XCTAssertThrowsError(try StitchAnimationExporter.prepare(document: changed,
+                presentation: fixture.prepared))
+        }
+    }
+
     func testInvalidOrUndecoratedSnapshotsFailBeforeCreatingOutput() throws {
         let fixture = try makeFixture()
         let raw = ScreenshotPresentation.Prepared(pixels: fixture.prepared.pixels,
@@ -362,6 +382,7 @@ final class StitchAnimationExporterTests: XCTestCase {
 
     private func makeFixture(maxDimension: Int = 1600, sourceScale: CGFloat = 1,
                              removedLength: Int = 16,
+                             spread: CGFloat = 0.45,
                              perspective: CGFloat = StitchPaperCamera.defaultPerspective,
                              yaw: CGFloat = StitchPaperCamera.defaultYaw) throws -> Fixture {
         // The editable document contains green pixels; the provided composite
@@ -371,6 +392,7 @@ final class StitchAnimationExporterTests: XCTestCase {
         var style = StitchStyle()
         style.transition = .accordion
         style.accordionWidth = 12
+        style.accordionSpread = spread
         style.accordionPerspective = perspective
         style.accordionYaw = yaw
         let rawPixels = try XCTUnwrap(raw.cgImage(forProposedRect: nil, context: nil, hints: nil))

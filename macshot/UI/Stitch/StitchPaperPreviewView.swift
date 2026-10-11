@@ -12,6 +12,9 @@ final class StitchPaperPreviewView: NSView {
     var camera = StitchPaperCamera()
     var projection: StitchAccordionProjection?
     var paperFrame: CGRect?
+    /// The projected image occupies this rect inside an opaque host that also
+    /// covers the compact editing canvas. Camera changes must not stretch it.
+    var presentationRect: CGRect
     var isShowingInteractivePaper: Bool { interactivePaper != nil }
     var image: NSImage? {
         didSet {
@@ -36,8 +39,10 @@ final class StitchPaperPreviewView: NSView {
     private var isOrbiting = false
     private var hasCameraChanges = false
     override var acceptsFirstResponder: Bool { false }
+    override var isOpaque: Bool { true }
 
     override init(frame: NSRect) {
+        presentationRect = CGRect(origin: .zero, size: frame.size)
         super.init(frame: frame)
         progress.style = .spinning
         progress.controlSize = .small
@@ -74,7 +79,7 @@ final class StitchPaperPreviewView: NSView {
         NSColor(white: 0.15, alpha: 1).setFill()
         bounds.fill()
         let visibleImage = interactivePaper != nil ? interactiveBackground : (animation == nil ? image : animationBackground)
-        visibleImage?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+        visibleImage?.draw(in: presentationRect, from: .zero, operation: .sourceOver, fraction: 1)
     }
     func animate(texture: CGImage, document: StitchDocument, frame: CGRect, background: CGImage?, viewport: CGRect? = nil,
                  preparedSource: StitchAccordionProjection.Source? = nil) {
@@ -92,7 +97,7 @@ final class StitchPaperPreviewView: NSView {
         layer?.masksToBounds = false
         if #available(macOS 14.0, *) { clipsToBounds = false }
         animation = effect
-        animationBackground = background.map { NSImage(cgImage: $0, size: bounds.size) }
+        animationBackground = background.map { NSImage(cgImage: $0, size: presentationRect.size) }
         let backdrop = CALayer()
         backdrop.name = "stitch.accordion.backdrop"
         backdrop.frame = backgroundFrame
@@ -138,7 +143,7 @@ final class StitchPaperPreviewView: NSView {
         self.projection = projection
         paperFrame = frame
         interactivePaper = effect
-        interactiveBackground = background.map { NSImage(cgImage: $0, size: bounds.size) }
+        interactiveBackground = background.map { NSImage(cgImage: $0, size: presentationRect.size) }
         progress.stopAnimation(nil)
         progress.isHidden = true
         addSubview(effect)

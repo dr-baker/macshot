@@ -3,6 +3,60 @@ import XCTest
 
 @MainActor
 final class StitchAccordionSizingTests: XCTestCase {
+    func testSpreadControlsNativeSpanWhileEveryPaperEdgeKeepsItsRestLength() throws {
+        let image = try pixels(width: 1000, height: 1000)
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var document = StitchDocument(pieces: [StitchPiece(image: image)])
+            document.style.transition = .accordion
+            document.style.accordionPerspective = 0
+            document.style.accordionYaw = 0
+            XCTAssertTrue(document.collapse(axis: axis, from: 320, to: 520))
+            for spread in [CGFloat(0.05), 0.45, 0.8, 1] {
+                document.style.accordionSpread = spread
+                let projection = try XCTUnwrap(StitchAccordionProjection(document: document))
+                XCTAssertEqual(projection.source.spread, spread)
+                XCTAssertEqual(projection.source.unfoldedBounds.size, CGSize(width: 1000, height: 1000))
+                let coordinates = projection.faces.flatMap(\.vertices).map {
+                    axis == .horizontal ? $0.world.y : $0.world.x
+                }
+                let span = try XCTUnwrap(coordinates.max()) - XCTUnwrap(coordinates.min())
+                XCTAssertEqual(span, 800 + 200 * spread, accuracy: 0.000001)
+                let dimensions = try XCTUnwrap(projection.outputPixelDimensions(
+                    pixelWidth: Int(document.bounds.width), pixelHeight: Int(document.bounds.height)))
+                XCTAssertEqual(axis == .horizontal ? dimensions.height : dimensions.width, Int(800 + 200 * spread))
+                XCTAssertEqual(try XCTUnwrap(projection.faces.flatMap(\.vertices).map { $0.world.z }.max()),
+                    200 / 6 * sqrt(1 - spread * spread), accuracy: 0.000001)
+                try assertIsometry(projection)
+                let unfolded = try XCTUnwrap(projection.source.projection(progress: 0))
+                XCTAssertEqual(unfolded.outputBounds.size, CGSize(width: 1000, height: 1000))
+            }
+        }
+    }
+
+    func testSpreadHistoryRoundTripsAndOlderHistoryKeepsTheOriginalOpening() throws {
+        let image = try pixels(width: 160, height: 120)
+        var document = StitchDocument(pieces: [StitchPiece(image: image)])
+        document.style.transition = .accordion
+        XCTAssertTrue(document.collapse(axis: .horizontal, from: 40, to: 60))
+        document.style.accordionSpread = 0.8
+        let saved = try XCTUnwrap(SavedStitchDocument(document))
+        let encoded = try JSONEncoder().encode(saved)
+        let roundTrip = try JSONDecoder().decode(SavedStitchDocument.self, from: encoded)
+        XCTAssertEqual(try XCTUnwrap(roundTrip.restore()).style.accordionSpread, 0.8)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        legacy.removeValue(forKey: "accordionSpread")
+        let old = try JSONDecoder().decode(SavedStitchDocument.self,
+            from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertEqual(try XCTUnwrap(old.restore()).style.accordionSpread, 0.45)
+        for invalid in [CGFloat.nan, .infinity, -0.1, 0, 0.049, 1.001] {
+            var corrupt = saved
+            corrupt.accordionSpread = invalid
+            XCTAssertNil(corrupt.restore())
+            document.style.accordionSpread = invalid
+            XCTAssertNil(StitchAccordionProjection.Source(document: document))
+        }
+    }
+
     func testUnfoldedMeshRestoresActualRemovedLengthInBothDirections() throws {
         let image = try pixels(width: 1000, height: 1000)
         for axis in [StitchAxis.horizontal, .vertical] {

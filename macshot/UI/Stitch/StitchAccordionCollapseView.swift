@@ -49,6 +49,26 @@ final class StitchAccordionCollapseView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateDisplayScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateDisplayScale()
+    }
+
+    private func updateDisplayScale() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        layer?.contentsScale = scale
+        for sheet in faceLayers.values {
+            sheet.contentsScale = scale
+            sheet.mask?.contentsScale = scale
+            sheet.sublayers?.forEach { $0.contentsScale = scale }
+        }
+    }
+
     /// Orbiting updates only textured face transforms and lighting. Reduce Motion
     /// removes the folding animation, while direct manipulation remains available.
     init?(interactiveTexture texture: CGImage, projection: StitchAccordionProjection, frame: CGRect) {
@@ -226,6 +246,7 @@ final class StitchAccordionCollapseView: NSView {
             }
         }
         layer.sublayers = final.drawingOrder.compactMap { faceLayers[$0] }
+        updateDisplayScale()
         if interactive {
             let shadow = BeautifyRenderer.stitchPaperShadow
             var mapping = CGAffineTransform(translationX: -outputBounds.minX, y: -outputBounds.minY)
