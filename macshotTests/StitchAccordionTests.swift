@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage
+import QuartzCore
 import XCTest
 
 @MainActor
@@ -103,10 +104,11 @@ final class StitchAccordionTests: XCTestCase {
             var document = try fixture(axis: axis, color: .white)
             for index in document.pieces.indices { document.pieces[index].origin = CGPoint(x: document.pieces[index].origin.x - 17, y: document.pieces[index].origin.y + 23) }
             let size = CGSize(width: 420, height: 330)
-            let first = try XCTUnwrap(StitchAccordionProjection(document: document, progress: 0))
+            let source = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
+            let first = try XCTUnwrap(source.expandingProjection(progress: 0))
             let depth = try XCTUnwrap(first.faces.first).a.depth
-            for progress in [CGFloat(0), 0.2, 0.45, 0.72, 1] {
-                let projection = try XCTUnwrap(StitchAccordionProjection(document: document, progress: progress))
+            for progress in StitchAccordionAnimation.editorProgresses {
+                let projection = try XCTUnwrap(source.expandingProjection(progress: progress))
                 let output = projection.outputBounds
                 let sx = size.width / output.width, sy = size.height / output.height
                 for face in projection.faces {
@@ -131,6 +133,78 @@ final class StitchAccordionTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testLayerAnimationDisplaysConnectedMeshSamplesAndDepthRanksOnOneTimeline() throws {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        for axis in [StitchAxis.horizontal, .vertical] {
+            let document = try fixture(axis: axis, color: .white)
+            let texture = try XCTUnwrap(StitchRenderer.render(document))
+            let source = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
+            let plans = try StitchAccordionAnimation.editorProgresses.map {
+                try XCTUnwrap(source.expandingProjection(progress: $0))
+            }
+            let final = try XCTUnwrap(plans.last)
+            let envelope = plans.reduce(CGRect.null) { $0.union($1.outputBounds) }
+            let frame = CGRect(x: 45, y: 60, width: final.outputBounds.width * 0.8,
+                height: final.outputBounds.height * 0.8)
+            let effect = try XCTUnwrap(StitchAccordionCollapseView(texture: texture, document: document, frame: frame))
+            effect.play { }
+            defer { effect.layer?.sublayers?.forEach { $0.removeAllAnimations() } }
+            let layers = try XCTUnwrap(effect.layer?.sublayers)
+            let expectedTimes = StitchAccordionAnimation.editorKeyTimes.map { NSNumber(value: Double($0)) }
+            let sx = effect.bounds.width / envelope.width, sy = effect.bounds.height / envelope.height
+            var sharedPoints: [Int: [AnimationRestKey: CGPoint]] = [:]
+            for layer in layers {
+                let index = try XCTUnwrap(Int(try XCTUnwrap(layer.name).replacingOccurrences(of: "accordion.face.", with: "")))
+                for key in ["transform", "opacity", "zPosition", "filters.paperLighting.inputRVector",
+                            "filters.paperLighting.inputGVector", "filters.paperLighting.inputBVector"] {
+                    let animation = try XCTUnwrap(layer.animation(forKey: key) as? CAKeyframeAnimation)
+                    XCTAssertEqual(animation.calculationMode, .discrete)
+                    XCTAssertEqual(animation.keyTimes, expectedTimes)
+                    XCTAssertEqual(animation.duration, StitchAccordionAnimation.editorDuration)
+                    XCTAssertNil(animation.timingFunctions,
+                                 "Interpolation of independent face planes must not recreate disconnected motion")
+                }
+                let animation = try XCTUnwrap(layer.animation(forKey: "transform") as? CAKeyframeAnimation)
+                let transforms = try XCTUnwrap(animation.values as? [NSValue])
+                let depthAnimation = try XCTUnwrap(layer.animation(forKey: "zPosition") as? CAKeyframeAnimation)
+                let ranks = try XCTUnwrap(depthAnimation.values as? [NSNumber])
+                XCTAssertEqual(transforms.count, plans.count)
+                let localPoints = final.faces[index].vertices.map { vertex in
+                    let local = final.faces[index].paperSample == nil ? vertex.source : vertex.rest
+                    return CGPoint(x: local.x * sx, y: local.y * sy)
+                }
+                let minX = localPoints.map(\.x).min()!, minY = localPoints.map(\.y).min()!
+                for frameIndex in [0, 1, 10, 21, 32, plans.count - 1] {
+                    let plan = plans[frameIndex]
+                    let transform = transforms[frameIndex].caTransform3DValue
+                    XCTAssertEqual(ranks[frameIndex].intValue, try XCTUnwrap(plan.drawingOrder.firstIndex(of: index)))
+                    for (localPoint, vertex) in zip(localPoints, plan.faces[index].vertices) {
+                        let local = CGPoint(x: localPoint.x - minX, y: localPoint.y - minY)
+                        let w = local.x * transform.m14 + local.y * transform.m24 + transform.m44
+                        let projected = CGPoint(
+                            x: (local.x * transform.m11 + local.y * transform.m21 + transform.m41) / w,
+                            y: (local.x * transform.m12 + local.y * transform.m22 + transform.m42) / w)
+                        XCTAssertEqual(projected.x, (vertex.projected.x - envelope.minX) * sx, accuracy: 0.000001)
+                        XCTAssertEqual(projected.y, (vertex.projected.y - envelope.minY) * sy, accuracy: 0.000001)
+                        let key = AnimationRestKey(vertex.rest)
+                        if let previous = sharedPoints[frameIndex]?[key] {
+                            XCTAssertEqual(projected.x, previous.x, accuracy: 0.000001)
+                            XCTAssertEqual(projected.y, previous.y, accuracy: 0.000001)
+                        }
+                        sharedPoints[frameIndex, default: [:]][key] = projected
+                    }
+                }
+                XCTAssertEqual(layer.zPosition, CGFloat(try XCTUnwrap(final.drawingOrder.firstIndex(of: index))))
+            }
+        }
+    }
+
+    private struct AnimationRestKey: Hashable {
+        let x: CGFloat
+        let y: CGFloat
+        init(_ point: CGPoint) { x = point.x; y = point.y }
     }
 
     func testFoldedPreviewSwitchesToFlatEditingWithoutChangingPixelsOrKeyboardOwnership() throws {
