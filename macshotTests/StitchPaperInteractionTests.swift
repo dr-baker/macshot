@@ -172,7 +172,8 @@ final class StitchPaperInteractionTests: XCTestCase {
             }
             let minX = try XCTUnwrap(points.map(\.x).min()), minY = try XCTUnwrap(points.map(\.y).min())
             for (point, vertex) in zip(points, face.vertices) {
-                let local = CGPoint(x: point.x - minX, y: point.y - minY)
+                let maskBounds = try XCTUnwrap((layer.mask as? CAShapeLayer)?.path).boundingBoxOfPath
+                let local = CGPoint(x: point.x - minX + maskBounds.minX, y: point.y - minY + maskBounds.minY)
                 let transform = layer.transform
                 let w = local.x * transform.m14 + local.y * transform.m24 + transform.m44
                 XCTAssertEqual((local.x * transform.m11 + local.y * transform.m21 + transform.m41) / w,
