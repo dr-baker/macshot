@@ -1072,6 +1072,21 @@ extension OverlayWindowController: OverlayViewDelegate {
             editState: editState.hasEditableContent ? editState : nil)
     }
 
+    var canDetachForSavedFileReveal: Bool {
+        guard let view = overlayView else { return false }
+        return overlayWindow?.isVisible == true && view.state == .selected && view.shouldAllowDetach()
+            && !view.selectionOnlyMode && !view.isRecording && !view.isScrollCapturing
+            && view.screenshotImage != nil && !view.selectionRect.isEmpty
+    }
+
+    /// Explicit navigation leaves the full-screen capture without losing its edits.
+    @discardableResult
+    func detachForSavedFileReveal() -> Bool {
+        guard canDetachForSavedFileReveal else { return false }
+        overlayView?.handleToolbarAction(.detach)
+        return overlayWindow?.isVisible != true
+    }
+
     @available(macOS 14.0, *)
     func overlayViewDidRequestRemoveBackground() {
         let appName = resolvedAppName()

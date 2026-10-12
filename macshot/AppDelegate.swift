@@ -213,6 +213,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Transient toast for failures that would otherwise be invisible — a save
     /// that couldn't be written, a recording that produced no file.
     private var errorToastController: UploadToastController?
+    /// Export confirmation belongs to the app so closing an editor cannot hide it.
+    private var saveToastController: UploadToastController?
     private var recordingEngine: RecordingEngine?
     private var terminatingAfterRecording = false
     private let terminationCoordinator = ApplicationTerminationCoordinator()
@@ -2216,6 +2218,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
         toast.show(status: message)
         toast.showError(message: message, asUploadFailure: false)
+    }
+
+    func showAnimationSavedToast(at url: URL, above windowLevel: NSWindow.Level, screen: NSScreen? = nil) {
+        saveToastController?.dismiss()
+        let toast = UploadToastController()
+        saveToastController = toast
+        toast.onDismiss = { [weak self, weak toast] in
+            guard self?.saveToastController === toast else { return }
+            self?.saveToastController = nil
+        }
+        let confirmationLevel = NSWindow.Level(max(windowLevel.rawValue,
+            NSApp.keyWindow?.level.rawValue ?? NSWindow.Level.normal.rawValue))
+        toast.showSavedFile(at: url, status: L("Animation saved."), above: confirmationLevel, screen: screen,
+            beforeReveal: { [weak self] in self?.prepareForSavedFileReveal() })
+    }
+
+    private func prepareForSavedFileReveal() {
+        guard recordingEngine == nil, scrollCaptureController == nil,
+              !StitchCaptureSession.shared.isPresenting else { return }
+        let currentCapture = overlayControllers.first { Int($0.windowNumber) == NSApp.keyWindow?.windowNumber }
+        if currentCapture?.detachForSavedFileReveal() == true { return }
+        for capture in overlayControllers where capture !== currentCapture {
+            if capture.detachForSavedFileReveal() { return }
+        }
     }
 
     func showPin(image: NSImage) {
