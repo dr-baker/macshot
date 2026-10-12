@@ -127,11 +127,12 @@ nonisolated struct StitchAccordionProjection: Sendable {
         fileprivate let columns: [CGFloat]
         fileprivate let rows: [CGFloat]
 
-        fileprivate init(copying source: Self, folds: [Fold], camera: StitchPaperCamera? = nil) {
+        fileprivate init(copying source: Self, folds: [Fold], camera: StitchPaperCamera? = nil,
+                         spread: CGFloat? = nil) {
             documentBounds = source.documentBounds
             unfoldedBounds = source.unfoldedBounds
             self.camera = camera ?? source.camera
-            spread = source.spread
+            self.spread = spread ?? source.spread
             self.folds = folds
             columns = source.columns
             rows = source.rows
@@ -226,6 +227,13 @@ nonisolated struct StitchAccordionProjection: Sendable {
         /// A camera drag reuses the validated topology and bounded materials.
         func withCamera(_ camera: StitchPaperCamera) -> Self {
             Self(copying: self, folds: folds, camera: camera)
+        }
+
+        /// Opening the existing folds changes geometry while keeping their
+        /// physical lengths and already prepared printed materials.
+        func withSpread(_ spread: CGFloat) -> Self? {
+            guard spread.isFinite, StitchStyle.accordionSpreadRange.contains(spread) else { return nil }
+            return Self(copying: self, folds: folds, spread: spread)
         }
     }
 

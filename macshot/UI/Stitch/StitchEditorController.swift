@@ -4,7 +4,7 @@ private final class StitchPiecesStack: NSStackView {
     override var isFlipped: Bool { true }
 }
 
-private final class StitchSlider: NSSlider {
+final class StitchSlider: NSSlider {
     var onBegin: (() -> Void)?
     var onEnd: (() -> Void)?
     override func mouseDown(with event: NSEvent) { onBegin?(); super.mouseDown(with: event); onEnd?() }
@@ -106,16 +106,19 @@ final class StitchEditorController: NSObject {
     var annotationPreview: CGImage? {
         didSet {
             canvas.annotationPreview = annotationPreview
-            if cameraSnapshot != nil {
+            let keepsCurrentPaper = canReuseInteractivePaper(for: document)
+            if cameraSnapshot != nil && !keepsCurrentPaper {
                 _ = paperPreview.cancelCameraGesture()
                 _ = angleControl.cancelCameraGesture()
                 endCameraGesture(commit: false)
             }
-            schedulePaperPreview()
+            schedulePaperPreview(keepsCurrentPaper: keepsCurrentPaper)
         }
     }
     private var restoring = false
     private var adjustingStyle = false
+    private var adjustedParameter: StitchSeamParameter?
+    private var styleSnapshot: StitchDocument?
     private let canvas = StitchCanvasView(frame: .zero)
     private let paperPreview = StitchPaperPreviewView(frame: .zero)
     private var paperGeneration = UUID()
@@ -130,10 +133,12 @@ final class StitchEditorController: NSObject {
     private var savedPreviewClipping: Bool?
     private var animatesNextPaperPreview = false
     private var cameraSnapshot: StitchDocument?
-    private var committingCamera = false
+    private var committingPresentation = false
     private weak var cameraScopeOwner: NSView?
     private var interactiveTexture: CGImage?
     private var interactivePaperSource: StitchAccordionProjection.Source?
+    private var interactiveDocument: StitchDocument?
+    private var interactiveContent: PaperContent?
     private var interactiveBackground: CGImage?
     private var interactivePaperFrame: CGRect?
     private let angleControl = StitchPaperAngleControl(frame: .zero)
@@ -168,6 +173,50 @@ final class StitchEditorController: NSObject {
     private var pieceActions: [NSButton] = []
     private var feedbackGeneration = UUID()
     private let feedback = StitchTooltipView()
+
+    /// Retained live materials are usable only while their composited pixels
+    /// still match the editor. Annotation revisions cover in-place redactions.
+    private struct PaperContent {
+        let image: NSImage?
+        let imageSize: CGSize?
+        let drawRect: CGRect
+        let selection: CGRect
+        let dimBounds: CGRect
+        let annotations: [(identity: ObjectIdentifier, revision: UInt64)]
+        let effects: ImageEffectsConfig
+        let background: BeautifyConfig
+
+        init(_ editor: ImageEditingView) {
+            image = editor.captureSourceImage ?? editor.screenshotImage
+            imageSize = image?.size
+            drawRect = editor.captureDrawRect
+            selection = editor.selectionRect
+            dimBounds = editor.highlightDimBounds
+            annotations = editor.annotations.map { (ObjectIdentifier($0), $0.renderRevision) }
+            effects = editor.effectsConfig
+            background = editor.beautifyConfig
+        }
+
+        func matches(_ editor: ImageEditingView) -> Bool {
+            let current = Self(editor)
+            return image === current.image && imageSize == current.imageSize
+                && drawRect == current.drawRect && selection == current.selection
+                && dimBounds == current.dimBounds
+                && annotations.count == current.annotations.count
+                && zip(annotations, current.annotations).allSatisfy {
+                    $0.identity == $1.identity && $0.revision == $1.revision
+                }
+                && effects.preset == current.effects.preset
+                && effects.brightness == current.effects.brightness
+                && effects.contrast == current.effects.contrast
+                && effects.saturation == current.effects.saturation
+                && effects.sharpness == current.effects.sharpness
+                && background.styleIndex == current.background.styleIndex
+                && background.customBackgroundImage === current.background.customBackgroundImage
+                && background.cachedBackgroundCGImage === current.background.cachedBackgroundCGImage
+                && background.backgroundBlur == current.background.backgroundBlur
+        }
+    }
 
     init(document: StitchDocument, window: NSWindow) {
         self.document = document
@@ -286,13 +335,17 @@ final class StitchEditorController: NSObject {
 
     func restore(_ value: StitchDocument) {
         restoring = true
+        let keepsCurrentPaper = canReuseInteractivePaper(for: value)
         _ = paperPreview.cancelCameraGesture()
         _ = angleControl.cancelCameraGesture()
         endCameraGesture(commit: false)
         canvas.cancelEditingGesture()
         dragSnapshot = nil
+        adjustingStyle = false
+        adjustedParameter = nil
+        styleSnapshot = nil
         document = value
-        refresh()
+        refresh(keepsCurrentPaper: keepsCurrentPaper)
         restoring = false
     }
 
@@ -316,6 +369,8 @@ final class StitchEditorController: NSObject {
         editorView?.stitchPaperPresentationFrame = nil
         interactiveTexture = nil
         interactivePaperSource = nil
+        interactiveDocument = nil
+        interactiveContent = nil
         interactiveBackground = nil
         interactivePaperFrame = nil
         paperTexture = nil
@@ -395,12 +450,16 @@ final class StitchEditorController: NSObject {
             slider.controlSize = .small
             slider.trackFillColor = ToolbarLayout.accentColor
             slider.setAccessibilityLabel(label.stringValue)
-            slider.onBegin = { [weak self] in
-                self?.adjustingStyle = true
-            }
+            slider.onBegin = { [weak self] in self?.beginStyleGesture(parameter) }
             slider.onEnd = { [weak self] in
                 guard let self else { return }
+                if parameter == .accordionSpread {
+                    self.endSpreadGesture()
+                    return
+                }
                 self.adjustingStyle = false
+                self.adjustedParameter = nil
+                self.styleSnapshot = nil
                 if !self.commitDocument(self.document), let current = self.editorView?.stitchDocument { self.document = current }
                 self.refresh()
             }
@@ -530,7 +589,7 @@ final class StitchEditorController: NSObject {
             showFeedback(L("Unable to render this canvas. Reduce its size and try again."))
         }
     }
-    private func refresh() {
+    private func refresh(keepsCurrentPaper: Bool = false) {
         if !document.pieces.contains(where: { $0.id == canvas.selectedID }) { canvas.selectedID = nil }
         canvas.refresh(document, preview: nil)
         updateBandGuides()
@@ -538,7 +597,11 @@ final class StitchEditorController: NSObject {
         syncSeamControls()
         editorView?.refreshStitchOptions()
         updatePaperVisibility()
-        refreshPieces(); scheduleRender()
+        refreshPieces()
+        if keepsCurrentPaper {
+            _ = updateInteractivePaper()
+            schedulePaperPreview(keepsCurrentPaper: true)
+        } else { scheduleRender() }
     }
     private func syncSeamControls() {
         let s = document.style
@@ -679,6 +742,15 @@ final class StitchEditorController: NSObject {
         paperGeneration = UUID()
     }
 
+    private func cancelPaperRendering() {
+        pendingNativePaperWarm?.cancel()
+        pendingNativePaperWarm = nil
+        pendingPaperPreview?.cancel()
+        pendingPaperPreview = nil
+        paperRenderCancellation?.cancel()
+        paperGeneration = UUID()
+    }
+
     private func updatePaperVisibility() {
         guard let editor = editorView else { return }
         let showsPaper = editor.stitchPreviewEnabled && editor.canPreviewStitchPaper
@@ -799,14 +871,19 @@ final class StitchEditorController: NSObject {
         guard let editor = editorView, editor.stitchPreviewEnabled, editor.canPreviewStitchPaper,
               paperPreview.superview != nil else { return }
         paperPreview.cancelAnimation()
-        if !keepsCurrentPaper && !committingCamera {
+        if !(keepsCurrentPaper || committingPresentation) || !canReuseInteractivePaper(for: document) {
             paperPreview.image = nil
             interactiveTexture = nil
             interactivePaperSource = nil
+            interactiveDocument = nil
+            interactiveContent = nil
             interactiveBackground = nil
             interactivePaperFrame = nil
         }
         updatePreviewInsets()
+        // Annotation changes still retire stale pixels during a slider drag.
+        // Geometry updates use the live mesh until the gesture ends.
+        guard !(adjustingStyle && adjustedParameter == .accordionSpread) else { return }
         let cancellation = StitchPreviewCancellation()
         paperRenderCancellation = cancellation
         let snapshot = document
@@ -854,6 +931,7 @@ final class StitchEditorController: NSObject {
                 image: NSImage(cgImage: texture, size: composite.size), document: snapshot) else {
                 self.failPaperPreview(); return
             }
+            let content = PaperContent(editor)
             self.updatePreviewInsets(projection: projection)
             self.renderQueue.async { [weak self] in
                 guard !cancellation.isCancelled else { return }
@@ -865,7 +943,8 @@ final class StitchEditorController: NSObject {
                 guard !cancellation.isCancelled else { return }
                 DispatchQueue.main.async { [weak self, weak editor] in
                     guard let self, let editor, self.paperGeneration == generation,
-                          !self.paperPreview.isHidden, self.paperPreview.window != nil else { return }
+                          !self.paperPreview.isHidden, self.paperPreview.window != nil,
+                          content.matches(editor) else { return }
                     self.pendingPaperPreview = nil
                     guard let rendered else {
                         self.failPaperPreview()
@@ -877,6 +956,8 @@ final class StitchEditorController: NSObject {
                     let paperFrame = self.paperPreview.convert(outputFrame, from: editor)
                     self.interactiveTexture = animationTexture
                     self.interactivePaperSource = layerProjection?.source
+                    self.interactiveDocument = snapshot
+                    self.interactiveContent = content
                     self.interactiveBackground = prepared.paperBackground?.pixels
                     self.interactivePaperFrame = paperFrame
                     self.paperPreview.paperFrame = paperFrame
@@ -1084,15 +1165,38 @@ final class StitchEditorController: NSObject {
         document.style.accordionYaw = camera.yaw
         angleControl.camera = camera
         paperPreview.camera = camera
-        guard let texture = interactiveTexture, let editor = editorView,
-              let projection = interactivePaperSource?.withCamera(camera).projection()
-            else { return }
+        _ = updateInteractivePaper()
+    }
+
+    private func canReuseInteractivePaper(for next: StitchDocument) -> Bool {
+        guard let editor = editorView, paperPreview.image != nil,
+              interactiveTexture != nil, interactivePaperSource != nil,
+              let materialDocument = interactiveDocument,
+              interactiveContent?.matches(editor) == true else { return false }
+        var comparable = next
+        comparable.style.accordionSpread = materialDocument.style.accordionSpread
+        comparable.style.accordionPerspective = materialDocument.style.accordionPerspective
+        comparable.style.accordionYaw = materialDocument.style.accordionYaw
+        return materialDocument.isIdentical(to: comparable)
+    }
+
+    /// Camera and opening edits share one live mesh. Neither recomposites the
+    /// screenshot nor repeats filters on the printed fold textures.
+    @discardableResult
+    private func updateInteractivePaper() -> Bool {
+        guard canReuseInteractivePaper(for: document), let editor = editorView,
+              let texture = interactiveTexture,
+              let source = interactivePaperSource?.withSpread(document.style.accordionSpread)?.withCamera(
+                StitchPaperCamera(perspective: document.style.accordionPerspective,
+                    yaw: document.style.accordionYaw)),
+              let projection = source.projection() else { return false }
+        interactivePaperSource = source
         updatePreviewInsets(projection: projection)
         let outputFrame = Self.paperOutputFrame(projection: projection, selection: editor.selectionRect,
             isFlipped: editor.isFlipped)
         let frame = paperPreview.convert(outputFrame, from: editor)
         interactivePaperFrame = frame
-        _ = paperPreview.showInteractivePaper(texture: texture, projection: projection,
+        return paperPreview.showInteractivePaper(texture: texture, projection: projection,
             frame: frame, background: interactiveBackground)
     }
     private func endCameraGesture(commit: Bool) {
@@ -1104,12 +1208,13 @@ final class StitchEditorController: NSObject {
         let next = document
         cameraSnapshot = nil
         document = original
-        committingCamera = true
+        committingPresentation = true
         if commit && !original.isIdentical(to: next) { _ = commitDocument(next) }
-        committingCamera = false
+        committingPresentation = false
         syncSeamControls()
         paperPreview.camera = StitchPaperCamera(perspective: document.style.accordionPerspective,
             yaw: document.style.accordionYaw)
+        _ = updateInteractivePaper()
         schedulePaperPreview(keepsCurrentPaper: true)
     }
     private func resetCamera() {
@@ -1157,11 +1262,52 @@ final class StitchEditorController: NSObject {
             editor.showOverlayError(L("Unable to save animation.") + " " + error.localizedDescription)
         }
     }
+    private func beginStyleGesture(_ parameter: StitchSeamParameter) {
+        adjustingStyle = true
+        adjustedParameter = parameter
+        styleSnapshot = document
+        if parameter == .accordionSpread {
+            cancelPaperRendering()
+            paperPreview.cancelAnimation()
+        }
+    }
+
+    private func endSpreadGesture() {
+        guard adjustedParameter == .accordionSpread, let original = styleSnapshot else { return }
+        let next = document
+        adjustingStyle = false
+        adjustedParameter = nil
+        styleSnapshot = nil
+        document = original
+        committingPresentation = true
+        if !commitDocument(next), let current = editorView?.stitchDocument { document = current }
+        committingPresentation = false
+        syncSeamControls()
+        _ = updateInteractivePaper()
+        schedulePaperPreview(keepsCurrentPaper: true)
+    }
+
     @objc private func changeStyle(_ sender: NSSlider) {
         guard document.style.visible, let parameter = StitchSeamParameter(rawValue: sender.tag),
               visibleSeamParameters.contains(parameter) else { return }
         let keyPath = parameter.keyPath(for: document.style.transition)
         let value = parameter == .accordionPleats ? sender.doubleValue.rounded() : sender.doubleValue
+        if parameter == .accordionSpread {
+            cancelPaperRendering()
+            if adjustingStyle { document.style[keyPath: keyPath] = value }
+            else {
+                var next = document
+                next.style[keyPath: keyPath] = value
+                committingPresentation = true
+                let applied = commitDocument(next)
+                committingPresentation = false
+                guard applied else { syncSeamControls(); return }
+            }
+            values[sender.tag].stringValue = parameter.formattedValue(value)
+            _ = updateInteractivePaper()
+            if !adjustingStyle { schedulePaperPreview(keepsCurrentPaper: true) }
+            return
+        }
         if adjustingStyle {
             document.style[keyPath: keyPath] = value
         } else {
