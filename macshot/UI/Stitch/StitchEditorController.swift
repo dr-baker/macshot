@@ -1235,7 +1235,9 @@ final class StitchEditorController: NSObject {
             PopoverHelper.dismiss()
             let savePanel = StitchAnimationSavePanel()
             animationSavePanel = savePanel
-            savePanel.present(in: window) { [weak self] choice in
+            let confirmationLevel = window.level
+            let confirmationScreen = window.screen
+            savePanel.present(in: window) { [weak self, weak window] choice in
                 self?.animationSavePanel = nil
                 guard let choice else { return }
                 let accessing = choice.url.startAccessingSecurityScopedResource()
@@ -1247,7 +1249,9 @@ final class StitchEditorController: NSObject {
                             cancellation: cancellation, progress: progress)
                     }, completion: { [weak self] result in
                         switch result {
-                        case .success: self?.showFeedback(L("Animation saved."))
+                        case .success:
+                            (NSApp.delegate as? AppDelegate)?.showAnimationSavedToast(at: choice.url,
+                                above: confirmationLevel, screen: confirmationScreen)
                         case .failure(let error) where error is CancellationError:
                             self?.showFeedback(L("Cancelled"))
                         case .failure(let error):
@@ -1256,7 +1260,7 @@ final class StitchEditorController: NSObject {
                             else { ImageSaveService.onFailure?(message) }
                         }
                     })
-                MediaExportProgressController.show(for: job)
+                MediaExportProgressController.show(for: job, above: window)
             }
         } catch {
             editor.showOverlayError(L("Unable to save animation.") + " " + error.localizedDescription)

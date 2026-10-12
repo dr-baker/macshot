@@ -10,30 +10,43 @@ final class MediaExportProgressController: NSObject, NSWindowDelegate {
     private let label = NSTextField(labelWithString: "")
     private let progress = NSProgressIndicator()
     private let cancelButton = NSButton(title: L("Cancel"), target: nil, action: nil)
+    private weak var originatingWindow: NSWindow?
+    private let presentationLevel: NSWindow.Level
+    private let presentationScreenFrame: NSRect?
 
-    static func show(for job: MediaExportCoordinator.Job) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+    static func show(for job: MediaExportCoordinator.Job, above window: NSWindow? = nil) {
+        let level = window.map { NSWindow.Level($0.level.rawValue + 1) } ?? .normal
+        let screenFrame = window?.screen?.visibleFrame
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak window] in
             guard !job.isFinished else { return }
-            let controller = MediaExportProgressController(job: job)
+            let controller = MediaExportProgressController(job: job, originatingWindow: window,
+                level: level, screenFrame: screenFrame)
             active[job.id] = controller
             controller.show()
         }
     }
 
-    private init(job: MediaExportCoordinator.Job) {
+    private init(job: MediaExportCoordinator.Job, originatingWindow: NSWindow?,
+                 level: NSWindow.Level, screenFrame: NSRect?) {
         self.job = job
+        self.originatingWindow = originatingWindow
+        presentationLevel = level
+        presentationScreenFrame = screenFrame
         super.init()
     }
 
     private func show() {
+        var styleMask: NSWindow.StyleMask = [.titled, .closable, .utilityWindow]
+        if presentationLevel.rawValue > NSWindow.Level.normal.rawValue { styleMask.insert(.nonactivatingPanel) }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 130),
-                            styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)
+                            styleMask: styleMask, backing: .buffered, defer: false)
         panel.title = job.title
+        panel.identifier = NSUserInterfaceItemIdentifier("macshot.exportProgress.\(job.id)")
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.worksWhenModal = true
         panel.isFloatingPanel = false
-        panel.level = .normal
+        panel.level = presentationLevel
         panel.delegate = self
         let content = NSView()
         panel.contentView = content
@@ -64,7 +77,12 @@ final class MediaExportProgressController: NSObject, NSWindowDelegate {
         self.panel = panel
         job.onChange = { [weak self] in self?.update() }
         update()
-        panel.center()
+        if let screenFrame = presentationScreenFrame {
+            panel.setFrameOrigin(NSPoint(x: screenFrame.midX - panel.frame.width / 2,
+                                         y: screenFrame.midY - panel.frame.height / 2))
+        } else {
+            panel.center()
+        }
         panel.orderFront(nil)
     }
 
@@ -73,7 +91,9 @@ final class MediaExportProgressController: NSObject, NSWindowDelegate {
             panel?.close()
             panel = nil
             Self.active.removeValue(forKey: job.id)
-            (NSApp.delegate as? AppDelegate)?.returnFocusIfNeeded()
+            if Self.shouldReturnFocus(originatingWindow: originatingWindow, keyWindow: NSApp.keyWindow) {
+                (NSApp.delegate as? AppDelegate)?.returnFocusIfNeeded()
+            }
             return
         }
         label.stringValue = job.isCancelling ? L("Cancelling...") : job.status
@@ -86,6 +106,11 @@ final class MediaExportProgressController: NSObject, NSWindowDelegate {
             progress.startAnimation(nil)
         }
         cancelButton.isEnabled = job.canCancel
+    }
+
+    /// An older export cannot yield focus away from a newer capture or editor.
+    static func shouldReturnFocus(originatingWindow: NSWindow?, keyWindow: NSWindow?) -> Bool {
+        originatingWindow?.isVisible != true && keyWindow?.isVisible != true
     }
 
     @objc private func cancel() { job.cancel() }

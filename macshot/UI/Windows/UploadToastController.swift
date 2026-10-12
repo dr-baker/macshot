@@ -10,16 +10,23 @@ class UploadToastController {
     private var spinner: NSProgressIndicator?
     private var dismissTask: DispatchWorkItem?
     private var currentLink: String?
+    private var savedFileURL: URL?
+    private var beforeSavedFileReveal: (() -> Void)?
+    private let revealFile: (URL) -> Void
     var onDismiss: (() -> Void)?
 
     private let toastWidth: CGFloat = 380
     private let cornerRadius: CGFloat = 14
 
-    func show(status: String) {
-        guard let screen = NSScreen.preferred else { return }
+    init(revealFile: @escaping (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }) {
+        self.revealFile = revealFile
+    }
+
+    func show(status: String, height: CGFloat = 56, level: NSWindow.Level = .floating, screen: NSScreen? = nil) {
+        guard let screen = screen ?? NSScreen.preferred else { return }
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let toastHeight: CGFloat = 56
+        let toastHeight = height
         let topPadding: CGFloat = 12
 
         // Top-center, just below the menu bar
@@ -33,7 +40,7 @@ class UploadToastController {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
+        panel.level = level
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -164,6 +171,53 @@ class UploadToastController {
         scheduleDismiss(seconds: 8)
     }
 
+    func showSavedFile(at url: URL, status: String, above windowLevel: NSWindow.Level = .normal,
+                       screen: NSScreen? = nil, beforeReveal: (() -> Void)? = nil) {
+        let toastHeight: CGFloat = 68
+        let level = NSWindow.Level(max(NSWindow.Level.floating.rawValue, windowLevel.rawValue + 1))
+        show(status: status, height: toastHeight, level: level, screen: screen)
+        guard let window, let contentView = window.contentView else { dismiss(); return }
+        window.identifier = NSUserInterfaceItemIdentifier("macshot.saveConfirmation")
+        window.title = status
+        savedFileURL = url
+        beforeSavedFileReveal = beforeReveal
+        spinner?.stopAnimation(nil)
+        spinner?.removeFromSuperview()
+        spinner = nil
+        iconView?.isHidden = false
+        iconView?.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
+        iconView?.contentTintColor = .systemGreen
+        iconView?.setAccessibilityElement(false)
+
+        let button = NSButton(title: L("Show in Finder"), target: self, action: #selector(revealSavedFile))
+        button.bezelStyle = .rounded
+        button.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        button.sizeToFit()
+        let buttonWidth = max(112, button.frame.width)
+        button.frame = NSRect(x: toastWidth - buttonWidth - 14, y: (toastHeight - 28) / 2,
+                              width: buttonWidth, height: 28)
+        button.setAccessibilityIdentifier("savedFile.showInFinder")
+        contentView.addSubview(button)
+        openButton = button
+
+        let textWidth = button.frame.minX - 62
+        statusLabel?.frame = NSRect(x: 50, y: 38, width: textWidth, height: 18)
+        statusLabel?.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        statusLabel?.lineBreakMode = .byTruncatingTail
+        statusLabel?.maximumNumberOfLines = 1
+        let filename = NSTextField(labelWithString: url.lastPathComponent)
+        filename.frame = NSRect(x: 50, y: 14, width: textWidth, height: 16)
+        filename.font = NSFont.systemFont(ofSize: 11)
+        filename.textColor = .secondaryLabelColor
+        filename.lineBreakMode = .byTruncatingMiddle
+        filename.maximumNumberOfLines = 1
+        filename.toolTip = url.path
+        contentView.addSubview(filename)
+        linkLabel = filename
+        contentView.needsDisplay = true
+        scheduleDismiss(seconds: 8)
+    }
+
     /// `asUploadFailure` prefixes the message with "Upload failed:". Failures
     /// that aren't uploads (a save that couldn't be written, a recording that
     /// produced nothing) pass false and supply their own wording.
@@ -228,6 +282,16 @@ class UploadToastController {
         dismiss()
     }
 
+    @objc private func revealSavedFile() {
+        guard let savedFileURL else { return }
+        let prepare = beforeSavedFileReveal
+        beforeSavedFileReveal = nil
+        self.savedFileURL = nil
+        prepare?()
+        revealFile(savedFileURL)
+        dismiss()
+    }
+
     func dismiss() {
         dismissTask?.cancel()
         dismissTask = nil
@@ -239,6 +303,9 @@ class UploadToastController {
         openButton = nil
         iconView = nil
         spinner = nil
+        savedFileURL = nil
+        beforeSavedFileReveal = nil
+        currentLink = nil
         onDismiss?()
         onDismiss = nil
     }
@@ -246,7 +313,7 @@ class UploadToastController {
     private func animateOut() {
         guard let window = window else { return }
         let frame = window.frame
-        guard let screen = NSScreen.preferred else { dismiss(); return }
+        guard let screen = window.screen ?? NSScreen.preferred else { dismiss(); return }
         let offscreenY = screen.visibleFrame.maxY + 10
 
         NSAnimationContext.runAnimationGroup({ ctx in

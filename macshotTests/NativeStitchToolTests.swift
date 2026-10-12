@@ -156,6 +156,49 @@ final class NativeStitchToolTests: XCTestCase {
         view.currentTool = .arrow
     }
 
+    func testSavedFileNavigationDetachesOnlyAVisibleSelectedCaptureAndPreservesItsEditableState() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main ?? NSScreen.screens.first)
+        let image = ImageProbe.quadrantImage(width: 160, height: 120)
+        let pixels = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let controller = OverlayWindowController(capture: ScreenCapture(screen: screen, image: pixels))
+        defer { controller.tearDown() }
+        let window = try XCTUnwrap(NSApp.windows.first { $0.windowNumber == Int(controller.windowNumber) })
+        let capture = try XCTUnwrap(window.contentView?.subviews.compactMap { $0 as? ImageEditingView }.first)
+        let delegate = StitchHandoffDelegate()
+        capture.overlayDelegate = delegate
+        controller.applySelection(CGRect(x: 10, y: 10, width: 100, height: 80))
+        let annotation = Annotation(tool: .arrow, startPoint: CGPoint(x: 20, y: 20),
+            endPoint: CGPoint(x: 70, y: 50), color: .red, strokeWidth: 3)
+        capture.annotations = [annotation]
+        capture.effectsBrightness = 0.15
+        capture.onStitchToolChanged = { enabled in if enabled { XCTAssertTrue(capture.beginStitchEditing()) } }
+        capture.handleToolbarAction(.tool(.stitch))
+        XCTAssertNotNil(capture.stitchDocument)
+        XCTAssertFalse(controller.canDetachForSavedFileReveal)
+        XCTAssertFalse(controller.detachForSavedFileReveal(), "A closed capture cannot be revived by an old export")
+        controller.showOverlay()
+        XCTAssertTrue(controller.canDetachForSavedFileReveal)
+        capture.selectionOnlyMode = true
+        XCTAssertFalse(controller.canDetachForSavedFileReveal)
+        capture.selectionOnlyMode = false
+        capture.isScrollCapturing = true
+        XCTAssertFalse(controller.canDetachForSavedFileReveal)
+        capture.isScrollCapturing = false
+        XCTAssertEqual(delegate.detachRequests, 0, "Saving and checking navigation never transfer the capture")
+        delegate.onDetach = {
+            XCTAssertNotNil(capture.captureEditState().stitchDocument)
+            XCTAssertTrue(capture.annotations.first === annotation)
+            XCTAssertEqual(capture.effectsBrightness, 0.15)
+            window.orderOut(nil)
+        }
+        XCTAssertTrue(controller.detachForSavedFileReveal())
+        XCTAssertEqual(delegate.detachRequests, 1)
+        XCTAssertFalse(controller.detachForSavedFileReveal())
+        XCTAssertEqual(delegate.detachRequests, 1)
+        XCTAssertFalse(editor().shouldAllowDetach(), "The ordinary editor remains open during Finder navigation")
+    }
+
     func testContextualOptionsChangeModeAndForwardPlacementAndAnchors() throws {
         let view = editor()
         view.handleToolbarAction(.tool(.stitch))
