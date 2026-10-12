@@ -201,6 +201,45 @@ final class StitchAccordionProjectionTests: XCTestCase {
         }
     }
 
+    func testLiveSpreadReusesPreparedMaterialsAndMatchesRebuiltPhysicalGeometry() throws {
+        for axis in [StitchAxis.horizontal, .vertical] {
+            var document = try fixture(axis: axis)
+            let original = try XCTUnwrap(StitchAccordionProjection.Source(document: document))
+            let source = try XCTUnwrap(original.resizingPaperTextures(maxDimension: 40))
+                .withCamera(StitchPaperCamera(perspective: -24, yaw: 31))
+            let initial = try XCTUnwrap(source.projection())
+            let materials = initial.faces.compactMap { $0.paperTexture?.image }
+            XCTAssertFalse(materials.isEmpty)
+            for spread in [CGFloat(0.05), 0.2, 0.8, 1] {
+                let changed = try XCTUnwrap(source.withSpread(spread))
+                let projection = try XCTUnwrap(changed.projection())
+                XCTAssertEqual(changed.spread, spread)
+                XCTAssertEqual(changed.camera, source.camera)
+                XCTAssertEqual(changed.unfoldedBounds, source.unfoldedBounds)
+                XCTAssertEqual(changed.documentBounds, source.documentBounds)
+                let changedMaterials = projection.faces.compactMap { $0.paperTexture?.image }
+                XCTAssertEqual(changedMaterials.count, materials.count)
+                XCTAssertTrue(zip(materials, changedMaterials).allSatisfy { $0 === $1 })
+                document.style.accordionSpread = spread
+                document.style.accordionPerspective = source.camera.perspective
+                document.style.accordionYaw = source.camera.yaw
+                let rebuilt = try XCTUnwrap(StitchAccordionProjection(document: document))
+                XCTAssertEqual(projection.outputBounds, rebuilt.outputBounds)
+                for (a, b) in zip(projection.faces, rebuilt.faces) {
+                    for (a, b) in zip(a.vertices, b.vertices) {
+                        XCTAssertEqual(a.rest, b.rest)
+                        XCTAssertEqual(a.world, b.world)
+                        XCTAssertEqual(a.projected, b.projected)
+                        XCTAssertEqual(a.paperUV, b.paperUV)
+                    }
+                }
+            }
+            for invalid in [CGFloat.nan, .infinity, -0.1, 0, 0.049, 1.01] {
+                XCTAssertNil(source.withSpread(invalid))
+            }
+        }
+    }
+
     func testSharedEdgesDoNotLeaveTransparentCracks() throws {
         for axis in [StitchAxis.horizontal, .vertical] {
             let document = try fixture(axis: axis, solid: true)

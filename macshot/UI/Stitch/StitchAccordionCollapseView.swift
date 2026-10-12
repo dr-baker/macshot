@@ -11,6 +11,7 @@ final class StitchAccordionCollapseView: NSView {
     private var plans: [StitchAccordionProjection]
     private var outputBounds: CGRect
     private var faceLayers: [Int: CALayer] = [:]
+    private var guardedTextures: [ObjectIdentifier: StitchPaperGuardedTexture] = [:]
     private struct PaperSampleKey: Hashable {
         let x: CGFloat
         let y: CGFloat
@@ -27,13 +28,16 @@ final class StitchAccordionCollapseView: NSView {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               texture.width <= Int(Self.maximumTextureDimension), texture.height <= Int(Self.maximumTextureDimension),
               frame.width.isFinite, frame.height.isFinite, frame.width > 0, frame.height > 0 else { return nil }
-        guard let source = preparedSource ?? StitchAccordionProjection.Source(document: document),
+        guard let rawSource = preparedSource ?? StitchAccordionProjection.Source(document: document),
+              let source = rawSource.resizingPaperTextures(maxDimension: Int(Self.maximumTextureDimension)),
               let final = source.expandingProjection(progress: 1), final.hasProjectedOutput,
-              final.faces.count <= 512 else { return nil }
+              final.faces.count <= 512,
+              let guarded = Self.prepareTextures(texture: texture, projection: final) else { return nil }
         let progress = StitchAccordionAnimation.editorProgresses
         let plans = progress.dropLast().compactMap { source.expandingProjection(progress: $0) } + [final]
         guard plans.count == progress.count, plans.allSatisfy({ $0.faces.count == final.faces.count }) else { return nil }
         self.texture = texture
+        guardedTextures = guarded
         self.plans = plans
         let envelope = plans.reduce(CGRect.null) { $0.union($1.outputBounds) }
         outputBounds = envelope
@@ -75,8 +79,11 @@ final class StitchAccordionCollapseView: NSView {
         guard texture.width <= Int(Self.maximumTextureDimension),
               texture.height <= Int(Self.maximumTextureDimension),
               projection.hasProjectedOutput, projection.faces.count <= 512,
-              frame.width > 0, frame.height > 0 else { return nil }
+              frame.width > 0, frame.height > 0,
+              let projection = projection.resizingPaperTextures(maxDimension: Int(Self.maximumTextureDimension)),
+              let guarded = Self.prepareTextures(texture: texture, projection: projection) else { return nil }
         self.texture = texture
+        guardedTextures = guarded
         plans = [projection]
         outputBounds = projection.outputBounds
         interactive = true
@@ -92,12 +99,28 @@ final class StitchAccordionCollapseView: NSView {
     @discardableResult
     func updateInteractive(projection: StitchAccordionProjection, frame: CGRect) -> Bool {
         guard interactive, projection.hasProjectedOutput, projection.faces.count <= 512,
-              frame.width > 0, frame.height > 0 else { return false }
+              frame.width > 0, frame.height > 0,
+              let guarded = Self.prepareTextures(texture: texture, projection: projection,
+                reusing: guardedTextures) else { return false }
+        guardedTextures = guarded
         self.frame = frame
         plans = [projection]
         outputBounds = projection.outputBounds
         renderFaces(animated: false)
         return true
+    }
+
+    private static func prepareTextures(texture: CGImage, projection: StitchAccordionProjection,
+                                        reusing existing: [ObjectIdentifier: StitchPaperGuardedTexture] = [:])
+        -> [ObjectIdentifier: StitchPaperGuardedTexture]? {
+        var prepared: [ObjectIdentifier: StitchPaperGuardedTexture] = [:]
+        for image in [texture] + projection.faces.compactMap({ $0.paperTexture?.image }) {
+            let identity = ObjectIdentifier(image)
+            if prepared[identity] != nil { continue }
+            guard let material = existing[identity] ?? StitchPaperGuardedTexture(image) else { return nil }
+            prepared[identity] = material
+        }
+        return prepared
     }
 
     func play(completion: @escaping () -> Void) {
@@ -122,6 +145,8 @@ final class StitchAccordionCollapseView: NSView {
         let outputBounds = self.outputBounds
         let scaleX = bounds.width / outputBounds.width, scaleY = bounds.height / outputBounds.height
         let referenceDepth = first.faces.first?.a.depth ?? 1
+        let displayScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        var usedTextures: Set<ObjectIdentifier> = []
         let depthRanks = plans.map { plan -> [CGFloat] in
             var ranks = Array(repeating: CGFloat.zero, count: plan.faces.count)
             for (rank, index) in plan.drawingOrder.enumerated() { ranks[index] = CGFloat(rank) }
@@ -135,8 +160,49 @@ final class StitchAccordionCollapseView: NSView {
                 let point = face.paperSample == nil ? vertex.source : vertex.rest
                 return CGPoint(x: point.x * scaleX, y: point.y * scaleY)
             }
-            let sourceRect = Self.envelope(localPoints)
-            guard sourceRect.width > 0, sourceRect.height > 0 else { continue }
+            let faceRect = Self.envelope(localPoints)
+            guard faceRect.width > 0, faceRect.height > 0 else { continue }
+            let printedImage: CGImage?
+            let crop: CGRect
+            if let paper = face.paperTexture {
+                let uv = Self.envelope(face.vertices.compactMap(\.paperUV))
+                let u = paper.horizontalFlipped ? 1 - uv.maxX : uv.minX
+                let v = paper.verticalFlipped ? 1 - uv.maxY : uv.minY
+                printedImage = paper.image
+                crop = CGRect(x: paper.source.minX + u * paper.source.width,
+                    y: paper.source.minY + v * paper.source.height,
+                    width: uv.width * paper.source.width, height: uv.height * paper.source.height)
+            } else if face.paperSample == nil {
+                let uv = Self.envelope(face.vertices.map(\.source))
+                printedImage = texture
+                crop = CGRect(x: (uv.minX - documentBounds.minX) / documentBounds.width * CGFloat(texture.width),
+                    y: (uv.minY - documentBounds.minY) / documentBounds.height * CGFloat(texture.height),
+                    width: uv.width / documentBounds.width * CGFloat(texture.width),
+                    height: uv.height / documentBounds.height * CGFloat(texture.height))
+            } else {
+                printedImage = nil
+                crop = .zero
+            }
+            let guarded: StitchPaperGuardedTexture?
+            let marginX: CGFloat, marginY: CGFloat
+            if let printedImage {
+                let identity = ObjectIdentifier(printedImage)
+                usedTextures.insert(identity)
+                guard let material = guardedTextures[identity], crop.width > 0, crop.height > 0 else { continue }
+                guarded = material
+                // Overscan the texture plane beneath the triangle mask. The
+                // replicated image border supplies opaque samples at exterior edges.
+                let pixelX = faceRect.width / crop.width, pixelY = faceRect.height / crop.height
+                marginX = min(CGFloat(StitchPaperGuardedTexture.padding) * pixelX, max(pixelX, 1 / displayScale))
+                marginY = min(CGFloat(StitchPaperGuardedTexture.padding) * pixelY, max(pixelY, 1 / displayScale))
+            } else {
+                guarded = nil
+                marginX = 1 / displayScale; marginY = marginX
+            }
+            let sourceRect = faceRect.insetBy(dx: -marginX, dy: -marginY)
+            let guardedCrop = guarded.map { $0.contentsRect(for: crop.insetBy(
+                dx: -marginX / faceRect.width * crop.width,
+                dy: -marginY / faceRect.height * crop.height)) }
             let sheet: CALayer
             if let existing = faceLayers[index] {
                 sheet = existing
@@ -169,15 +235,8 @@ final class StitchAccordionCollapseView: NSView {
                     sheet.addSublayer(printed)
                 }
                 printed.frame = sheet.bounds
-                printed.contents = paper.image
-                let uv = Self.envelope(face.vertices.compactMap(\.paperUV))
-                let u = paper.horizontalFlipped ? 1 - uv.maxX : uv.minX
-                let v = paper.verticalFlipped ? 1 - uv.maxY : uv.minY
-                printed.contentsRect = CGRect(
-                    x: (paper.source.minX + u * paper.source.width) / CGFloat(paper.image.width),
-                    y: (paper.source.minY + v * paper.source.height) / CGFloat(paper.image.height),
-                    width: uv.width * paper.source.width / CGFloat(paper.image.width),
-                    height: uv.height * paper.source.height / CGFloat(paper.image.height))
+                printed.contents = guarded?.image
+                printed.contentsRect = guardedCrop ?? .zero
                 printed.transform = CATransform3DMakeScale(paper.horizontalFlipped ? -1 : 1,
                     paper.verticalFlipped ? -1 : 1, 1)
             } else if let sample = face.paperSample {
@@ -194,12 +253,9 @@ final class StitchAccordionCollapseView: NSView {
                 sheet.backgroundColor = color
             } else {
                 sheet.sublayers?.forEach { $0.removeFromSuperlayer() }
-                let uvRect = Self.envelope(face.vertices.map(\.source))
                 sheet.backgroundColor = nil
-                sheet.contents = texture
-                sheet.contentsRect = CGRect(x: (uvRect.minX - documentBounds.minX) / documentBounds.width,
-                    y: (uvRect.minY - documentBounds.minY) / documentBounds.height,
-                    width: uvRect.width / documentBounds.width, height: uvRect.height / documentBounds.height)
+                sheet.contents = guarded?.image
+                sheet.contentsRect = guardedCrop ?? .zero
             }
             if let mask = sheet.mask as? CAShapeLayer {
                 mask.frame = sheet.bounds
@@ -246,6 +302,7 @@ final class StitchAccordionCollapseView: NSView {
             }
         }
         layer.sublayers = final.drawingOrder.compactMap { faceLayers[$0] }
+        guardedTextures = guardedTextures.filter { usedTextures.contains($0.key) }
         updateDisplayScale()
         if interactive {
             let shadow = BeautifyRenderer.stitchPaperShadow

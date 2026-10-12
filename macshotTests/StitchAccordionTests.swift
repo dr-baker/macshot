@@ -181,7 +181,8 @@ final class StitchAccordionTests: XCTestCase {
                     let transform = transforms[frameIndex].caTransform3DValue
                     XCTAssertEqual(ranks[frameIndex].intValue, try XCTUnwrap(plan.drawingOrder.firstIndex(of: index)))
                     for (localPoint, vertex) in zip(localPoints, plan.faces[index].vertices) {
-                        let local = CGPoint(x: localPoint.x - minX, y: localPoint.y - minY)
+                        let maskBounds = try XCTUnwrap((layer.mask as? CAShapeLayer)?.path).boundingBoxOfPath
+                        let local = CGPoint(x: localPoint.x - minX + maskBounds.minX, y: localPoint.y - minY + maskBounds.minY)
                         let w = local.x * transform.m14 + local.y * transform.m24 + transform.m44
                         let projected = CGPoint(
                             x: (local.x * transform.m11 + local.y * transform.m21 + transform.m41) / w,

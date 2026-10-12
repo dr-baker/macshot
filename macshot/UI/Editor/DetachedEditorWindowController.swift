@@ -194,11 +194,15 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
         view.onStitchPlacementChanged = { [weak self] placement in self?.stitchController?.setPlacement(placement) }
         view.onStitchImages = { [weak self] images in self?.stitchController?.append(images) }
         view.onContentChanged = { [weak self] in
-            self?.contentRevision &+= 1
+            guard let self else { return }
+            self.contentRevision &+= 1
+            // A Stitch commit refreshes annotation previews only when it
+            // changes flat pixels. Preserve live meshes for camera and Spread.
+            let refreshAnnotations = self.inStitchMode && !self.applyingStitchChange
             DispatchQueue.main.async { [weak self] in
                 self?.refreshDoneButtonVisibility()
                 self?.stitchController?.updateUndoState()
-                if self?.inStitchMode == true { self?.updateStitchAnnotations() }
+                if refreshAnnotations, self?.inStitchMode == true { self?.updateStitchAnnotations() }
             }
         }
         view.onStitchDocumentChanged = { [weak self] in
@@ -313,11 +317,12 @@ class DetachedEditorWindowController: NSObject, NSWindowDelegate {
                 guard let self, let view else { return false }
                 self.applyingStitchChange = true
                 defer { self.applyingStitchChange = false }
+                let reusesFlatImage = view.stitchDocument?.hasSameAccordionPixels(as: doc) == true
                 let applied = view.applyStitchDocument(doc, registerUndo: registerUndo)
                 if applied {
                     let bounds = doc.bounds
                     self.topBar?.updateSizeLabel(width: Int(bounds.width), height: Int(bounds.height))
-                    self.updateStitchAnnotations()
+                    if !reusesFlatImage { self.updateStitchAnnotations() }
                     self.refreshDoneButtonVisibility()
                 }
                 return applied

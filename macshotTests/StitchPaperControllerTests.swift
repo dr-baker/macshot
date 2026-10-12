@@ -72,6 +72,101 @@ final class StitchPaperControllerTests: XCTestCase {
         return (editor, controller, preview, window)
     }
 
+    private func warm(_ preview: StitchPaperPreviewView) throws {
+        let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in preview.image != nil }, object: nil)
+        wait(for: [rendered], timeout: 8)
+        _ = try XCTUnwrap(preview.image)
+        _ = try XCTUnwrap(preview.projection)
+    }
+
+    private func spreadSlider(_ controller: StitchEditorController) throws -> StitchSlider {
+        try XCTUnwrap(controller.makeSeamOptions().subviews.first {
+            $0.identifier?.rawValue == "stitch.seam.accordionSpread"
+        } as? StitchSlider)
+    }
+
+    func testContinuousSpreadKeepsEffectedMeshVisibleThroughCommitAndUndo() throws {
+        let (editor, controller, preview, window) = try fixture()
+        defer { controller.suspend(); window.orderOut(nil) }
+        editor.effectsContrast = 1.2
+        try warm(preview)
+        let rendered = try XCTUnwrap(preview.image)
+        let flat = try XCTUnwrap(editor.screenshotImage)
+        let materials = try XCTUnwrap(preview.projection).faces.compactMap { $0.paperTexture?.image }
+        XCTAssertFalse(materials.isEmpty)
+        let slider = try spreadSlider(controller)
+        let initialUndo = editor.undoStack.count
+        slider.onBegin?()
+        for spread in [0.2, 0.6, 0.85] {
+            slider.doubleValue = spread
+            XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+            XCTAssertTrue(preview.image === rendered, "A live geometry edit must keep its raster while updating the mesh")
+            XCTAssertTrue(preview.isShowingInteractivePaper)
+            let changed = try XCTUnwrap(preview.projection)
+            XCTAssertEqual(changed.source.spread, spread)
+            let currentMaterials = changed.faces.compactMap { $0.paperTexture?.image }
+            XCTAssertTrue(zip(materials, currentMaterials).allSatisfy { $0 === $1 }, "Filters must not run again during Spread")
+            XCTAssertEqual(editor.undoStack.count, initialUndo)
+            XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.45)
+            XCTAssertTrue(editor.screenshotImage === flat)
+        }
+        slider.onEnd?()
+        XCTAssertEqual(editor.undoStack.count, initialUndo + 1)
+        XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.85)
+        XCTAssertTrue(preview.image === rendered)
+        XCTAssertTrue(preview.isShowingInteractivePaper, "The final async raster is still pending")
+        XCTAssertEqual(preview.projection?.source.spread, 0.85)
+        editor.undo()
+        XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.45)
+        XCTAssertTrue(preview.image === rendered)
+        XCTAssertTrue(preview.isShowingInteractivePaper)
+        XCTAssertEqual(preview.projection?.source.spread, 0.45)
+        editor.redo()
+        XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.85)
+        XCTAssertTrue(preview.image === rendered)
+        XCTAssertTrue(preview.isShowingInteractivePaper)
+        XCTAssertEqual(preview.projection?.source.spread, 0.85)
+    }
+
+    func testAccessibleSpreadActionKeepsWarmedPaperVisibleUntilRasterFinishes() throws {
+        let (editor, controller, preview, window) = try fixture()
+        defer { controller.suspend(); window.orderOut(nil) }
+        try warm(preview)
+        let rendered = try XCTUnwrap(preview.image)
+        let slider = try spreadSlider(controller)
+        let initialUndo = editor.undoStack.count
+        slider.doubleValue = 0.8
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        XCTAssertEqual(editor.stitchDocument?.style.accordionSpread, 0.8)
+        XCTAssertEqual(editor.undoStack.count, initialUndo + 1)
+        XCTAssertTrue(preview.image === rendered)
+        XCTAssertTrue(preview.isShowingInteractivePaper)
+        XCTAssertEqual(preview.projection?.source.spread, 0.8)
+    }
+
+    func testContentAndRedactionEditsClearRetainedPaperDuringSpread() throws {
+        let (editor, controller, preview, window) = try fixture()
+        defer { controller.suspend(); window.orderOut(nil) }
+        try warm(preview)
+        let slider = try spreadSlider(controller)
+        slider.onBegin?()
+        slider.doubleValue = 0.8
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        XCTAssertTrue(preview.isShowingInteractivePaper)
+        editor.annotations = [Annotation(tool: .filledRectangle, startPoint: CGPoint(x: 0, y: 0),
+            endPoint: CGPoint(x: 60, y: 20), color: .black, strokeWidth: 1)]
+        controller.annotationPreview = editor.stitchAnnotationPreview()
+        XCTAssertNil(preview.image, "A redaction must retire all older composited pixels immediately")
+        XCTAssertFalse(preview.isShowingInteractivePaper)
+        slider.onEnd?()
+        try warm(preview)
+        var next = try XCTUnwrap(editor.stitchDocument)
+        next.pieces[0].origin.x += 2
+        XCTAssertTrue(editor.applyStitchDocument(next))
+        XCTAssertNil(preview.image, "Changing captured content must still clear the old paper")
+        XCTAssertFalse(preview.isShowingInteractivePaper)
+    }
+
     func testSpreadSliderChangesOnlyAccordionAndSupportsUndo() throws {
         let (editor, controller, _, window) = try fixture()
         defer { controller.suspend(); window.orderOut(nil) }
