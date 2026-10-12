@@ -1094,3 +1094,7 @@
 "Turn" = "Forgatás";
 "Unable to save animation." = "Nem sikerült elmenteni az animációt.";
 "View angle" = "Nézet szöge";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Eszközbeállítások mozgatása";
+"Drag to move. Arrow keys move the focused panel." = "Húzza a mozgatáshoz. A nyílbillentyűk a fókuszban lévő panelt mozgatják.";

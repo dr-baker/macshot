@@ -67,8 +67,7 @@ final class ScreenshotPopoverFocus {
     }
 }
 
-/// Show screenshot menus beside their toolbar controls. Glass menus share the
-/// existing window; native popovers handle classic panels and smaller windows.
+/// Show screenshot menus as movable, bounded panels in their editor window.
 enum PopoverHelper {
 
     private static var toggleState = PopoverToggleState()
@@ -239,6 +238,16 @@ enum PopoverHelper {
         return popoverWindow.frame.contains(NSEvent.mouseLocation)
     }
 
+    /// Capture overlays refresh their cursor continuously. Preserve the grip's
+    /// drag cursor even after its pointer leaves the panel during a move.
+    static func cursorForOptions(at screenPoint: NSPoint) -> NSCursor? {
+        if let submenu = activeSubmenu { return submenu.cursor(at: screenPoint) }
+        guard let popover = activePopover, popover.isShown,
+              let window = popover.contentViewController?.view.window,
+              window.frame.contains(screenPoint) else { return nil }
+        return .arrow
+    }
+
     /// Overlay hit testing calls this before routing a click to its canvas.
     /// The point is in the caller's local coordinate space.
     static func hitTestInline(at point: NSPoint, in view: NSView) -> NSView? {
@@ -271,41 +280,8 @@ enum PopoverHelper {
             avoiding: paperRect, in: referenceView) else { return false }
         activeSubmenu = submenu
         toggleState.opened(from: view)
-        submenu.onNeedsNativePresentation = { [weak submenu] in
-            guard let submenu else { return }
-            showNativeAfterWindowResize(submenu)
-        }
         installOutsideClickMonitors()
         return true
-    }
-
-    /// A smaller window can stop fitting a menu that was already open. Retain
-    /// its content controls while letting AppKit position the native popover.
-    private static func showNativeAfterWindowResize(_ submenu: ScreenshotSubmenuPresenter) {
-        guard activeSubmenu === submenu, let anchor = submenu.anchorView else { return }
-        let responder = anchor.window.flatMap(ScreenshotSubmenuPresenter.editingResponder)
-        let menuResponder = (responder as? NSView)?.isDescendant(of: submenu.contentView) == true ? responder : nil
-        let focus = ScreenshotPopoverFocus(parentWindow: anchor.window,
-            previousResponder: submenu.previousResponder)
-        activeSubmenu = nil
-        submenu.dismiss(restoreFocus: false)
-        removeOutsideClickMonitors()
-
-        let popover = NSPopover()
-        popover.behavior = .semitransient
-        popover.contentSize = submenu.size
-        popover.animates = true
-        popover.appearance = ToolbarLayout.appearance
-        let controller = NSViewController()
-        controller.view = cursorWrapped(submenu.contentView, parentWindow: anchor.window)
-        popover.contentViewController = controller
-        popover.delegate = AnchorCleanupDelegate.shared
-        activePopover = popover
-        nativeFocus = focus
-        popover.show(relativeTo: submenu.anchorRect, of: anchor, preferredEdge: submenu.preferredEdge)
-        configureShownPopover(popover, parentWindow: anchor.window)
-        if let menuResponder { submenu.contentView.window?.makeFirstResponder(menuResponder) }
-        installOutsideClickMonitors()
     }
 
     /// Wrap content view so the popover always shows an arrow cursor regardless of active tool.
@@ -349,7 +325,8 @@ enum PopoverHelper {
         removeOutsideClickMonitors()
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { event in
-            if shouldDismiss(forMouseDownAt: NSEvent.mouseLocation) {
+            let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+            if shouldDismiss(forMouseDownAt: point) {
                 let parentWindow = activeSubmenu?.anchorView?.window
                     ?? (activePopover?.contentViewController?.view as? ArrowCursorView)?.parentWindow
                 dismiss(restoreFocus: event.window === parentWindow)

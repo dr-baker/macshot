@@ -1094,3 +1094,7 @@
 "Turn" = "Turn";
 "Unable to save animation." = "Unable to save animation.";
 "View angle" = "View angle";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Mută opțiunile instrumentului";
+"Drag to move. Arrow keys move the focused panel." = "Trage pentru deplasare. Tastele cu săgeți deplasează panoul activ.";

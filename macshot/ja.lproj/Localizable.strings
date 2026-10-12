@@ -1094,3 +1094,7 @@
 "Turn" = "Turn";
 "Unable to save animation." = "Unable to save animation.";
 "View angle" = "View angle";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "ツールオプションを移動";
+"Drag to move. Arrow keys move the focused panel." = "ドラッグして移動。フォーカス中のパネルは矢印キーでも移動できます。";

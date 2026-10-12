@@ -1,8 +1,7 @@
 import AppKit
 import QuartzCore
 
-/// Keep the menu beside its anchor. A native popover can handle menus that need
-/// more room than the existing screenshot window provides.
+/// Keep options beside their anchor, fitting a scroll viewport when necessary.
 struct ScreenshotSubmenuPlacement {
     static let connectionSpacing: CGFloat = 12
     let frame: NSRect
@@ -137,6 +136,54 @@ struct ScreenshotSubmenuPlacement {
         return nil
     }
 
+    /// Menus stay in the editor even when no full-size side fits. Prefer a
+    /// smaller attached viewport, then use a movable panel within the bounds.
+    static func makeFloatingPanel(size: NSSize, anchor: NSRect, bounds: NSRect,
+                                  preferredEdge: NSRectEdge, obstacles: [NSRect], gap: CGFloat = 4) -> Self? {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+              bounds.minX.isFinite, bounds.minY.isFinite, bounds.width.isFinite, bounds.height.isFinite,
+              anchor.minX.isFinite, anchor.minY.isFinite, anchor.width.isFinite, anchor.height.isFinite,
+              bounds.width > 0, bounds.height > 0 else { return nil }
+        let fitted = NSSize(width: min(size.width, bounds.width), height: min(size.height, bounds.height))
+        if let placement = make(size: fitted, anchor: anchor, bounds: bounds,
+                                preferredEdge: preferredEdge, avoiding: obstacles) { return placement }
+        let edges = edgeOrder(preferredEdge)
+        let connected = connectedToolbarBounds(anchor: anchor, obstacles: obstacles)
+        let candidates = edges.enumerated().compactMap { priority, edge -> (Self, CGFloat)? in
+            let viewport = viewportSize(size: fitted, anchor: anchor, connected: connected,
+                bounds: bounds, paper: nil, edge: edge, gap: gap)
+            guard viewport.width >= min(44, size.width), viewport.height >= min(44, size.height),
+                  let placement = make(size: viewport, anchor: anchor, bounds: bounds,
+                    preferredEdge: edge, avoiding: obstacles, candidateEdges: [edge]) else { return nil }
+            return (placement, viewport.width * viewport.height / (size.width * size.height) - CGFloat(priority) * 0.015)
+        }
+        if let best = candidates.max(by: { $0.1 < $1.1 }) { return best.0 }
+        let origin: NSPoint
+        switch preferredEdge {
+        case .minY: origin = NSPoint(x: anchor.midX - fitted.width / 2, y: anchor.minY - gap - fitted.height)
+        case .maxY: origin = NSPoint(x: anchor.midX - fitted.width / 2, y: anchor.maxY + gap)
+        case .minX: origin = NSPoint(x: anchor.minX - gap - fitted.width, y: anchor.midY - fitted.height / 2)
+        case .maxX: origin = NSPoint(x: anchor.maxX + gap, y: anchor.midY - fitted.height / 2)
+        }
+        return Self(frame: clamped(NSRect(origin: origin, size: fitted), to: bounds), edge: preferredEdge)
+    }
+
+    static func clamped(_ frame: NSRect, to bounds: NSRect) -> NSRect {
+        let size = NSSize(width: min(frame.width, bounds.width), height: min(frame.height, bounds.height))
+        return NSRect(x: min(max(frame.minX, bounds.minX), bounds.maxX - size.width),
+                      y: min(max(frame.minY, bounds.minY), bounds.maxY - size.height),
+                      width: size.width, height: size.height)
+    }
+
+    private static func edgeOrder(_ edge: NSRectEdge) -> [NSRectEdge] {
+        switch edge {
+        case .minY: return [.minY, .maxY, .minX, .maxX]
+        case .maxY: return [.maxY, .minY, .minX, .maxX]
+        case .minX: return [.minX, .maxX, .minY, .maxY]
+        case .maxX: return [.maxX, .minX, .minY, .maxY]
+        }
+    }
+
     private static func clearingPaper(_ placement: Self, anchor: NSRect, bounds: NSRect,
                                        paper: NSRect, obstacles: [NSRect], gap: CGFloat) -> Self? {
         if !placement.frame.insetBy(dx: -gap, dy: -gap).intersects(paper) { return placement }
@@ -241,27 +288,32 @@ final class ScreenshotSubmenuPresenter {
     private(set) weak var anchorView: NSView?
     private(set) var size: NSSize
     private(set) var wrapper: ScreenshotPanelView
-    var onNeedsNativePresentation: (() -> Void)?
 
     private weak var root: NSView?
     private weak var parentWindow: NSWindow?
     private(set) weak var previousResponder: NSResponder?
-    private var resizeObserver: NSObjectProtocol?
+    private var geometryObservers: [NSObjectProtocol] = []
     private var closeObserver: NSObjectProtocol?
     private weak var paperReferenceView: NSView?
     private let paperRect: NSRect?
-    private let scrollViewport: NSScrollView?
+    private let scrollViewport: NSScrollView
+    private let dragHandle: ScreenshotSubmenuDragHandle
+    private var manualTopLeft: NSPoint?
+    private var dragStart: (point: NSPoint, topLeft: NSPoint)?
     var isToolbarTray: Bool { paperRect != nil }
+    var isManuallyPositioned: Bool { manualTopLeft != nil }
+
+    static let handleHeight: CGFloat = 18
 
     init?(contentView: NSView, size: NSSize, relativeTo rect: NSRect,
           of anchorView: NSView, preferredEdge: NSRectEdge,
           avoiding paperRect: NSRect? = nil, in paperReferenceView: NSView? = nil) {
         let isTray = paperRect != nil && paperReferenceView != nil
-        guard (isTray || (ScreenshotPanelStyle.load().material != .classic && ScreenshotGlassAvailability.isAvailable)),
+        let panelSize = NSSize(width: max(44, size.width), height: size.height + Self.handleHeight)
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
               let window = anchorView.window,
               (!isTray || paperReferenceView?.window === window),
-              (isTray || window is ScreenshotGlassWindow || window is ScreenshotGlassPanel),
-              let (root, placement) = Self.findPlacement(size: size, rect: rect,
+              let (root, placement) = Self.findPlacement(size: panelSize, rect: rect,
                   anchorView: anchorView, window: window, preferredEdge: preferredEdge,
                   paperRect: paperRect, paperReferenceView: paperReferenceView) else { return nil }
 
@@ -274,7 +326,8 @@ final class ScreenshotSubmenuPresenter {
         self.parentWindow = window
         self.paperRect = isTray ? paperRect : nil
         self.paperReferenceView = paperReferenceView
-        self.scrollViewport = isTray ? NSScrollView(frame: NSRect(origin: .zero, size: placement.frame.size)) : nil
+        self.scrollViewport = NSScrollView(frame: .zero)
+        self.dragHandle = ScreenshotSubmenuDragHandle(frame: .zero)
         self.previousResponder = Self.editingResponder(in: window)
         self.wrapper = ScreenshotSubmenuView(frame: placement.frame)
         wrapper.animatesGlassPresentation = !isTray
@@ -284,26 +337,39 @@ final class ScreenshotSubmenuPresenter {
         wrapper.setAccessibilityRole(.group)
         wrapper.setAccessibilityLabel(L("Tool options"))
         contentView.frame = NSRect(origin: .zero, size: size)
-        if let scrollViewport {
-            scrollViewport.drawsBackground = false
-            scrollViewport.contentView.drawsBackground = false
-            scrollViewport.borderType = .noBorder
-            scrollViewport.scrollerStyle = .overlay
-            scrollViewport.autohidesScrollers = true
-            scrollViewport.documentView = contentView
-            wrapper.addSubview(scrollViewport)
-            configureViewport(firstPresentation: true)
-        } else { wrapper.addSubview(contentView) }
+        scrollViewport.drawsBackground = false
+        scrollViewport.contentView.drawsBackground = false
+        scrollViewport.borderType = .noBorder
+        scrollViewport.scrollerStyle = .overlay
+        scrollViewport.autohidesScrollers = true
+        scrollViewport.documentView = contentView
+        wrapper.addSubview(scrollViewport)
+        wrapper.addSubview(dragHandle)
+        dragHandle.onBeginDrag = { [weak self] point in self?.beginDragging(at: point) }
+        dragHandle.onDrag = { [weak self] point in self?.drag(to: point) }
+        dragHandle.onEndDrag = { [weak self] in self?.dragStart = nil }
+        dragHandle.onMoveBy = { [weak self] offset in self?.move(by: offset) }
+        configureViewport(firstPresentation: true)
         root.addSubview(wrapper, positioned: .above, relativeTo: nil)
         for group in root.subviews.compactMap({ $0 as? ScreenshotGlassGroupView }) {
             group.prepareForPresentation()
         }
         reveal(from: placement.edge, rootIsFlipped: root.isFlipped)
 
-        resizeObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification,
-            object: window, queue: .main) { [weak self] _ in
+        root.postsFrameChangedNotifications = true
+        root.postsBoundsChangedNotifications = true
+        for (name, object) in [(NSWindow.didResizeNotification, window as Any),
+                               (NSWindow.didMoveNotification, window as Any),
+                               (NSWindow.didChangeScreenNotification, window as Any),
+                               (NSView.frameDidChangeNotification, root as Any),
+                               (NSView.boundsDidChangeNotification, root as Any)] {
+            geometryObservers.append(NotificationCenter.default.addObserver(forName: name,
+                object: object, queue: .main) { [weak self] _ in self?.reposition() })
+        }
+        geometryObservers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.reposition()
-            }
+            })
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
             object: window, queue: .main) { [weak self] _ in
                 guard self?.isVisible == true else { return }
@@ -332,6 +398,14 @@ final class ScreenshotSubmenuPresenter {
         return wrapper.hitTest(root.convert(point, from: view))
     }
 
+    func cursor(at screenPoint: NSPoint) -> NSCursor? {
+        guard isVisible, let window = parentWindow, let root else { return nil }
+        if dragHandle.isDragging { return .closedHand }
+        guard contains(screenPoint: screenPoint) else { return nil }
+        let point = root.convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+        return wrapper.hitTest(point) === dragHandle ? .openHand : .arrow
+    }
+
     /// A fitting resize changes frames only, including during native field editing.
     @discardableResult
     func resize(_ content: NSView, to size: NSSize) -> Bool {
@@ -344,10 +418,11 @@ final class ScreenshotSubmenuPresenter {
     }
 
     func dismiss(restoreFocus: Bool = true) {
-        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+        geometryObservers.forEach(NotificationCenter.default.removeObserver)
         if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
-        resizeObserver = nil
+        geometryObservers.removeAll()
         closeObserver = nil
+        dragStart = nil
         let window = parentWindow
         let responder = window.flatMap(Self.editingResponder)
         let wasEditingMenu = (responder as? NSView)?.isDescendant(of: wrapper) == true
@@ -358,7 +433,7 @@ final class ScreenshotSubmenuPresenter {
             window?.makeFirstResponder(nil)
         }
         wrapper.removeFromSuperview()
-        scrollViewport?.documentView = nil
+        scrollViewport.documentView = nil
         contentView.alphaValue = 1
         contentView.setFrameOrigin(.zero)
     }
@@ -373,21 +448,63 @@ final class ScreenshotSubmenuPresenter {
 
     private func reposition() {
         guard let root, let anchorView, let window = parentWindow else { return }
-        guard let placement = Self.placement(size: size, rect: anchorRect, anchorView: anchorView,
-            root: root, window: window, preferredEdge: preferredEdge,
-            paperRect: paperRect, paperReferenceView: paperReferenceView) else {
-            onNeedsNativePresentation?()
-            return
+        if let manualTopLeft, let bounds = Self.usableBounds(root: root, window: window) {
+            // Moving restores the natural panel size. Near an edge, clamp the
+            // whole panel rather than making a drag resize its controls.
+            let panelSize = NSSize(width: min(max(44, size.width), bounds.width),
+                                   height: min(size.height + Self.handleHeight, bounds.height))
+            let origin = NSPoint(x: manualTopLeft.x,
+                y: root.isFlipped ? manualTopLeft.y : manualTopLeft.y - panelSize.height)
+            wrapper.frame = ScreenshotSubmenuPlacement.clamped(NSRect(origin: origin, size: panelSize), to: bounds)
+        } else {
+            guard let placement = Self.placement(size: NSSize(width: max(44, size.width), height: size.height + Self.handleHeight),
+                rect: anchorRect, anchorView: anchorView, root: root, window: window, preferredEdge: preferredEdge,
+                paperRect: paperRect, paperReferenceView: paperReferenceView) else { return }
+            wrapper.frame = placement.frame
         }
-        wrapper.frame = placement.frame
         configureViewport(firstPresentation: false)
     }
 
+    private func beginDragging(at windowPoint: NSPoint) {
+        guard let root else { return }
+        dragStart = (root.convert(windowPoint, from: nil),
+                     NSPoint(x: wrapper.frame.minX, y: root.isFlipped ? wrapper.frame.minY : wrapper.frame.maxY))
+    }
+
+    private func drag(to windowPoint: NSPoint) {
+        guard let root, let dragStart else { return }
+        let point = root.convert(windowPoint, from: nil)
+        let offset = NSPoint(x: point.x - dragStart.point.x, y: point.y - dragStart.point.y)
+        guard offset != .zero else { return }
+        manualTopLeft = NSPoint(x: dragStart.topLeft.x + offset.x, y: dragStart.topLeft.y + offset.y)
+        reposition()
+        rememberManualPosition()
+    }
+
+    /// The keyboard offset follows the screen's directions in flipped hosts too.
+    private func move(by offset: NSSize) {
+        guard let root else { return }
+        rememberManualPosition()
+        guard let manualTopLeft else { return }
+        self.manualTopLeft = NSPoint(x: manualTopLeft.x + offset.width,
+                                    y: manualTopLeft.y + (root.isFlipped ? -offset.height : offset.height))
+        reposition()
+        rememberManualPosition()
+    }
+
+    private func rememberManualPosition() {
+        guard let root else { return }
+        manualTopLeft = NSPoint(x: wrapper.frame.minX, y: root.isFlipped ? wrapper.frame.minY : wrapper.frame.maxY)
+    }
+
     private func configureViewport(firstPresentation: Bool) {
-        guard let scrollViewport else { return }
-        scrollViewport.frame = wrapper.bounds
-        scrollViewport.hasVerticalScroller = size.height > wrapper.bounds.height
-        scrollViewport.hasHorizontalScroller = size.width > wrapper.bounds.width
+        let headerHeight = min(Self.handleHeight, wrapper.bounds.height)
+        dragHandle.frame = NSRect(x: 0, y: wrapper.bounds.height - headerHeight,
+                                  width: wrapper.bounds.width, height: headerHeight)
+        scrollViewport.frame = NSRect(x: 0, y: 0, width: wrapper.bounds.width,
+                                     height: max(0, wrapper.bounds.height - headerHeight))
+        scrollViewport.hasVerticalScroller = size.height > scrollViewport.bounds.height
+        scrollViewport.hasHorizontalScroller = size.width > scrollViewport.bounds.width
         scrollViewport.tile()
         let clip = scrollViewport.contentView
         let maximumX = max(0, size.width - clip.bounds.width)
@@ -401,40 +518,19 @@ final class ScreenshotSubmenuPresenter {
 
     private func reveal(from edge: NSRectEdge, rootIsFlipped: Bool) {
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if isToolbarTray {
-            // The shared material is ready at insertion. A small content reveal
-            // gives the tray an anchor without fading glass and controls apart.
-            guard !reduceMotion else { return }
-            let content = scrollViewport ?? contentView
-            let translation = CATransform3DMakeTranslation(edge == .minX ? 3 : edge == .maxX ? -3 : 0,
-                edge == .minY ? 3 : edge == .maxY ? -3 : 0, 0)
-            let animation = CABasicAnimation(keyPath: "transform")
-            animation.fromValue = NSValue(caTransform3D: translation)
-            animation.toValue = NSValue(caTransform3D: CATransform3DIdentity)
-            animation.duration = 0.14
-            animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            content.wantsLayer = true
-            content.layer?.add(animation, forKey: "toolbar-tray-reveal")
-            return
-        }
-        if !reduceMotion {
-            let verticalDirection: CGFloat = rootIsFlipped ? -1 : 1
-            let offset: NSPoint
-            switch edge {
-            case .minY: offset = NSPoint(x: 0, y: 4 * verticalDirection)
-            case .maxY: offset = NSPoint(x: 0, y: -4 * verticalDirection)
-            case .minX: offset = NSPoint(x: 4, y: 0)
-            case .maxX: offset = NSPoint(x: -4, y: 0)
-            }
-            contentView.setFrameOrigin(offset)
-        }
-        contentView.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = reduceMotion ? 0.08 : 0.16
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            contentView.animator().alphaValue = 1
-            contentView.animator().setFrameOrigin(.zero)
-        }
+        // The material and handle are ready at insertion. Animate the viewport
+        // without moving its document or fading controls separately from glass.
+        guard !reduceMotion else { return }
+        let verticalDirection: CGFloat = rootIsFlipped ? -1 : 1
+        let translation = CATransform3DMakeTranslation(edge == .minX ? 3 : edge == .maxX ? -3 : 0,
+            (edge == .minY ? 3 : edge == .maxY ? -3 : 0) * verticalDirection, 0)
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: translation)
+        animation.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        animation.duration = 0.14
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        scrollViewport.wantsLayer = true
+        scrollViewport.layer?.add(animation, forKey: "toolbar-tray-reveal")
     }
 
     private static func findPlacement(size: NSSize, rect: NSRect, anchorView: NSView,
@@ -461,8 +557,7 @@ final class ScreenshotSubmenuPresenter {
     private static func placement(size: NSSize, rect: NSRect, anchorView: NSView,
                                   root: NSView, window: NSWindow, preferredEdge: NSRectEdge,
                                   paperRect: NSRect? = nil, paperReferenceView: NSView? = nil) -> ScreenshotSubmenuPlacement? {
-        guard let content = window.contentView else { return nil }
-        let bounds = root.visibleRect.intersection(root.convert(content.bounds, from: content)).insetBy(dx: 8, dy: 8)
+        guard let bounds = usableBounds(root: root, window: window) else { return nil }
         var edge = preferredEdge
         if anchorView.isFlipped != root.isFlipped {
             if edge == .minY { edge = .maxY }
@@ -473,11 +568,113 @@ final class ScreenshotSubmenuPresenter {
                 && !($0 is ScreenshotTextPanelView) && !$0.isHiddenOrHasHiddenAncestor
         }.map(\.frame)
         if let paperRect, let paperReferenceView, paperReferenceView.window === window {
-            return ScreenshotSubmenuPlacement.makeToolbarTray(size: size, anchor: root.convert(rect, from: anchorView),
-                bounds: bounds, avoiding: root.convert(paperRect, from: paperReferenceView), obstacles: obstacles)
+            if let tray = ScreenshotSubmenuPlacement.makeToolbarTray(size: size, anchor: root.convert(rect, from: anchorView),
+                bounds: bounds, avoiding: root.convert(paperRect, from: paperReferenceView), obstacles: obstacles) { return tray }
         }
-        return ScreenshotSubmenuPlacement.make(size: size, anchor: root.convert(rect, from: anchorView),
-            bounds: bounds, preferredEdge: edge, avoiding: obstacles)
+        return ScreenshotSubmenuPlacement.makeFloatingPanel(size: size, anchor: root.convert(rect, from: anchorView),
+            bounds: bounds, preferredEdge: edge, obstacles: obstacles)
+    }
+
+    private static func usableBounds(root: NSView, window: NSWindow) -> NSRect? {
+        guard let content = window.contentView else { return nil }
+        var bounds = root.visibleRect.intersection(root.convert(content.bounds, from: content))
+        // Capture windows cover the whole display. Keep controls clear of the
+        // menu bar, Dock, and notch, as well as a partially off-screen editor.
+        if let screen = window.screen {
+            bounds = bounds.intersection(root.convert(window.convertFromScreen(screen.visibleFrame), from: nil))
+        }
+        guard !bounds.isNull, bounds.width > 0, bounds.height > Self.handleHeight else { return nil }
+        let inset = min(8, bounds.width / 4, (bounds.height - Self.handleHeight) / 4)
+        return bounds.insetBy(dx: inset, dy: inset)
+    }
+}
+
+/// A narrow grip reserves its own hit target, leaving sliders and canvas drags
+/// untouched. Keyboard users can focus it and nudge the same bounded panel.
+final class ScreenshotSubmenuDragHandle: NSView {
+    var onBeginDrag: ((NSPoint) -> Void)?
+    var onDrag: ((NSPoint) -> Void)?
+    var onEndDrag: (() -> Void)?
+    var onMoveBy: ((NSSize) -> Void)?
+    private var tracking: NSTrackingArea?
+    private var isHovered = false
+    private(set) var isDragging = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        identifier = NSUserInterfaceItemIdentifier("screenshot.options.move")
+        toolTip = L("Drag to move. Arrow keys move the focused panel.")
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(L("Move tool options"))
+        setAccessibilityHelp(toolTip)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: isDragging ? .closedHand : .openHand)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(next)
+        tracking = next
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        isDragging = true
+        NSCursor.closedHand.set()
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+        onBeginDrag?(event.locationInWindow)
+    }
+
+    override func mouseDragged(with event: NSEvent) { onDrag?(event.locationInWindow) }
+
+    override func mouseUp(with event: NSEvent) {
+        isDragging = false
+        onEndDrag?()
+        window?.invalidateCursorRects(for: self)
+        NSCursor.openHand.set()
+        needsDisplay = true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+        let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+        let offset: NSSize
+        switch event.keyCode {
+        case 123: offset = NSSize(width: -step, height: 0)
+        case 124: offset = NSSize(width: step, height: 0)
+        case 125: offset = NSSize(width: 0, height: -step)
+        case 126: offset = NSSize(width: 0, height: step)
+        default: super.keyDown(with: event); return
+        }
+        onMoveBy?(offset)
+    }
+
+    override func accessibilityPerformPress() -> Bool { window?.makeFirstResponder(self) == true }
+
+    override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
+    override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let focused = window?.firstResponder === self
+        screenshotForegroundColor.withAlphaComponent(isDragging || focused ? 0.75 : isHovered ? 0.5 : 0.28).setFill()
+        NSBezierPath(roundedRect: NSRect(x: bounds.midX - 14, y: bounds.midY - 1.5, width: 28, height: 3),
+                     xRadius: 1.5, yRadius: 1.5).fill()
     }
 }
 

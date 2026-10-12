@@ -1504,9 +1504,9 @@ class OverlayView: NSView {
     /// Imperative cursor management. Called from mouseMoved and a 30fps timer.
     /// Simplified: arrow for chrome, resize cursors for handles, tool cursor for canvas.
     private func updateCursorForPoint(_ point: NSPoint) {
-        // Arrow cursor when mouse is over an open popover
-        if PopoverHelper.isMouseInsidePopover {
-            NSCursor.arrow.set()
+        // Floating options own their cursor, including a grip dragged outside.
+        if let cursor = PopoverHelper.cursorForOptions(at: NSEvent.mouseLocation) {
+            cursor.set()
             return
         }
 

@@ -1094,3 +1094,7 @@
 "Turn" = "Rotation";
 "Unable to save animation." = "Impossible d'enregistrer l'animation.";
 "View angle" = "Angle de vue";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Déplacer les options de l'outil";
+"Drag to move. Arrow keys move the focused panel." = "Faites glisser pour déplacer. Les touches fléchées déplacent le panneau actif.";

@@ -1096,3 +1096,7 @@
 "Turn" = "Turn";
 "Unable to save animation." = "Unable to save animation.";
 "View angle" = "View angle";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Μετακίνηση επιλογών εργαλείου";
+"Drag to move. Arrow keys move the focused panel." = "Σύρετε για μετακίνηση. Τα πλήκτρα βέλους μετακινούν το ενεργό πάνελ.";

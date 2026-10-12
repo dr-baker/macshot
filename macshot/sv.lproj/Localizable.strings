@@ -1095,3 +1095,7 @@
 "Turn" = "Turn";
 "Unable to save animation." = "Unable to save animation.";
 "View angle" = "View angle";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Flytta verktygsalternativ";
+"Drag to move. Arrow keys move the focused panel." = "Dra för att flytta. Piltangenterna flyttar panelen som har fokus.";
