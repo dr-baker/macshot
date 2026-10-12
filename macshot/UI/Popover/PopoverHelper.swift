@@ -77,6 +77,7 @@ enum PopoverHelper {
     private static var globalMouseDownMonitor: Any?
     private static var activeSubmenu: ScreenshotSubmenuPresenter?
     private static var nativeFocus: ScreenshotPopoverFocus?
+    private static var isRaisingOptions = false
 
     /// Show a popover with the given content view, anchored relative to a rect in the given parent view.
     static func show(_ contentView: NSView, size: NSSize, relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge = .minY) {
@@ -256,6 +257,15 @@ enum PopoverHelper {
 
     static func containsInline(point: NSPoint, in view: NSView) -> Bool {
         return activeSubmenu?.contains(point: point, in: view) == true
+    }
+
+    /// New badges and rebuilt toolbars remain underneath open tool options.
+    /// Reordering can repeat view callbacks, so guard the one shared operation.
+    static func keepOptionsAboveChrome(in parent: NSView) {
+        guard !isRaisingOptions, let submenu = activeSubmenu, submenu.isVisible else { return }
+        isRaisingOptions = true
+        defer { isRaisingOptions = false }
+        submenu.keepAboveChrome(in: parent)
     }
 
     /// Preserve a menu's keyboard ownership before it rebuilds or hides the

@@ -214,6 +214,126 @@ final class ScreenshotMovableSubmenuTests: XCTestCase {
             anchor: .zero, bounds: bounds, preferredEdge: .minY, obstacles: []))
     }
 
+    func testMovedOptionsKeepOneBackdropAboveLateBadgesAndRebuiltToolbars() throws {
+        defer { NotificationCenter.default.post(name: ScreenshotPanelStyle.didChange, object: nil) }
+        try withDefaults([ScreenshotPanelStyle.defaultsKey: nil]) {
+            for material in ScreenshotPanelStyle.Material.allCases {
+                ScreenshotPanelStyle(material: material).save()
+                let (window, root, anchor) = fixture()
+                defer { PopoverHelper.dismiss(restoreFocus: false); window.close() }
+                let content = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+                let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+                content.addSubview(slider)
+                PopoverHelper.show(content, size: content.frame.size, relativeTo: anchor.bounds,
+                                   of: anchor, preferredEdge: .maxY)
+                let panel = try XCTUnwrap(root.subviews.compactMap { $0 as? ScreenshotPanelView }.first {
+                    $0.identifier?.rawValue == "screenshot.submenu"
+                })
+                let grip = try XCTUnwrap(panel.subviews.compactMap { $0 as? ScreenshotSubmenuDragHandle }.first)
+                let viewport = try XCTUnwrap(panel.subviews.compactMap { $0 as? NSScrollView }.first)
+                let sharedGroup = root.subviews.compactMap { $0 as? ScreenshotGlassGroupView }.first
+                XCTAssertFalse(panel.ownsGlassBackdrop, "Attached menus retain native material joins")
+                XCTAssertTrue(panel.subviews.compactMap { $0 as? ScreenshotGlassGroupView }.isEmpty)
+                let point = grip.convert(NSPoint(x: grip.bounds.midX, y: grip.bounds.midY), to: nil)
+                grip.mouseDown(with: try mouseEvent(.leftMouseDown, at: point, window: window))
+                grip.mouseUp(with: try mouseEvent(.leftMouseUp, at: point, window: window))
+                XCTAssertFalse(panel.ownsGlassBackdrop, "Clicking the grip must preserve the attached material")
+
+                try drag(grip, by: NSSize(width: -30, height: 40), in: root, window: window)
+                XCTAssertTrue(panel.ownsGlassBackdrop)
+                let ownedGroup = panel.subviews.compactMap { $0 as? ScreenshotGlassGroupView }.first
+                if panel.renderedGlassConfiguration != nil {
+                    let group = try XCTUnwrap(ownedGroup)
+                    XCTAssertFalse(group === sharedGroup)
+                    XCTAssertEqual(group.frame, panel.bounds)
+                    XCTAssertLessThan(try XCTUnwrap(panel.subviews.firstIndex(of: group)),
+                                      try XCTUnwrap(panel.subviews.firstIndex(of: viewport)))
+                } else { XCTAssertNil(ownedGroup) }
+
+                let badge = ResolutionBoxView()
+                badge.setDimensions(w: 720, h: 1280)
+                badge.frame = NSRect(origin: panel.frame.origin, size: badge.preferredSize)
+                root.addSubview(badge)
+                XCTAssertGreaterThan(try XCTUnwrap(root.subviews.firstIndex(of: panel)),
+                                     try XCTUnwrap(root.subviews.firstIndex(of: badge)))
+                XCTAssertTrue(window.makeFirstResponder(slider))
+                anchor.superview?.removeFromSuperview()
+                let replacementToolbar = ScreenshotPanelView(frame: NSRect(x: 20, y: 120, width: 600, height: 34))
+                root.addSubview(replacementToolbar)
+                // A late canvas also forces the shared scene to rebuild its
+                // chrome plane, which must keep the owned menu above controls.
+                root.addSubview(NSView(frame: root.bounds))
+                for group in root.subviews.compactMap({ $0 as? ScreenshotGlassGroupView }) {
+                    group.prepareForPresentation()
+                }
+                for control in [badge, replacementToolbar] {
+                    XCTAssertGreaterThan(try XCTUnwrap(root.subviews.firstIndex(of: panel)),
+                                         try XCTUnwrap(root.subviews.firstIndex(of: control)))
+                }
+                try drag(grip, by: NSSize(width: 10, height: 10), in: root, window: window)
+                XCTAssertTrue(window.makeFirstResponder(slider))
+                PopoverHelper.resize(content, to: NSSize(width: 240, height: 320))
+                for group in panel.subviews.compactMap({ $0 as? ScreenshotGlassGroupView }) {
+                    group.prepareForPresentation()
+                }
+                XCTAssertTrue(viewport.documentView === content)
+                XCTAssertTrue(window.firstResponder === slider)
+                XCTAssertTrue(panel.subviews.compactMap { $0 as? NSScrollView }.first === viewport)
+                XCTAssertTrue(panel.subviews.compactMap { $0 as? ScreenshotSubmenuDragHandle }.first === grip)
+                XCTAssertEqual(panel.subviews.compactMap { $0 as? ScreenshotGlassGroupView }.count, ownedGroup == nil ? 0 : 1)
+                XCTAssertTrue(panel.subviews.compactMap { $0 as? ScreenshotGlassGroupView }.first === ownedGroup)
+            }
+        }
+    }
+
+    func testManualOptionsKeepResizingAfterTheirToolbarAnchorIsRemoved() throws {
+        let (window, root, fixtureAnchor) = fixture()
+        defer { PopoverHelper.dismiss(restoreFocus: false); window.close() }
+        fixtureAnchor.superview?.removeFromSuperview()
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+        weak var oldAnchor: NSView?
+        let panel = try autoreleasepool {
+            let anchor = NSView(frame: NSRect(x: 280, y: 125, width: 32, height: 24))
+            root.addSubview(anchor)
+            oldAnchor = anchor
+            PopoverHelper.show(content, size: content.frame.size, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+            let panel = try XCTUnwrap(root.subviews.first { $0.identifier?.rawValue == "screenshot.submenu" })
+            let grip = try XCTUnwrap(panel.subviews.compactMap { $0 as? ScreenshotSubmenuDragHandle }.first)
+            try drag(grip, by: NSSize(width: -30, height: 100), in: root, window: window)
+            anchor.removeFromSuperview()
+            return panel
+        }
+        XCTAssertNil(oldAnchor)
+        PopoverHelper.resize(content, to: NSSize(width: 240, height: 300))
+        XCTAssertEqual(panel.frame.height, 318)
+        XCTAssertTrue(root.bounds.insetBy(dx: 8, dy: 8).contains(panel.frame))
+    }
+
+    func testFullSizeContentMenusStayBelowTheNativeTitlebarWhenMovedOrResized() throws {
+        let window = ScreenshotGlassWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        if let screen = NSScreen.main {
+            window.setFrameOrigin(NSPoint(x: screen.visibleFrame.minX + 80, y: screen.visibleFrame.minY + 80))
+        }
+        let root = NSView(frame: NSRect(origin: .zero, size: window.frame.size))
+        window.contentView = root
+        let anchor = NSView(frame: NSRect(x: 280, y: 120, width: 32, height: 32))
+        root.addSubview(anchor)
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+        let presenter = try makePresenter(content: content, anchor: anchor)
+        defer { presenter.dismiss(restoreFocus: false) }
+        let layoutBounds = root.convert(window.contentLayoutRect, from: nil)
+        XCTAssertLessThan(layoutBounds.maxY, root.bounds.maxY, "The fixture must expose content behind a native titlebar")
+        try drag(try handle(in: presenter), by: NSSize(width: 10000, height: 10000), in: root, window: window)
+        for height in [CGFloat(120), 400, 800] {
+            XCTAssertTrue(presenter.resize(content, to: NSSize(width: 240, height: height)))
+            XCTAssertTrue(layoutBounds.insetBy(dx: 8, dy: 8).contains(presenter.wrapper.frame))
+            XCTAssertEqual(presenter.wrapper.frame.maxY, layoutBounds.maxY - 8, accuracy: 0.01)
+        }
+    }
+
     private func fixture(height: CGFloat = 480, optionsY: CGFloat = 120,
                          flipped: Bool = false, overlay: Bool = false) -> (ScreenshotGlassWindow, NSView, NSView) {
         let rect = NSRect(x: 0, y: 0, width: 640, height: height)

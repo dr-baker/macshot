@@ -26,7 +26,12 @@ class ScreenshotPanelView: NSView {
     private(set) var renderedGlassConfiguration: ScreenshotGlassConfiguration?
     private(set) var materialAppearanceName: NSAppearance.Name?
     private weak var glassGroup: ScreenshotGlassGroupView?
-    private var glassContainer: NSView? { window?.contentView === self ? self : superview }
+    /// Moved options need their material above the chrome they can cover.
+    /// Attached controls retain their shared backdrop and native joins.
+    var ownsGlassBackdrop = false {
+        didSet { if oldValue != ownsGlassBackdrop { refreshPanelAppearance() } }
+    }
+    private var glassContainer: NSView? { ownsGlassBackdrop || window?.contentView === self ? self : superview }
     /// Submenus request insertion/removal morphs; ordinary layout follows the pointer.
     var animatesGlassPresentation = false
 
@@ -86,6 +91,7 @@ class ScreenshotPanelView: NSView {
         super.viewDidMoveToSuperview()
         glassGroup?.remove(self)
         glassGroup = renderedGlassConfiguration == nil ? nil : glassContainer.map { ScreenshotGlassGroupView.attach(self, to: $0) }
+        if let parent = superview { PopoverHelper.keepOptionsAboveChrome(in: parent) }
     }
 
     override func viewDidMoveToWindow() {
