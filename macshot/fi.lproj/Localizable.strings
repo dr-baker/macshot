@@ -1094,3 +1094,7 @@
 "Turn" = "Turn";
 "Unable to save animation." = "Unable to save animation.";
 "View angle" = "View angle";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Siirrä työkalun asetuksia";
+"Drag to move. Arrow keys move the focused panel." = "Siirrä vetämällä. Nuolinäppäimet siirtävät kohdistettua paneelia.";

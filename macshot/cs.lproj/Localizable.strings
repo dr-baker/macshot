@@ -1094,3 +1094,7 @@
 "Turn" = "Otočení";
 "Unable to save animation." = "Animaci se nepodařilo uložit.";
 "View angle" = "Úhel pohledu";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Posunout možnosti nástroje";
+"Drag to move. Arrow keys move the focused panel." = "Přetažením přesunete panel. Klávesy se šipkami posouvají aktivní panel.";

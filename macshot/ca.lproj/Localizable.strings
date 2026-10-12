@@ -1096,3 +1096,7 @@
 "Turn" = "Gir";
 "Unable to save animation." = "No s'ha pogut desar l'animació.";
 "View angle" = "Angle de visió";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "Mou les opcions de l'eina";
+"Drag to move. Arrow keys move the focused panel." = "Arrossega per moure. Les tecles de fletxa mouen el panell actiu.";

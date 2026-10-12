@@ -1096,3 +1096,7 @@
 "Turn" = "Turn";
 "Unable to save animation." = "Unable to save animation.";
 "View angle" = "View angle";
+
+/* Movable tool options. English fallback where untranslated. */
+"Move tool options" = "도구 옵션 이동";
+"Drag to move. Arrow keys move the focused panel." = "드래그하여 이동하세요. 방향키로 포커스된 패널을 이동할 수 있습니다.";
