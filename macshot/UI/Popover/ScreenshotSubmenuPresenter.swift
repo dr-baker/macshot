@@ -406,6 +406,13 @@ final class ScreenshotSubmenuPresenter {
         return wrapper.hitTest(point) === dragHandle ? .openHand : .arrow
     }
 
+    func keepAboveChrome(in parent: NSView) {
+        guard wrapper.superview === parent,
+              let index = parent.subviews.firstIndex(of: wrapper),
+              parent.subviews.dropFirst(index + 1).contains(where: { $0 is ScreenshotPanelView }) else { return }
+        parent.addSubview(wrapper, positioned: .above, relativeTo: nil)
+    }
+
     /// A fitting resize changes frames only, including during native field editing.
     @discardableResult
     func resize(_ content: NSView, to size: NSSize) -> Bool {
@@ -447,7 +454,7 @@ final class ScreenshotSubmenuPresenter {
     }
 
     private func reposition() {
-        guard let root, let anchorView, let window = parentWindow else { return }
+        guard let root, let window = parentWindow else { return }
         if let manualTopLeft, let bounds = Self.usableBounds(root: root, window: window) {
             // Moving restores the natural panel size. Near an edge, clamp the
             // whole panel rather than making a drag resize its controls.
@@ -457,6 +464,7 @@ final class ScreenshotSubmenuPresenter {
                 y: root.isFlipped ? manualTopLeft.y : manualTopLeft.y - panelSize.height)
             wrapper.frame = ScreenshotSubmenuPlacement.clamped(NSRect(origin: origin, size: panelSize), to: bounds)
         } else {
+            guard let anchorView else { return }
             guard let placement = Self.placement(size: NSSize(width: max(44, size.width), height: size.height + Self.handleHeight),
                 rect: anchorRect, anchorView: anchorView, root: root, window: window, preferredEdge: preferredEdge,
                 paperRect: paperRect, paperReferenceView: paperReferenceView) else { return }
@@ -476,6 +484,7 @@ final class ScreenshotSubmenuPresenter {
         let point = root.convert(windowPoint, from: nil)
         let offset = NSPoint(x: point.x - dragStart.point.x, y: point.y - dragStart.point.y)
         guard offset != .zero else { return }
+        ownMovedBackdrop()
         manualTopLeft = NSPoint(x: dragStart.topLeft.x + offset.x, y: dragStart.topLeft.y + offset.y)
         reposition()
         rememberManualPosition()
@@ -484,6 +493,7 @@ final class ScreenshotSubmenuPresenter {
     /// The keyboard offset follows the screen's directions in flipped hosts too.
     private func move(by offset: NSSize) {
         guard let root else { return }
+        ownMovedBackdrop()
         rememberManualPosition()
         guard let manualTopLeft else { return }
         self.manualTopLeft = NSPoint(x: manualTopLeft.x + offset.width,
@@ -495,6 +505,14 @@ final class ScreenshotSubmenuPresenter {
     private func rememberManualPosition() {
         guard let root else { return }
         manualTopLeft = NSPoint(x: wrapper.frame.minX, y: root.isFlipped ? wrapper.frame.minY : wrapper.frame.maxY)
+    }
+
+    private func ownMovedBackdrop() {
+        guard !wrapper.ownsGlassBackdrop else { return }
+        wrapper.ownsGlassBackdrop = true
+        for group in (root?.subviews ?? []) + wrapper.subviews {
+            (group as? ScreenshotGlassGroupView)?.prepareForPresentation()
+        }
     }
 
     private func configureViewport(firstPresentation: Bool) {
@@ -578,6 +596,8 @@ final class ScreenshotSubmenuPresenter {
     private static func usableBounds(root: NSView, window: NSWindow) -> NSRect? {
         guard let content = window.contentView else { return nil }
         var bounds = root.visibleRect.intersection(root.convert(content.bounds, from: content))
+        // Full-size content extends underneath a titled editor's traffic lights.
+        bounds = bounds.intersection(root.convert(window.contentLayoutRect, from: nil))
         // Capture windows cover the whole display. Keep controls clear of the
         // menu bar, Dock, and notch, as well as a partially off-screen editor.
         if let screen = window.screen {
